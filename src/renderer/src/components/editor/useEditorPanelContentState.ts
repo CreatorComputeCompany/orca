@@ -474,7 +474,8 @@ export function useEditorPanelContentState({
             originalContent: '',
             modifiedContent: `Error loading diff: ${String(err)}`,
             originalIsBinary: false,
-            modifiedIsBinary: false
+            modifiedIsBinary: false,
+            loadError: true
           }
         }))
       } finally {
