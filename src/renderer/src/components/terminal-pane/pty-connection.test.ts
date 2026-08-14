@@ -252,6 +252,7 @@ type StoreState = {
   removeAgentStatus: ReturnType<typeof vi.fn>
   dropAgentStatus: ReturnType<typeof vi.fn>
   retireAgentPaneAuthority: ReturnType<typeof vi.fn>
+  restoreAgentPaneAuthority: ReturnType<typeof vi.fn>
   setPaneForegroundAgent: ReturnType<typeof vi.fn>
   clearPaneForegroundAgent: ReturnType<typeof vi.fn>
   markTerminalTabUnread: ReturnType<typeof vi.fn>
@@ -993,6 +994,7 @@ describe('connectPanePty', () => {
       removeAgentStatus: vi.fn(),
       dropAgentStatus: vi.fn(),
       retireAgentPaneAuthority: vi.fn(),
+      restoreAgentPaneAuthority: vi.fn(),
       setPaneForegroundAgent: vi.fn((paneKey: string, entry: PaneForegroundAgentEntry) => {
         mockStoreState.paneForegroundAgentByPaneKey[paneKey] = entry
       }),
@@ -1814,6 +1816,11 @@ describe('connectPanePty', () => {
       restoredPtyId,
       undefined,
       pendingRetry.attemptId
+    )
+    // Why: binding a reattached PTY is what lifts the pane's retirement fence, so a
+    // pane re-attached mid-turn or idle is not suppressed forever (STA-4114).
+    expect(mockStoreState.restoreAgentPaneAuthority).toHaveBeenCalledWith(
+      makePaneKey('tab-1', LEAF_1)
     )
   })
 
