@@ -79,6 +79,10 @@ import {
   resolveExpectedTeardownScope,
   WINDOWS_SESSION_END_CRASH_SUPPRESSION_WINDOW_MS
 } from '../crash-reporting/expected-teardown-state'
+import {
+  clearCrashBreadcrumbsForTest,
+  getCrashBreadcrumbSnapshot
+} from '../crash-reporting/crash-breadcrumb-store'
 
 function withPlatform<T>(platform: NodeJS.Platform, run: () => T): T {
   const original = process.platform
@@ -3859,6 +3863,29 @@ describe('createMainWindow', () => {
           isExpectedRendererReload: false
         })
       ).toBe('app-shutdown')
+    })
+
+    it('durably records the session-end reasons so bundles can tell OS shutdown from a task-kill', () => {
+      setPlatform('win32')
+      clearCrashBreadcrumbsForTest()
+      const { windowHandlers } = setupCloseWindow()
+
+      createMainWindow(null)
+      windowHandlers['session-end']?.({ reasons: ['shutdown', 'critical'] } as never)
+      // The harness's bare event shape must stay safe too.
+      windowHandlers['session-end']?.({} as never)
+
+      expect(getCrashBreadcrumbSnapshot()).toEqual([
+        expect.objectContaining({
+          name: 'system_session_end',
+          data: expect.objectContaining({ reasons: 'shutdown,critical' })
+        }),
+        expect.objectContaining({
+          name: 'system_session_end',
+          data: expect.objectContaining({ reasons: '' })
+        })
+      ])
+      clearCrashBreadcrumbsForTest()
     })
 
     it.each(['darwin', 'linux'] as const)(
