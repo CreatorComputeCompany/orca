@@ -699,6 +699,7 @@ function App(): React.JSX.Element {
   const alwaysShowDefaultBranchWorkspace = useAppStore((s) => s.alwaysShowDefaultBranchWorkspace)
   const showDotfilesByWorktree = useAppStore((s) => s.showDotfilesByWorktree)
   const filterRepoIds = useAppStore((s) => s.filterRepoIds)
+  const filterWorkspaceStatuses = useAppStore((s) => s.filterWorkspaceStatuses)
   const acknowledgedAgentsByPaneKey = useAppStore((s) => s.acknowledgedAgentsByPaneKey)
   const persistedUIReady = useAppStore((s) => s.persistedUIReady)
   const shouldMountContextualTourOverlay = activeContextualTourId !== null
@@ -1439,6 +1440,7 @@ function App(): React.JSX.Element {
         // Why: the store keeps this readonly for identity stability, but PersistedUI crosses to
         // main, which owns a mutable array — copy at the boundary rather than widening the wire type.
         filterRepoIds: [...filterRepoIds],
+        filterWorkspaceStatuses: [...filterWorkspaceStatuses],
         // Why (#9002): activeView is deliberately NOT included here. It used to
         // ride this same 150ms writer (#8265), which meant every top-level view
         // switch scheduled a full durable-state save. The narrow preference
@@ -1474,6 +1476,7 @@ function App(): React.JSX.Element {
     alwaysShowDefaultBranchWorkspace,
     showDotfilesByWorktree,
     filterRepoIds,
+    filterWorkspaceStatuses,
     acknowledgedAgentsByPaneKey
   ])
 

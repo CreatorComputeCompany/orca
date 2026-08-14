@@ -54,6 +54,7 @@ import { toast } from 'sonner'
 import { initialAgentTabViewModeProps } from './native-chat-initial-view-mode'
 import { getConnectionId } from '@/lib/connection-context'
 import { isDetachedHeadWorkspace } from '@/components/sidebar/visible-worktrees'
+import { getWorkspaceStatus } from '../../../shared/workspace-statuses'
 import { isNativeChatTranscriptLocalReadable } from '@/lib/native-chat-transcript-readability'
 import { seedNativeChatAppliedSessionOptions } from '@/components/native-chat/native-chat-session-option-cache'
 import type { SessionOptionValue } from '../../../shared/native-chat-session-options'
@@ -367,6 +368,15 @@ export function activateAndRevealWorktree(
   }
   if (state.hideDetachedHeadWorkspaces && isDetachedHeadWorkspace(wt)) {
     state.setHideDetachedHeadWorkspaces(false)
+  }
+  // Why clear rather than add the target's status: matching the repo-filter
+  // rule above, and a one-status widening would still hide the neighbours the
+  // user is about to scroll through.
+  if (
+    state.filterWorkspaceStatuses.length > 0 &&
+    !state.filterWorkspaceStatuses.includes(getWorkspaceStatus(wt, state.workspaceStatuses))
+  ) {
+    state.setFilterWorkspaceStatuses([])
   }
 
   // 6. Reveal in sidebar
