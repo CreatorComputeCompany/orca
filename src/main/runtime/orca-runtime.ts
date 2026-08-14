@@ -1222,10 +1222,12 @@ export type RuntimeAutomationCreateInput = Omit<
 
 export type RuntimeAutomationUpdateInput = Omit<
   AutomationUpdateInput,
-  'projectId' | 'workspaceId'
+  'projectId' | 'workspaceId' | 'agentId'
 > & {
   repo?: string
   workspace?: string
+  // Why: the RPC schema rehomes a mixed-version client's retired agentId echo to null; persisting it is a no-op the store guards against.
+  agentId?: TuiAgent | null
 }
 
 function normalizeSparsePresetName(name: string): string {
@@ -3741,7 +3743,7 @@ export class OrcaRuntimeService {
     if (hasRuntimeAutomationUpdateValue(updates, 'precheck')) {
       patch.precheck = updates.precheck
     }
-    if (hasRuntimeAutomationUpdateValue(updates, 'agentId')) {
+    if (hasRuntimeAutomationUpdateValue(updates, 'agentId') && updates.agentId !== null) {
       patch.agentId = updates.agentId
     }
     if (hasRuntimeAutomationUpdateValue(updates, 'runContext')) {
