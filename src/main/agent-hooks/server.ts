@@ -18,6 +18,7 @@ import {
   hasCodexTranscriptSubagents,
   hasPendingAgentResultText,
   HOOK_REQUEST_SLOWLORIS_MS,
+  isNewTurnEvent,
   markClaudeLeadTurnInterrupted,
   markCodexLeadTurnInterrupted,
   MAX_PANE_KEY_LEN,
@@ -64,6 +65,12 @@ import {
   normalizeAgentStatusPayload
 } from '../../shared/agent-status-types'
 import {
+  AgentStatusObservationSequencer,
+  createAgentStatusAuthorityId,
+  type AgentStatusObservation,
+  type AgentStatusObservationOrigin
+} from '../../shared/agent-status-observation'
+import {
   resolveAgentStatusIdentity,
   shouldSuppressInheritedTerminalStatus
 } from '../../shared/agent-status-identity'
@@ -90,6 +97,8 @@ export type { AgentHookSource }
 type EnrichedAgentHookEventPayload = AgentHookEventPayload & {
   receivedAt: number
   stateStartedAt: number
+  /** Provenance/ordering stamped by this server as the pane authority (STA-4293). Read by nothing yet. */
+  observation?: AgentStatusObservation
   /** Stamped at hydrate for nonterminal states; never persisted (hydrate re-stamps) and cleared by any accepted live event replacing the entry. */
   restoredUnconfirmed?: true
   /** User-hidden resume identity retained solely for destructive liveness checks. */
@@ -103,7 +112,13 @@ type NormalizedLocalHook = {
 
 type PersistedAgentHookEventPayload = Omit<
   EnrichedAgentHookEventPayload,
-  'claudeRunningNonAgentTask' | 'launchToken' | 'promptInteractionKey' | 'restoredUnconfirmed'
+  | 'claudeRunningNonAgentTask'
+  | 'launchToken'
+  | 'promptInteractionKey'
+  | 'restoredUnconfirmed'
+  // Why: revision counters are in-memory and the authority id is regenerated per process, so
+  // a stored observation could only rehydrate as a stale ordering claim from a dead authority.
+  | 'observation'
 > & {
   launchTokenHash?: string
 }
@@ -409,6 +424,7 @@ function toAgentStatusIpcPayload(entry: EnrichedAgentHookEventPayload): AgentSta
     ...(entry.providerSessionOnly ? { providerSessionOnly: true } : {}),
     ...(entry.promptInteractionKey ? { promptInteractionKey: entry.promptInteractionKey } : {}),
     ...(entry.restoredUnconfirmed ? { restoredUnconfirmed: true } : {}),
+    ...(entry.observation ? { observation: entry.observation } : {}),
     ...entry.payload
   }
 }
@@ -636,6 +652,11 @@ export class AgentHookServer {
   private connectionTimestampWatermarkById = new Map<string, number>()
   // Why: skip disk writes when the JSON exactly matches the last write; guards against re-firing trailing timers when nothing changed.
   private lastWrittenJson: string | null = null
+  // Why: main is the pane authority for local/WSL/SSH panes — hook HTTP, relay, and its own
+  // OSC parse all converge on applyNormalizedStatus, so one sequencer covers every ingress here.
+  private readonly observations = new AgentStatusObservationSequencer(
+    createAgentStatusAuthorityId('main-agent-hooks')
+  )
 
   setListener(listener: ((payload: EnrichedAgentHookEventPayload) => void) | null): void {
     this.onAgentStatus = listener
@@ -1134,9 +1155,34 @@ export class AgentHookServer {
     }
   }
 
+  /** Stamp who observed this event, in what order, on main's clock. Nothing reads it yet
+   *  (STA-4293) — it is stamped here because every main-side ingress funnels through
+   *  applyNormalizedStatus, so no origin can silently arrive untagged. */
+  private stampObservation(
+    payload: AgentHookEventPayload,
+    origin: AgentStatusObservationOrigin,
+    observedAt: number
+  ): AgentStatusObservation {
+    return this.observations.observe(payload.paneKey, {
+      origin,
+      observedAt,
+      // Why: reuse the listener's own per-provider classifier; a second list of raw event-name
+      // literals here would strand the providers whose boundary event is named anything else.
+      boundary: payload.source !== undefined && isNewTurnEvent(payload.source, payload.hookEventName),
+      kind: payload.providerSessionOnly
+        ? 'identity-only'
+        : // Why: a replay restates a turn that already happened, and OSC 9999 repaints the
+          // current state rather than announcing a change — neither is a fresh transition.
+          payload.isReplay === true || origin === 'osc'
+          ? 'snapshot'
+          : 'transition'
+    })
+  }
+
   private applyNormalizedStatus(
     payload: AgentHookEventPayload,
-    onAccepted?: () => void
+    onAccepted?: () => void,
+    origin: AgentStatusObservationOrigin = 'hook'
   ): EnrichedAgentHookEventPayload {
     const previous = this.state.lastStatusByPaneKey.get(payload.paneKey) as
       | EnrichedAgentHookEventPayload
@@ -1157,7 +1203,10 @@ export class AgentHookServer {
     if (payload.providerSessionOnly) {
       // Why: identity-only rows survive replay but must not emit prompt telemetry or a fabricated status.
       onAccepted?.()
-      const enriched = this.attachStatusTiming(payload, now)
+      const enriched = {
+        ...this.attachStatusTiming(payload, now),
+        observation: this.stampObservation(payload, origin, now)
+      }
       this.clearAssistantMessageRetry(enriched.paneKey)
       this.runtimeObservedStatusPaneKeys.delete(enriched.paneKey)
       this.state.lastStatusByPaneKey.set(enriched.paneKey, enriched)
@@ -1276,7 +1325,10 @@ export class AgentHookServer {
       this.maybeTrackAgentPromptSent(effectivePayload, previous)
     }
     const cachedPayload = resolveCachedClaudeCompactOwnership(previous, effectivePayload)
-    const enriched = this.attachStatusTiming(cachedPayload, now)
+    const enriched = {
+      ...this.attachStatusTiming(cachedPayload, now),
+      observation: this.stampObservation(cachedPayload, origin, now)
+    }
     // Why: an identity-matched event can still leave the aggregate backed only by another restored child; keep liveness reconciliation eligible.
     if (enriched.restoredUnconfirmed) {
       this.runtimeObservedStatusPaneKeys.delete(enriched.paneKey)
@@ -1649,6 +1701,7 @@ export class AgentHookServer {
       this.runtimeObservedStatusPaneKeys.delete(key)
       this.currentAuthorityObservations.delete(key)
       this.promptSentDedupeByPaneKey.delete(key)
+      this.observations.forget(key)
     }
     if (aliasChanged) {
       this.notifyPaneKeyAliasPersistenceListener()
@@ -1857,14 +1910,18 @@ export class AgentHookServer {
         ? previous.providerSession
         : undefined
     // Why: OSC status is a runtime observation, not a prompt boundary; keep prompt-sent telemetry tied to native hooks.
-    this.applyNormalizedStatus({
-      paneKey,
-      tabId,
-      worktreeId,
-      connectionId,
-      ...(preservedProviderSession ? { providerSession: preservedProviderSession } : {}),
-      payload: event.payload
-    })
+    this.applyNormalizedStatus(
+      {
+        paneKey,
+        tabId,
+        worktreeId,
+        connectionId,
+        ...(preservedProviderSession ? { providerSession: preservedProviderSession } : {}),
+        payload: event.payload
+      },
+      undefined,
+      'osc'
+    )
   }
 
   /** Ingest a payload from the relay JSON-RPC channel (not the local HTTP server); connectionId is stamped here. Main is still the SSH trust boundary, so re-run the canonical normalizer before caching. */
@@ -1957,6 +2014,10 @@ export class AgentHookServer {
     })
     if (statusDisposition === 'suppress') {
       return
+    }
+    if (statusDisposition === 'restart') {
+      // Why: same rebind as the HTTP path — a retired pane taking a new turn is a new session.
+      this.observations.rebind(paneKey)
     }
     const worktreeId =
       envelope.worktreeId !== undefined && envelope.worktreeId.trim().length > 0
@@ -2165,6 +2226,11 @@ export class AgentHookServer {
             statusDisposition === 'restart'
               ? { ...normalized.event, launchToken: undefined }
               : normalized.event
+          if (statusDisposition === 'restart') {
+            // Why: a retired pane accepting a new turn is a different agent session behind the
+            // same key — later observations must not be ordered against the retired one.
+            this.observations.rebind(event.paneKey)
+          }
           this.recordCurrentAuthorityObservation(event)
           const enriched = this.applyNormalizedStatus(event, normalized.onAccepted)
           this.scheduleAssistantMessageRetry(source, aliasedBody, enriched)
@@ -2788,6 +2854,8 @@ export class AgentHookServer {
         promptInteractionKey: _promptInteractionKey,
         // Why: never persisted — hydrate re-stamps it, so a stored copy could only drift.
         restoredUnconfirmed: _restoredUnconfirmed,
+        // Why: same — the sequencer that issued it dies with the process (see PersistedAgentHookEventPayload).
+        observation: _observation,
         launchToken,
         ...persistedPayload
       } = payload as EnrichedAgentHookEventPayload

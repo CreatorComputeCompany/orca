@@ -4119,7 +4119,9 @@ describe('connectPanePty', () => {
       {
         state: 'working',
         prompt: 'Fix the status',
-        agentType: 'command-code'
+        agentType: 'command-code',
+        // Why: Orca launched this agent, so the seed predates any provider signal (STA-4293).
+        observation: expect.objectContaining({ origin: 'launch', kind: 'transition' })
       },
       undefined,
       undefined,
@@ -4161,7 +4163,9 @@ describe('connectPanePty', () => {
       {
         state: 'working',
         prompt: 'Fix the spinner',
-        agentType: 'command-code'
+        agentType: 'command-code',
+        // Why: read off the pane's own output, not a provider hook (STA-4293).
+        observation: expect.objectContaining({ origin: 'process', kind: 'transition' })
       },
       undefined,
       undefined,
@@ -4368,7 +4372,8 @@ describe('connectPanePty', () => {
       {
         state: 'working',
         prompt: 'Fix the green done state',
-        agentType: 'command-code'
+        agentType: 'command-code',
+        observation: expect.objectContaining({ origin: 'process', kind: 'transition' })
       },
       undefined,
       undefined,
@@ -15047,7 +15052,14 @@ describe('connectPanePty', () => {
     expect(mockStoreState.setAgentStatus).toHaveBeenCalledTimes(1)
     expect(mockStoreState.setAgentStatus).toHaveBeenCalledWith(
       makePaneKey('tab-1', LEAF_1),
-      { state: 'working', prompt: 'paired task', agentType: 'claude' },
+      {
+        state: 'working',
+        prompt: 'paired task',
+        agentType: 'claude',
+        // Why: the renderer parsed these OSC 9999 bytes itself for a remote-runtime pane, so it
+        // is the sequencing authority for the row (STA-4293).
+        observation: expect.objectContaining({ origin: 'osc', kind: 'snapshot' })
+      },
       undefined,
       undefined,
       { connectionId: null }
@@ -21088,7 +21100,8 @@ describe('connectPanePty', () => {
       {
         state: 'working',
         prompt: 'fix the remote title',
-        agentType: 'omp'
+        agentType: 'omp',
+        observation: expect.objectContaining({ origin: 'osc', kind: 'snapshot' })
       },
       '\u280b OMP',
       undefined,
@@ -21109,7 +21122,8 @@ describe('connectPanePty', () => {
       {
         state: 'working',
         prompt: 'keep the remote title',
-        agentType: 'omp'
+        agentType: 'omp',
+        observation: expect.objectContaining({ origin: 'osc', kind: 'snapshot' })
       },
       '\u280b OMP',
       undefined,

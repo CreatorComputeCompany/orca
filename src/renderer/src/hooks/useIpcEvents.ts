@@ -3325,6 +3325,11 @@ export function useIpcEvents(): void {
         data.restoredUnconfirmed === true
           ? { ...statusPayloadWithTurnBoundary, restoredUnconfirmed: true }
           : statusPayloadWithTurnBoundary
+      // Why: main sequenced this row as the pane authority; carry its stamp rather than
+      // minting a renderer one, which would claim a second authority for the same observation.
+      const statusPayloadWithObservation = data.observation
+        ? { ...statusPayloadWithProvenance, observation: data.observation }
+        : statusPayloadWithProvenance
       const identity = resolveAgentStatusIdentity({
         existing: existingStatus
           ? {
@@ -3364,7 +3369,7 @@ export function useIpcEvents(): void {
       const statusWorktreeId = data.worktreeId ?? owningWorktreeId
       const update: AgentStatusUpdate = {
         paneKey,
-        payload: statusPayloadWithProvenance,
+        payload: statusPayloadWithObservation,
         terminalTitle,
         timing: {
           updatedAt: data.receivedAt,
