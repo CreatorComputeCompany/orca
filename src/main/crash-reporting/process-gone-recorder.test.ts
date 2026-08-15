@@ -552,6 +552,21 @@ describe('recordProcessGoneCrash whole-process-tree kills', () => {
     expect(record).toHaveBeenCalledOnce()
   })
 
+  it('files when an overdue settle callback runs after a late sibling event', async () => {
+    const record = vi.fn().mockResolvedValue({ id: 'report-1' })
+    const dedupe = new ProcessGoneDedupe()
+    vi.useFakeTimers()
+    let monotonicNow = 1_000
+    vi.spyOn(performance, 'now').mockImplementation(() => monotonicNow)
+
+    recordProcessGoneCrash({ record } as never, rendererKill, dedupe)
+    monotonicNow += 251
+    recordProcessGoneCrash({ record } as never, gpuKill, dedupe)
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(record).toHaveBeenCalledOnce()
+  })
+
   // Wall-clock corrections must not split one event wave across the 2s window.
   it('keeps renderer-first correlation across wall-clock jumps', async () => {
     const record = vi.fn().mockResolvedValue({ id: 'report-1' })

@@ -93,8 +93,8 @@ function recordSuppressedProcessGone(event: ProcessGoneCrashEvent, siblingKills:
   })
 }
 
-function siblingProcessTreeKillCount(event: ProcessGoneCrashEvent): number {
-  return countSiblingProcessTreeKills({ reason: event.reason, exitCode: event.exitCode })
+function siblingProcessTreeKillCount(event: ProcessGoneCrashEvent, at = performance.now()): number {
+  return countSiblingProcessTreeKills({ reason: event.reason, exitCode: event.exitCode, at })
 }
 
 export function recordProcessGoneCrash(
@@ -105,14 +105,16 @@ export function recordProcessGoneCrash(
   if (!isCrashReportReason(event.reason)) {
     return
   }
+  const observedAt = performance.now()
   // Count before observing so an event is never its own sibling: a lone child
   // kill must classify and breadcrumb with zero siblings, not one.
-  const siblingKills = siblingProcessTreeKillCount(event)
+  const siblingKills = siblingProcessTreeKillCount(event, observedAt)
   if (event.reason === 'killed') {
     observeProcessGoneKill({
       source: event.source,
       reason: event.reason,
-      exitCode: event.exitCode
+      exitCode: event.exitCode,
+      at: observedAt
     })
   }
   if (
@@ -152,7 +154,12 @@ export function recordProcessGoneCrash(
       failureCause: `renderer killed (${event.exitCode ?? 'unknown'}); deferred ${PROCESS_TREE_KILL_SETTLE_MS}ms for sibling recount`
     })
     const settleTimer = setTimeout(() => {
-      const settledSiblingKills = siblingProcessTreeKillCount(event)
+      // Anchor the upper bound to the renderer event so an overdue timer cannot
+      // admit a sibling observed after the 250ms settle ceiling.
+      const settledSiblingKills = siblingProcessTreeKillCount(
+        event,
+        observedAt + PROCESS_TREE_KILL_SETTLE_MS
+      )
       if (settledSiblingKills > 0) {
         recordSuppressedProcessGone(event, settledSiblingKills)
         return
