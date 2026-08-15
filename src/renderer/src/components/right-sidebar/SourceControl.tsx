@@ -64,11 +64,8 @@ import {
   hasDismissedHugeRepoWarning,
   markHugeRepoWarningDismissed
 } from '@/lib/source-control-huge-repo-warning-dismissals'
-import {
-  resolveDropdownItems,
-  type DropdownActionKind,
-  type DropdownEntry
-} from './source-control-dropdown-items'
+import { resolveDropdownItems } from './source-control-dropdown-items'
+import type { DropdownActionKind, DropdownEntry } from './source-control-dropdown-item-types'
 import { isCommitMessageFieldDisabled } from './source-control-commit-eligibility'
 import { BulkActionBar } from './BulkActionBar'
 import { useSourceControlSelection, type FlatEntry } from './useSourceControlSelection'
@@ -192,7 +189,8 @@ import {
 } from '@/runtime/runtime-git-client'
 import { getRuntimeRepoBaseRefDefault } from '@/runtime/runtime-repo-client'
 
-import { stripBaseRef, useCreatePullRequestDialogFields } from './useCreatePullRequestDialogFields'
+import { stripBaseRef } from './create-pull-request-base-ref-normalization'
+import { useCreatePullRequestDialogFields } from './useCreatePullRequestDialogFields'
 import { resolveCreateReviewDraftTitle } from './create-review-draft-title'
 import { GitHistoryPanel, type GitHistoryPanelState } from './GitHistoryPanel'
 import { useGitHistoryCommitActions } from './useGitHistoryCommitActions'
