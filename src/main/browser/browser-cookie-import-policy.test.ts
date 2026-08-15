@@ -2,7 +2,9 @@ import { describe, expect, it, vi, type Mock } from 'vitest'
 import { DatabaseSync } from 'node:sqlite'
 import type { Cookie } from 'electron'
 import {
+  hasNonTransplantableCookies,
   identitiesFromClearCookies,
+  removeNonTransplantableCookies,
   removeTransplantableCookies,
   type CookieClearIdentity
 } from './browser-cookie-import-clear'
@@ -230,6 +232,37 @@ describe('isNonTransplantableCookieDomain', () => {
   it('deliberately leaves youtube.com transplantable', () => {
     expect(isNonTransplantableCookieDomain('.youtube.com')).toBe(false)
     expect(isNonTransplantableCookieDomain('accounts.youtube.com')).toBe(false)
+  })
+})
+
+describe('Google cookie recovery clear', () => {
+  it('removes only the google.com family and leaves a GitHub session present', async () => {
+    let cookies = [
+      cookie('.google.com', 'SID'),
+      cookie('accounts.google.com', 'ACCOUNT'),
+      cookie('.github.com', 'user_session'),
+      cookie('.linear.app', 'linear_session')
+    ]
+    const store = {
+      get: vi.fn(async () => cookies),
+      remove: vi.fn(async (_url: string, name: string) => {
+        cookies = cookies.filter((entry) => entry.name !== name)
+      })
+    }
+    const lockOwner = {}
+
+    await expect(hasNonTransplantableCookies(store)).resolves.toBe(true)
+    await removeNonTransplantableCookies(lockOwner, store)
+
+    expect(store.remove.mock.calls).toEqual([
+      ['https://google.com/', 'SID'],
+      ['https://accounts.google.com/', 'ACCOUNT']
+    ])
+    expect(cookies.map(({ domain, name }) => ({ domain, name }))).toEqual([
+      { domain: '.github.com', name: 'user_session' },
+      { domain: '.linear.app', name: 'linear_session' }
+    ])
+    await expect(hasNonTransplantableCookies(store)).resolves.toBe(false)
   })
 })
 

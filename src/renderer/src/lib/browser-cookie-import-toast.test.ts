@@ -1,15 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { clearDefaultSessionCookiesMock, errorToastMock, successToastMock, warningToastMock } =
-  vi.hoisted(() => ({
-    clearDefaultSessionCookiesMock: vi.fn(),
-    errorToastMock: vi.fn(),
-    successToastMock: vi.fn(),
-    warningToastMock: vi.fn()
-  }))
+const {
+  clearBrowserProfileGoogleCookiesMock,
+  errorToastMock,
+  hasBrowserProfileGoogleCookiesMock,
+  successToastMock,
+  warningToastMock
+} = vi.hoisted(() => ({
+  clearBrowserProfileGoogleCookiesMock: vi.fn(),
+  errorToastMock: vi.fn(),
+  hasBrowserProfileGoogleCookiesMock: vi.fn(),
+  successToastMock: vi.fn(),
+  warningToastMock: vi.fn()
+}))
 
 vi.mock('@/store', () => ({
-  useAppStore: { getState: () => ({ clearDefaultSessionCookies: clearDefaultSessionCookiesMock }) }
+  useAppStore: {
+    getState: () => ({
+      clearBrowserProfileGoogleCookies: clearBrowserProfileGoogleCookiesMock,
+      hasBrowserProfileGoogleCookies: hasBrowserProfileGoogleCookiesMock
+    })
+  }
 }))
 
 vi.mock('sonner', () => ({
@@ -40,8 +51,9 @@ const remoteTarget = {
 
 describe('emitBrowserCookieImportToast', () => {
   beforeEach(() => {
-    clearDefaultSessionCookiesMock.mockReset().mockResolvedValue(true)
+    clearBrowserProfileGoogleCookiesMock.mockReset().mockResolvedValue(true)
     errorToastMock.mockReset()
+    hasBrowserProfileGoogleCookiesMock.mockReset().mockResolvedValue(true)
     successToastMock.mockReset()
     warningToastMock.mockReset()
   })
@@ -73,7 +85,7 @@ describe('emitBrowserCookieImportToast', () => {
     expect(warningToastMock).not.toHaveBeenCalled()
   })
 
-  it('shows separate host-specific Google guidance after success', () => {
+  it('shows the recovery action when the target profile contains Google cookies', async () => {
     emitBrowserCookieImportToast(
       { ...summary, importedCookies: 2, skippedCookies: 1, googleCookiesSkipped: 1 },
       'Imported 2 cookies.',
@@ -81,13 +93,16 @@ describe('emitBrowserCookieImportToast', () => {
     )
 
     expect(successToastMock).toHaveBeenCalledWith('Imported 2 cookies.')
-    expect(warningToastMock).toHaveBeenCalledWith(
-      'Google cookies were not imported. Open a browser in Orca on Remote Mac with this profile, then sign into Google.',
-      {
-        duration: 12000,
-        action: { label: 'Clear profile cookies', onClick: expect.any(Function) }
-      }
+    await vi.waitFor(() =>
+      expect(warningToastMock).toHaveBeenCalledWith(
+        'Google cookies from an earlier import cannot be refreshed. Clear them before signing in directly in Orca on Remote Mac.',
+        {
+          duration: 12000,
+          action: { label: 'Clear Google cookies', onClick: expect.any(Function) }
+        }
+      )
     )
+    expect(hasBrowserProfileGoogleCookiesMock).toHaveBeenCalledWith('default', 'runtime:remote-mac')
     expect(successToastMock.mock.invocationCallOrder[0]).toBeLessThan(
       warningToastMock.mock.invocationCallOrder[0]
     )
@@ -104,7 +119,7 @@ describe('emitBrowserCookieImportToast', () => {
     expect(warningToastMock).not.toHaveBeenCalled()
   })
 
-  it('keeps both applicable warnings when restart fallback is unavailable', () => {
+  it('keeps both applicable warnings when restart fallback is unavailable', async () => {
     emitBrowserCookieImportToast(
       {
         ...summary,
@@ -122,67 +137,69 @@ describe('emitBrowserCookieImportToast', () => {
     )
 
     expect(successToastMock).not.toHaveBeenCalled()
+    await vi.waitFor(() => expect(warningToastMock).toHaveBeenCalledTimes(2))
     expect(warningToastMock.mock.calls).toEqual([
       [
         'Imported 1 of 2 cookies. The rest could not be loaded, and the restart fallback was unavailable. Try the import again.'
       ],
       [
-        'Google cookies were not imported. Open a browser in Orca on Remote Mac with this profile, then sign into Google.',
+        'Google cookies from an earlier import cannot be refreshed. Clear them before signing in directly in Orca on Remote Mac.',
         {
           duration: 12000,
-          action: { label: 'Clear profile cookies', onClick: expect.any(Function) }
+          action: { label: 'Clear Google cookies', onClick: expect.any(Function) }
         }
       ]
     ])
   })
 
-  it('clears the default profile on the import execution host', async () => {
+  it('clears Google cookies from the imported profile on its execution host', async () => {
     emitBrowserCookieImportToast(
       { ...summary, googleCookiesSkipped: 1 },
       'Imported 3 cookies.',
       remoteTarget
     )
 
+    await vi.waitFor(() => expect(warningToastMock).toHaveBeenCalledOnce())
     warningToastMock.mock.calls[0]?.[1].action.onClick()
 
     await vi.waitFor(() =>
-      expect(clearDefaultSessionCookiesMock).toHaveBeenCalledWith('runtime:remote-mac')
+      expect(clearBrowserProfileGoogleCookiesMock).toHaveBeenCalledWith(
+        'default',
+        'runtime:remote-mac'
+      )
     )
-    expect(successToastMock).toHaveBeenLastCalledWith('Profile cookies cleared.')
+    expect(successToastMock).toHaveBeenLastCalledWith('Google cookies cleared.')
     expect(errorToastMock).not.toHaveBeenCalled()
   })
 
-  it('offers the clear action only for the default profile', () => {
+  it('does not offer the action when the target profile has no Google cookies', async () => {
+    hasBrowserProfileGoogleCookiesMock.mockResolvedValue(false)
     emitBrowserCookieImportToast(
       { ...summary, googleCookiesSkipped: 1 },
       'Imported 3 cookies.',
       remoteTarget
     )
-    expect(warningToastMock).toHaveBeenLastCalledWith(expect.any(String), {
-      duration: 12000,
-      action: { label: 'Clear profile cookies', onClick: expect.any(Function) }
-    })
-
-    emitBrowserCookieImportToast({ ...summary, googleCookiesSkipped: 1 }, 'Imported 3 cookies.', {
-      ...remoteTarget,
-      profileId: 'isolated-profile'
-    })
-
-    expect(warningToastMock).toHaveBeenLastCalledWith(expect.any(String), { duration: 12000 })
+    await vi.waitFor(() =>
+      expect(warningToastMock).toHaveBeenLastCalledWith(
+        'Google cookies were not imported. Sign in directly in Orca on Remote Mac.',
+        { duration: 12000 }
+      )
+    )
   })
 
   it('reports when profile cookies could not be cleared', async () => {
-    clearDefaultSessionCookiesMock.mockResolvedValue(false)
+    clearBrowserProfileGoogleCookiesMock.mockResolvedValue(false)
     emitBrowserCookieImportToast(
       { ...summary, googleCookiesSkipped: 1 },
       'Imported 3 cookies.',
       remoteTarget
     )
 
+    await vi.waitFor(() => expect(warningToastMock).toHaveBeenCalledOnce())
     warningToastMock.mock.calls[0]?.[1].action.onClick()
 
     await vi.waitFor(() =>
-      expect(errorToastMock).toHaveBeenCalledWith('Failed to clear profile cookies.')
+      expect(errorToastMock).toHaveBeenCalledWith('Failed to clear Google cookies.')
     )
   })
 })

@@ -116,6 +116,8 @@ export type BrowserApi = {
     browserProfile?: string
   }) => Promise<BrowserCookieImportResult>
   sessionClearDefaultCookies: () => Promise<boolean>
+  sessionHasGoogleCookies: (args: { profileId: string }) => Promise<boolean>
+  sessionClearGoogleCookies: (args: { profileId: string }) => Promise<boolean>
   notifyActiveTabChanged: (args: { browserPageId: string }) => Promise<boolean>
 }
 

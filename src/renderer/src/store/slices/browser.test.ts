@@ -29,6 +29,8 @@ const mockApi = {
     sessionDetectBrowsers: vi.fn().mockResolvedValue([]),
     sessionImportFromBrowser: vi.fn().mockResolvedValue({ ok: false, reason: 'canceled' }),
     sessionClearDefaultCookies: vi.fn().mockResolvedValue(false),
+    sessionHasGoogleCookies: vi.fn().mockResolvedValue(false),
+    sessionClearGoogleCookies: vi.fn().mockResolvedValue(false),
     notifyActiveTabChanged: vi.fn().mockResolvedValue(undefined)
   },
   runtimeEnvironments: {

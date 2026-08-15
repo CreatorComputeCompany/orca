@@ -36,8 +36,10 @@ import { toRuntimeWorktreeSelector } from '@/runtime/runtime-worktree-selector'
 import type {
   BrowserDetectProfilesResult,
   BrowserProfileClearDefaultCookiesResult,
+  BrowserProfileClearGoogleCookiesResult,
   BrowserProfileCreateResult,
   BrowserProfileDeleteResult,
+  BrowserProfileHasGoogleCookiesResult,
   BrowserProfileImportFromBrowserResult,
   BrowserProfileListResult
 } from '../../../../shared/runtime-types'
@@ -237,6 +239,14 @@ export type BrowserSlice = {
     browserProfile?: string
   ) => Promise<BrowserCookieImportExecutionResult>
   clearDefaultSessionCookies: (executionHostId?: ExecutionHostId) => Promise<boolean>
+  hasBrowserProfileGoogleCookies: (
+    profileId: string,
+    executionHostId: ExecutionHostId
+  ) => Promise<boolean>
+  clearBrowserProfileGoogleCookies: (
+    profileId: string,
+    executionHostId: ExecutionHostId
+  ) => Promise<boolean>
   browserUrlHistory: BrowserHistoryEntry[]
   addBrowserHistoryEntry: (url: string, title: string) => void
   clearBrowserHistory: () => void
@@ -2333,6 +2343,51 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
         await get().fetchBrowserSessionProfiles()
       }
       return ok
+    } catch {
+      return false
+    }
+  },
+
+  hasBrowserProfileGoogleCookies: async (profileId, executionHostId) => {
+    const host = parseExecutionHostId(executionHostId)
+    try {
+      if (host?.kind === 'runtime') {
+        const result = await callRuntimeRpc<BrowserProfileHasGoogleCookiesResult>(
+          { kind: 'environment', environmentId: host.environmentId },
+          'browser.profileHasGoogleCookies',
+          { profileId },
+          { timeoutMs: 15_000 }
+        )
+        return result.present
+      }
+      return host?.kind === 'local'
+        ? await window.api.browser.sessionHasGoogleCookies({ profileId })
+        : false
+    } catch {
+      return false
+    }
+  },
+
+  clearBrowserProfileGoogleCookies: async (profileId, executionHostId) => {
+    const host = parseExecutionHostId(executionHostId)
+    try {
+      if (host?.kind === 'runtime') {
+        const result = await callRuntimeRpc<BrowserProfileClearGoogleCookiesResult>(
+          { kind: 'environment', environmentId: host.environmentId },
+          'browser.profileClearGoogleCookies',
+          { profileId },
+          { timeoutMs: 15_000 }
+        )
+        return result.cleared
+      }
+      if (host?.kind !== 'local') {
+        return false
+      }
+      const cleared = await window.api.browser.sessionClearGoogleCookies({ profileId })
+      if (cleared) {
+        get().recordFeatureInteraction?.('cookie-import')
+      }
+      return cleared
     } catch {
       return false
     }

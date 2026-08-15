@@ -26,9 +26,11 @@ import type {
   BrowserNetworkLogResult,
   BrowserPdfResult,
   BrowserProfileClearDefaultCookiesResult,
+  BrowserProfileClearGoogleCookiesResult,
   BrowserProfileCreateResult,
   BrowserProfileDeleteResult,
   BrowserProfileImportFromBrowserResult,
+  BrowserProfileHasGoogleCookiesResult,
   BrowserProfileListResult,
   BrowserReloadResult,
   BrowserScreenshotResult,
@@ -1596,6 +1598,22 @@ export class RuntimeBrowserCommands {
 
   async browserProfileClearDefaultCookies(): Promise<BrowserProfileClearDefaultCookiesResult> {
     return { cleared: await browserSessionRegistry.clearDefaultSessionCookies() }
+  }
+
+  async browserProfileHasGoogleCookies(params: {
+    profileId: string
+  }): Promise<BrowserProfileHasGoogleCookiesResult> {
+    return {
+      present: await browserSessionRegistry.hasProfileNonTransplantableCookies(params.profileId)
+    }
+  }
+
+  async browserProfileClearGoogleCookies(params: {
+    profileId: string
+  }): Promise<BrowserProfileClearGoogleCookiesResult> {
+    return {
+      cleared: await browserSessionRegistry.clearProfileNonTransplantableCookies(params.profileId)
+    }
   }
 
   async browserTabClose(params: {

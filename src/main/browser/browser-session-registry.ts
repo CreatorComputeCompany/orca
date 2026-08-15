@@ -24,6 +24,11 @@ import type {
   BrowserSessionProfileScope
 } from '../../shared/browser-workspace-types'
 import { browserManager } from './browser-manager'
+import { openCookieClearStore } from './browser-cookie-clear-store'
+import {
+  hasNonTransplantableCookies,
+  removeNonTransplantableCookies
+} from './browser-cookie-import-clear'
 import { hasSystemMediaAccess, requestSystemMediaAccess } from './browser-media-access'
 import { cleanElectronUserAgent, setupClientHintsOverride } from './browser-session-ua'
 import {
@@ -433,6 +438,43 @@ class BrowserSessionRegistry {
       const sess = session.fromPartition(this.defaultPartition)
       await sess.clearStorageData({ storages: ['cookies'] })
       return true
+    } catch {
+      return false
+    }
+  }
+
+  async hasProfileNonTransplantableCookies(profileId: string): Promise<boolean> {
+    const profile = this.profiles.get(profileId)
+    if (!profile) {
+      return false
+    }
+    try {
+      const targetSession = session.fromPartition(profile.partition)
+      const cookieStore = openCookieClearStore(targetSession)
+      try {
+        return await hasNonTransplantableCookies(cookieStore)
+      } finally {
+        cookieStore.dispose()
+      }
+    } catch {
+      return false
+    }
+  }
+
+  async clearProfileNonTransplantableCookies(profileId: string): Promise<boolean> {
+    const profile = this.profiles.get(profileId)
+    if (!profile) {
+      return false
+    }
+    try {
+      const targetSession = session.fromPartition(profile.partition)
+      const cookieStore = openCookieClearStore(targetSession)
+      try {
+        await removeNonTransplantableCookies(targetSession, cookieStore)
+        return true
+      } finally {
+        cookieStore.dispose()
+      }
     } catch {
       return false
     }

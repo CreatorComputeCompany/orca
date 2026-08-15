@@ -166,6 +166,16 @@ export const BROWSER_CORE_METHODS: RpcMethod[] = [
     handler: async (_params, { runtime }) => runtime.browserProfileClearDefaultCookies()
   }),
   defineMethod({
+    name: 'browser.profileHasGoogleCookies',
+    params: ProfileDelete,
+    handler: async (params, { runtime }) => runtime.browserProfileHasGoogleCookies(params)
+  }),
+  defineMethod({
+    name: 'browser.profileClearGoogleCookies',
+    params: ProfileDelete,
+    handler: async (params, { runtime }) => runtime.browserProfileClearGoogleCookies(params)
+  }),
+  defineMethod({
     name: 'browser.hover',
     params: Element,
     handler: async (params, { runtime }) => runtime.browserHover(params)

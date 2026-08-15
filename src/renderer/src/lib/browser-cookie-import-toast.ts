@@ -32,52 +32,60 @@ function formatCookieImportWarning(warning: CookieImportWarning): string {
   }
 }
 
-function emitGoogleCookieImportWarning(
+async function emitGoogleCookieImportWarning(
   summary: BrowserCookieImportSummary,
   target: CookieImportToastTarget
-): void {
+): Promise<void> {
   if (!summary.googleCookiesSkipped) {
     return
   }
-  const clearAction =
-    target.profileId === 'default'
-      ? {
-          action: {
-            label: translate(
-              'auto.lib.browser.cookie.import.toast.clearProfileCookies',
-              'Clear profile cookies'
-            ),
-            onClick: () => {
-              void useAppStore
-                .getState()
-                .clearDefaultSessionCookies(target.executionHostId)
-                .then((cleared) => {
-                  if (cleared) {
-                    toast.success(
-                      translate(
-                        'auto.lib.browser.cookie.import.toast.profileCookiesCleared',
-                        'Profile cookies cleared.'
-                      )
+  const hasGoogleCookies = await useAppStore
+    .getState()
+    .hasBrowserProfileGoogleCookies(target.profileId, target.executionHostId)
+  const clearAction = hasGoogleCookies
+    ? {
+        action: {
+          label: translate(
+            'auto.lib.browser.cookie.import.toast.clearGoogleCookies',
+            'Clear Google cookies'
+          ),
+          onClick: () => {
+            void useAppStore
+              .getState()
+              .clearBrowserProfileGoogleCookies(target.profileId, target.executionHostId)
+              .then((cleared) => {
+                if (cleared) {
+                  toast.success(
+                    translate(
+                      'auto.lib.browser.cookie.import.toast.googleCookiesCleared',
+                      'Google cookies cleared.'
                     )
-                  } else {
-                    toast.error(
-                      translate(
-                        'auto.lib.browser.cookie.import.toast.profileCookiesClearFailed',
-                        'Failed to clear profile cookies.'
-                      )
+                  )
+                } else {
+                  toast.error(
+                    translate(
+                      'auto.lib.browser.cookie.import.toast.googleCookiesClearFailed',
+                      'Failed to clear Google cookies.'
                     )
-                  }
-                })
-            }
+                  )
+                }
+              })
           }
         }
-      : {}
+      }
+    : {}
   toast.warning(
-    translate(
-      'auto.lib.browser.cookie.import.toast.googleCookiesSkipped',
-      'Google cookies were not imported. Open a browser in Orca on {{value0}} with this profile, then sign into Google.',
-      { value0: target.executionHostLabel }
-    ),
+    hasGoogleCookies
+      ? translate(
+          'auto.lib.browser.cookie.import.toast.googleCookiesRecovery',
+          'Google cookies from an earlier import cannot be refreshed. Clear them before signing in directly in Orca on {{value0}}.',
+          { value0: target.executionHostLabel }
+        )
+      : translate(
+          'auto.lib.browser.cookie.import.toast.googleCookiesSkipped',
+          'Google cookies were not imported. Sign in directly in Orca on {{value0}}.',
+          { value0: target.executionHostLabel }
+        ),
     { duration: 12000, ...clearAction }
   )
 }
@@ -95,5 +103,5 @@ export function emitBrowserCookieImportToast(
   } else {
     toast.success(successMessage)
   }
-  emitGoogleCookieImportWarning(summary, target)
+  void emitGoogleCookieImportWarning(summary, target)
 }
