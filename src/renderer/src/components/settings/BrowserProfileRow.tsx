@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Import, Loader2, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { emitBrowserCookieImportToast } from '@/lib/browser-cookie-import-toast'
@@ -53,6 +54,7 @@ export function BrowserProfileRow({
   isDefault
 }: BrowserProfileRowProps): React.JSX.Element {
   const isImporting = importState?.profileId === profile.id && importState.status === 'importing'
+  const [isClearingCookies, setIsClearingCookies] = useState(false)
   const fetchDetectedBrowsers = useAppStore((s) => s.fetchDetectedBrowsers)
 
   const handleImportFromBrowser = async (
@@ -129,6 +131,25 @@ export function BrowserProfileRow({
     'auto.lib.browser.cookie.import.toast.clearProfileCookies',
     'Clear profile cookies'
   )
+  const handleClearDefaultCookies = async (): Promise<void> => {
+    setIsClearingCookies(true)
+    try {
+      const ok = await useAppStore.getState().clearDefaultSessionCookies()
+      toast[ok ? 'success' : 'error'](
+        ok
+          ? translate(
+              'auto.components.settings.BrowserProfileRow.2d4bea7f35',
+              'Default cookies cleared.'
+            )
+          : translate(
+              'auto.lib.browser.cookie.import.toast.profileCookiesClearFailed',
+              'Failed to clear profile cookies.'
+            )
+      )
+    } finally {
+      setIsClearingCookies(false)
+    }
+  }
 
   // Why: uses div[role=button] instead of <button> to avoid nested <button>
   // elements — the dropdown trigger and trash actions inside also render as
@@ -139,6 +160,9 @@ export function BrowserProfileRow({
       tabIndex={0}
       onClick={onSelect}
       onKeyDown={(e) => {
+        if (e.target !== e.currentTarget) {
+          return
+        }
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault()
           onSelect()
@@ -243,19 +267,14 @@ export function BrowserProfileRow({
                 size="icon"
                 className="size-7 text-muted-foreground hover:text-destructive"
                 aria-label={clearProfileCookiesLabel}
-                onClick={async () => {
-                  const ok = await useAppStore.getState().clearDefaultSessionCookies()
-                  if (ok) {
-                    toast.success(
-                      translate(
-                        'auto.components.settings.BrowserProfileRow.2d4bea7f35',
-                        'Default cookies cleared.'
-                      )
-                    )
-                  }
-                }}
+                disabled={isClearingCookies}
+                onClick={() => void handleClearDefaultCookies()}
               >
-                <Trash2 className="size-3" />
+                {isClearingCookies ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <Trash2 className="size-3" />
+                )}
               </Button>
             </TooltipTrigger>
             <TooltipContent side="top" sideOffset={4}>

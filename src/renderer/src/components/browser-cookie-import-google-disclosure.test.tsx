@@ -11,6 +11,11 @@ import en from '@/i18n/locales/en.json'
 
 const DISCLOSURE_TITLE = "Google logins aren't imported"
 const DISCLOSURE_DESCRIPTION = 'Sign in to Google directly in Orca.'
+const { clearDefaultSessionCookiesMock, errorToastMock, successToastMock } = vi.hoisted(() => ({
+  clearDefaultSessionCookiesMock: vi.fn(),
+  errorToastMock: vi.fn(),
+  successToastMock: vi.fn()
+}))
 
 vi.mock('@/components/ui/dropdown-menu', () => dropdownMenuStubs())
 vi.mock('../ui/dropdown-menu', () => dropdownMenuStubs())
@@ -19,7 +24,7 @@ vi.mock('@/components/ui/tooltip', () => tooltipStubs())
 vi.mock('./ui/tooltip', () => tooltipStubs())
 vi.mock('@/store', () => ({ useAppStore: appStoreStub() }))
 vi.mock('../../store', () => ({ useAppStore: appStoreStub() }))
-vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('sonner', () => ({ toast: { success: successToastMock, error: errorToastMock } }))
 
 import { BrowserCookieImportDisclosure } from './BrowserCookieImportDisclosure'
 import { BrowserImportHintButton } from './browser-pane/BrowserImportHintButton'
@@ -41,6 +46,9 @@ describe('cookie-import Google disclosure footer', () => {
   let root: Root
 
   beforeEach(() => {
+    clearDefaultSessionCookiesMock.mockReset().mockResolvedValue(true)
+    errorToastMock.mockReset()
+    successToastMock.mockReset()
     container = document.createElement('div')
     document.body.append(container)
     root = createRoot(container)
@@ -148,6 +156,65 @@ describe('cookie-import Google disclosure footer', () => {
     expect(clearButton?.disabled).toBe(false)
     expect(clearButton?.getAttribute('aria-label')).toBe('Clear profile cookies')
   })
+
+  it('does not select the profile when the clear action handles a keyboard event', () => {
+    const onSelect = vi.fn()
+    act(() =>
+      root.render(
+        <BrowserProfileRow
+          profile={{ id: 'default', name: 'Default', partition: 'persist:default' } as never}
+          detectedBrowsers={DETECTED_BROWSERS}
+          importState={null}
+          isActive
+          isDefault
+          onSelect={onSelect}
+        />
+      )
+    )
+
+    const clearButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Clear profile cookies"]'
+    )
+    act(() => {
+      clearButton?.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true })
+      )
+    })
+
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it('disables the clear action while pending and reports failure', async () => {
+    let resolveClear: (cleared: boolean) => void = () => undefined
+    clearDefaultSessionCookiesMock.mockReturnValue(
+      new Promise<boolean>((resolve) => {
+        resolveClear = resolve
+      })
+    )
+    act(() =>
+      root.render(
+        <BrowserProfileRow
+          profile={{ id: 'default', name: 'Default', partition: 'persist:default' } as never}
+          detectedBrowsers={DETECTED_BROWSERS}
+          importState={null}
+          isActive
+          isDefault
+          onSelect={vi.fn()}
+        />
+      )
+    )
+
+    const clearButton = container.querySelector<HTMLButtonElement>(
+      'button[aria-label="Clear profile cookies"]'
+    )
+    act(() => clearButton?.click())
+    setTimeout(() => resolveClear(false), 0)
+    expect(clearButton?.disabled).toBe(true)
+
+    await vi.waitFor(() => expect(clearButton?.disabled).toBe(false))
+    expect(clearButton?.disabled).toBe(false)
+    expect(errorToastMock).toHaveBeenCalledWith('Failed to clear profile cookies.')
+  })
 })
 
 function catalogEntry(key: string): unknown {
@@ -198,6 +265,7 @@ function appStoreStub(): unknown {
   const state = {
     browserImportHintHidden: false,
     browserSessionImportState: null,
+    clearDefaultSessionCookies: clearDefaultSessionCookiesMock,
     detectedBrowsers: [
       {
         family: 'chrome',
