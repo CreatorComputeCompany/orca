@@ -157,11 +157,13 @@ import {
   getRepoExecutionHostId,
   normalizeExecutionHostId,
   parseExecutionHostId,
+  toRuntimeExecutionHostId,
   type ExecutionHostId
 } from '../../../shared/execution-host'
 import { getHostDisplayLabelOverrides } from '../../../shared/host-setting-overrides'
 import { queueWorkspaceActivationTerminalFocus } from '@/lib/workspace-activation-terminal-focus'
 import { getSettingsForRepoRuntimeOwner } from '@/lib/repo-runtime-owner'
+import { isWebClientLocation } from '@/lib/web-client-location'
 import { getSuggestedCreatureName } from '@/components/sidebar/worktree-name-suggestions'
 import { useRetiredWorktreeNames } from '@/hooks/useRetiredWorktreeNames'
 import type { SmartWorkspaceNameSelection } from '@/components/new-workspace/SmartWorkspaceNameField'
@@ -946,6 +948,10 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     repoIsGit: selectedRepoIsGit,
     repoConnectionId: selectedRecipeRepoConnectionId,
     repoExecutionHostId: selectedRepo ? getRepoExecutionHostId(selectedRepo) : null,
+    controllerExecutionHostId:
+      isWebClientLocation() && runtimeEnvironments[0]
+        ? toRuntimeExecutionHostId(runtimeEnvironments[0].id)
+        : null,
     projectGroupTarget: isProjectGroupTarget,
     initialRecipeId: initialEphemeralVmRecipeId
   })

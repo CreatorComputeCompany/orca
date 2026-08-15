@@ -8,6 +8,7 @@ type EphemeralVmRecipeOptionsArgs = {
   repoIsGit: boolean
   repoConnectionId: string | null
   repoExecutionHostId: ExecutionHostId | null
+  controllerExecutionHostId: ExecutionHostId | null
   projectGroupTarget: boolean
   initialRecipeId?: string
 }
@@ -27,7 +28,9 @@ export function useEphemeralVmRecipeOptions(args: EphemeralVmRecipeOptionsArgs):
     Boolean(args.repoId) &&
     args.repoIsGit &&
     !args.repoConnectionId &&
-    args.repoExecutionHostId === LOCAL_EXECUTION_HOST_ID &&
+    (args.repoExecutionHostId === LOCAL_EXECUTION_HOST_ID ||
+      (args.controllerExecutionHostId !== null &&
+        args.repoExecutionHostId === args.controllerExecutionHostId)) &&
     !args.projectGroupTarget
 
   const load = useCallback(
