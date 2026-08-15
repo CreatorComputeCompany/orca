@@ -8,12 +8,16 @@ import { getRelayShellLaunchConfig } from './pty-shell-launch'
 const hasBash = process.platform !== 'win32' && spawnSync('bash', ['--version']).status === 0
 const itWithBash = hasBash ? it : it.skip
 
-function runInteractiveBashRcfile(rcfile: string, homeDir: string): string {
+function runInteractiveBashRcfile(
+  rcfile: string,
+  homeDir: string,
+  input = 'true\nfalse\nexit 0\n'
+): string {
   const result = spawnSync(
     'bash',
     ['-lc', 'bash --noprofile --rcfile "$1" -i 2>&1', 'bash', rcfile],
     {
-      input: 'true\nfalse\nexit 0\n',
+      input,
       encoding: 'utf8',
       env: {
         ...process.env,
@@ -34,14 +38,24 @@ function expectBashOsc133Lifecycle(output: string): void {
   const oscC = '\x1b]133;C\x07'
   const oscD = '\x1b]133;D;'
   const firstPromptMarker = output.indexOf(oscA)
+  const lifecyclePattern = new RegExp(
+    `${String.fromCharCode(27)}]133;(?:A|C|D;[0-9]+)${String.fromCharCode(7)}`,
+    'g'
+  )
 
   expect(firstPromptMarker).toBeGreaterThanOrEqual(0)
   expect(output.slice(0, firstPromptMarker)).not.toContain(oscC)
   expect(output.slice(0, firstPromptMarker)).not.toContain(oscD)
-  expect(output).toContain(`${oscD}0\x07${oscA}`)
-  expect(output).toContain(`${oscD}1\x07${oscA}`)
-  expect(output.split(oscC)).toHaveLength(4)
-  expect(output.split(oscD)).toHaveLength(3)
+  expect(output.match(lifecyclePattern)).toEqual([
+    oscA,
+    oscC,
+    `${oscD}0\x07`,
+    oscA,
+    oscC,
+    `${oscD}1\x07`,
+    oscA,
+    oscC
+  ])
 }
 
 function expectZdotdirSourceContext(content: string, fileName: '.zprofile' | '.zshrc' | '.zlogin') {
@@ -234,7 +248,6 @@ describe('getRelayShellLaunchConfig', () => {
     writeFileSync(
       join(homeDir, '.bash_profile'),
       [
-        'set -T',
         'PROMPT_COMMAND=\'AFTER_FIRST_PROMPT=1; printf "PROMPT_HOOK\\n"\'',
         'trap \'if [[ -n "${AFTER_FIRST_PROMPT:-}" ]]; then\n  printf "USER_DEBUG_AFTER:<%s>\\n" "$BASH_COMMAND"\nfi\' DEBUG'
       ].join('\n')
@@ -244,8 +257,27 @@ describe('getRelayShellLaunchConfig', () => {
 
     expect(output).toContain('PROMPT_HOOK')
     expect(output).toContain('USER_DEBUG_AFTER')
+    expect(output).toContain('USER_DEBUG_AFTER:<printf "PROMPT_HOOK\\n">')
     expect(output).not.toContain('USER_DEBUG_AFTER:<(( __orca_exit_code == 0 ))>')
     expect(output).not.toContain('USER_DEBUG_AFTER:<__orca_restore_prompt_status')
+    expectBashOsc133Lifecycle(output)
+  })
+
+  itWithBash('forwards a DEBUG trap replaced with relay functrace', () => {
+    writeFileSync(
+      join(homeDir, '.bash_profile'),
+      [
+        'set -T',
+        'trap \'printf "OLD_DEBUG:<%s>\\n" "$BASH_COMMAND"\' DEBUG',
+        'PROMPT_COMMAND=\'printf "PROMPT_HOOK\\n"\''
+      ].join('\n')
+    )
+    const config = getRelayShellLaunchConfig('/bin/bash', { HOME: homeDir })
+    const input = 'trap \'printf "NEW_DEBUG:<%s>\\n" "$BASH_COMMAND"\' DEBUG\nfalse\nexit 0\n'
+    const output = runInteractiveBashRcfile(config.args[1] as string, homeDir, input)
+
+    expect(output.split('OLD_DEBUG:<printf "PROMPT_HOOK\\n">')).toHaveLength(2)
+    expect(output.split('NEW_DEBUG:<printf "PROMPT_HOOK\\n">')).toHaveLength(3)
     expectBashOsc133Lifecycle(output)
   })
 

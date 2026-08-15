@@ -228,6 +228,138 @@ PROMPT_COMMAND='printf "PROMPT_REMATCH:<%s>\\n" "\${BASH_REMATCH[1]-unset}"'
     expectLifecycle(output)
   })
 
+  itWithBash('preserves DEBUG visibility for inherited prompt commands without functrace', () => {
+    const profile = [
+      'trap \'printf "PROMPT_DEBUG:<%s>\\n" "$BASH_COMMAND"\' DEBUG',
+      'PROMPT_COMMAND=\'printf "PROMPT_HOOK\\n"\''
+    ].join('\n')
+    const output = runInteractiveBash(profile, tempHome)
+
+    expect(output.split('PROMPT_DEBUG:<printf "PROMPT_HOOK\\n">')).toHaveLength(4)
+    expect(output).not.toContain('PROMPT_DEBUG:<(( __orca_exit_code == 0 ))>')
+    expect(output).not.toContain('PROMPT_DEBUG:<__orca_restore_prompt_status')
+    expect(output).not.toContain('PROMPT_DEBUG:<eval "$__orca_prompt_part">')
+    expectLifecycle(output)
+  })
+
+  itWithBash('does not emit command lifecycle for an empty prompt', () => {
+    const profile = [
+      'trap \'printf "PROMPT_DEBUG:<%s>\\n" "$BASH_COMMAND"\' DEBUG',
+      'PROMPT_COMMAND=\'printf "PROMPT_HOOK\\n"\''
+    ].join('\n')
+    const output = runInteractiveBash(profile, tempHome, '\ntrue\nfalse\nexit 0\n')
+    const lifecyclePattern = new RegExp(
+      `${String.fromCharCode(27)}]133;(?:A|C|D;[0-9]+)${String.fromCharCode(7)}`,
+      'g'
+    )
+
+    expect(output.match(lifecyclePattern)).toEqual([
+      '\x1b]133;A\x07',
+      '\x1b]133;A\x07',
+      '\x1b]133;C\x07',
+      '\x1b]133;D;0\x07',
+      '\x1b]133;A\x07',
+      '\x1b]133;C\x07',
+      '\x1b]133;D;1\x07',
+      '\x1b]133;A\x07',
+      '\x1b]133;C\x07'
+    ])
+    expect(output).not.toContain('PROMPT_DEBUG:<__orca_prompt_status=')
+    expect(output).not.toContain('PROMPT_DEBUG:<__orca_prompt_had_functrace="">')
+    expect(output).not.toContain('PROMPT_DEBUG:<__orca_outer_debug_trap_spec=')
+  })
+
+  itWithBash('forwards a DEBUG trap replaced after startup', () => {
+    const profile = [
+      'trap \'printf "OLD_DEBUG:<%s>\\n" "$BASH_COMMAND"\' DEBUG',
+      'PROMPT_COMMAND=\'printf "PROMPT_HOOK\\n"\''
+    ].join('\n')
+    const input = 'trap \'printf "NEW_DEBUG:<%s>\\n" "$BASH_COMMAND"\' DEBUG\ntrue\nexit 0\n'
+    const output = runInteractiveBash(profile, tempHome, input)
+
+    expect(output.split('OLD_DEBUG:<printf "PROMPT_HOOK\\n">')).toHaveLength(2)
+    expect(output.split('NEW_DEBUG:<printf "PROMPT_HOOK\\n">')).toHaveLength(3)
+    expectLifecycle(output, 0)
+  })
+
+  itWithBash('replaces the forwarded DEBUG trap with functrace enabled', () => {
+    const profile = [
+      'set -T',
+      'trap \'printf "OLD_FT:<%s>\\n" "$BASH_COMMAND"\' DEBUG',
+      'PROMPT_COMMAND=\'printf "HOOK_FT\\n"\''
+    ].join('\n')
+    const input = 'trap \'printf "NEW_FT:<%s>\\n" "$BASH_COMMAND"\' DEBUG\ntrue\nexit 0\n'
+    const output = runInteractiveBash(profile, tempHome, input)
+
+    expect(output.split('OLD_FT:<printf "HOOK_FT\\n">')).toHaveLength(2)
+    expect(output.split('NEW_FT:<printf "HOOK_FT\\n">')).toHaveLength(3)
+    expect(output).not.toContain('OLD_FT:<true>')
+    expect(output).toContain('NEW_FT:<true>')
+    expectLifecycle(output, 0)
+  })
+
+  itWithBash('does not resurrect a removed DEBUG trap with functrace enabled', () => {
+    const profile = [
+      'set -T',
+      'trap \'printf "OLD_FT:<%s>\\n" "$BASH_COMMAND"\' DEBUG',
+      'PROMPT_COMMAND=\'printf "HOOK_FT\\n"\''
+    ].join('\n')
+    const output = runInteractiveBash(profile, tempHome, 'trap - DEBUG\ntrue\nexit 0\n')
+
+    expect(output.split('OLD_FT:<printf "HOOK_FT\\n">')).toHaveLength(2)
+    expect(output).not.toContain('OLD_FT:<true>')
+    expectLifecycle(output, 0)
+  })
+
+  itWithBash('does not treat a DEBUG trap query as a mutation', () => {
+    const profile = [
+      'trap \'trap -p DEBUG >/dev/null; printf "QUERY:<%s>\\n" "$BASH_COMMAND"\' DEBUG',
+      'PROMPT_COMMAND=\'printf "HOOK_QUERY\\n"\''
+    ].join('\n')
+    const output = runInteractiveBash(profile, tempHome)
+
+    expect(output).toContain('QUERY:<true>')
+    expect(output).toContain('QUERY:<false>')
+    expectLifecycle(output)
+  })
+
+  itWithBash('keeps lifecycle when RANDOM is unset under nounset', () => {
+    const profile = [
+      'unset RANDOM',
+      'set -u',
+      'trap \'printf "NOUNSET_DEBUG:<%s>\\n" "$BASH_COMMAND"\' DEBUG',
+      'PROMPT_COMMAND=\'printf "HOOK_NOUNSET\\n"\''
+    ].join('\n')
+    const output = runInteractiveBash(profile, tempHome)
+
+    expect(output).not.toContain('unbound variable')
+    expect(output).toContain('NOUNSET_DEBUG:<true>')
+    expectLifecycle(output)
+  })
+
+  itWithBash('does not recurse when a user trap installs Orca preexec', () => {
+    const profile = [
+      `trap 'trap '\\''__orca_osc133_preexec'\\'' DEBUG 2>/dev/null; printf "PRIVATE_TRAP\\n"' DEBUG`,
+      'PROMPT_COMMAND=\'printf "HOOK_PRIVATE\\n"\''
+    ].join('\n')
+    const output = runInteractiveBash(profile, tempHome)
+
+    expect(output).not.toContain('Segmentation fault')
+    expect(output).toContain('HOOK_PRIVATE')
+    expectLifecycle(output)
+  })
+
+  itWithBash('does not introduce RETURN traps for inherited prompt commands', () => {
+    const profile = [
+      'PROMPT_COMMAND=\'AFTER_FIRST_PROMPT=1; printf "PROMPT_HOOK\\n"\'',
+      'trap \'if [[ -n "${AFTER_FIRST_PROMPT:-}" ]]; then printf "PROMPT_RETURN:<%s>\\n" "${FUNCNAME[0]-}"; fi\' RETURN'
+    ].join('\n')
+    const output = runInteractiveBash(profile, tempHome)
+
+    expect(output).not.toContain('PROMPT_RETURN:<__orca_run_prompt_command_array>')
+    expectLifecycle(output)
+  })
+
   itWithBash('hides legacy dispatcher commands from a chained DEBUG trap', () => {
     const profile = [
       '__bp_preexec() { [[ -n "${__bp_armed:-}" ]] || return; __bp_armed=""; printf \'PROMPT_PREEXEC:<%s>\\n\' "$BASH_COMMAND"; }',
@@ -250,6 +382,27 @@ PROMPT_COMMAND='printf "PROMPT_REMATCH:<%s>\\n" "\${BASH_REMATCH[1]-unset}"'
     const output = runInteractiveBash('', tempHome, 'echo a:__bp_x\nfalse\nexit 0\n')
 
     expect(output).toContain('a:__bp_x')
+    expectLifecycle(output)
+  })
+
+  itWithBash.each([
+    ['status capture', '__orca_prompt_status=$?'],
+    ['trap capture', '__orca_outer_debug_trap_spec="$(trap -p DEBUG)"'],
+    ['trap re-arm', 'trap "__orca_osc133_preexec" DEBUG']
+  ])('does not suppress lifecycle for an exact foreground %s', (_name, command) => {
+    const output = runInteractiveBash('', tempHome, `${command}\nfalse\nexit 0\n`)
+
+    expectLifecycle(output)
+  })
+
+  itWithBash('emits lifecycle for a user command named like a bash-preexec helper', () => {
+    const output = runInteractiveBash(
+      '__bp_user_command() { printf "BP_USER_COMMAND\\n"; }',
+      tempHome,
+      '__bp_user_command\nfalse\nexit 0\n'
+    )
+
+    expect(output).toContain('BP_USER_COMMAND')
     expectLifecycle(output)
   })
 })

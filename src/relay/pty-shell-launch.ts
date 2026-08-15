@@ -157,6 +157,7 @@ fi
 ${getPosixOmpShellWrapper()}
 # Why: SSH bash sessions need the same command lifecycle markers as local
 # bash so agent rows stop showing "working" when the foreground command exits.
+__orca_initializing_wrapper=1
 __orca_osc133_precmd() {
   local exit_code=$?
   __orca_in_prompt_command=1
@@ -168,23 +169,34 @@ __orca_osc133_precmd() {
   return "$exit_code"
 }
 __orca_osc133_prompt_done() {
-  unset __orca_in_prompt_command
-}
-__orca_run_user_debug_trap() {
-  if [[ -n "\${__orca_user_debug_trap:-}" ]]; then
-    eval "$__orca_user_debug_trap" || true
-  fi
+  unset __orca_in_prompt_command; __orca_adopt_outer_debug_trap
+  trap '__orca_osc133_preexec' DEBUG
 }
 __orca_osc133_preexec() {
-  if [[ -n "\${__orca_in_prompt_dispatch:-}" ]]; then
-    [[ -n "\${__orca_dispatching_user_prompt_command:-}" ]] || return 0
-    if [[ "\${FUNCNAME[1]:-}" == "__orca_run_prompt_command_array" ]]; then
-      case "$BASH_COMMAND" in
-        '(( __orca_exit_code == 0 ))'|'__orca_restore_prompt_status "$__orca_exit_code"'|'eval "$__orca_prompt_part"'|'eval "$__orca_final_prompt_command"'|__orca_dispatching_user_prompt_command=*|__orca_osc133_precmd|__orca_osc133_prompt_done|__orca_prompt_mark) return 0 ;;
-      esac
-    fi
-  elif [[ "\${FUNCNAME[1]:-}" == "__orca_run_prompt_command_array" || "$BASH_COMMAND" == "__orca_run_prompt_command_array" ]]; then
+  if [[ -n "\${__orca_prompt_status_capture_command:-}" && "$BASH_COMMAND" == "$__orca_prompt_status_capture_command" ]]; then
+    unset __orca_initial_prompt
+    __orca_in_legacy_prompt_wrapper=1
     return 0
+  fi
+  if [[ -n "\${__orca_initializing_wrapper:-}\${__orca_in_debug_capture:-}\${__orca_initial_prompt:-}\${__orca_in_prompt_dispatch:-}\${__orca_in_legacy_prompt_wrapper:-}\${__orca_in_prompt_command:-}" ]]; then
+    [[ -z "\${__orca_initializing_wrapper:-}\${__orca_in_debug_capture:-}" ]] || return 0
+    if [[ -n "\${__orca_initial_prompt:-}" && "$BASH_COMMAND" == "__orca_osc133_precmd" ]]; then
+      unset __orca_initial_prompt; return 0
+    fi
+    if [[ -n "\${__orca_in_prompt_dispatch:-}" ]]; then
+      [[ -n "\${__orca_dispatching_user_prompt_command:-}" ]] || return 0
+      if [[ "\${FUNCNAME[1]:-}" == "__orca_run_prompt_command_array" ]]; then
+        case "$BASH_COMMAND" in
+          '(( __orca_exit_code == 0 ))'|'__orca_restore_prompt_status "$__orca_exit_code"'|'eval "$__orca_prompt_part"'|'eval "$__orca_final_prompt_command"'|__orca_dispatching_user_prompt_command=*|__orca_osc133_precmd|__orca_osc133_prompt_done|__orca_prompt_mark) return 0 ;;
+        esac
+      fi
+    elif [[ "\${FUNCNAME[1]:-}" == "__orca_run_prompt_command_array" || "$BASH_COMMAND" == "__orca_run_prompt_command_array" ]]; then
+      return 0
+    fi
+    [[ -z "\${__orca_in_legacy_prompt_wrapper:-}" || -n "\${__orca_dispatching_user_prompt_command:-}" ]] || return 0
+    if [[ -n "\${__orca_in_prompt_command:-}" && "$BASH_COMMAND" == "__orca_in_debug_capture=1" ]]; then
+      return 0
+    fi
   fi
   case "\${FUNCNAME[1]:-}:$BASH_COMMAND" in
     __orca_osc133_*:*|__orca_prompt_mark:*|__orca_restore_prompt_status:*|*:__orca_osc133_precmd|*:__orca_osc133_prompt_done|*:__orca_prompt_mark) return 0 ;;
@@ -205,13 +217,14 @@ if [[ "\${ORCA_SHELL_READY_MARKER:-0}" == "1" ]]; then
   }
   __orca_append_prompt_command "__orca_prompt_mark"
 fi
+__orca_append_prompt_command '__orca_in_debug_capture=1; __orca_prompt_had_functrace=""; if [[ -o functrace ]]; then __orca_prompt_had_functrace=1; set +T; fi; __orca_outer_debug_trap_spec="$(trap -p DEBUG)"; [[ -z "$__orca_prompt_had_functrace" ]] || set -T; unset __orca_prompt_had_functrace __orca_in_debug_capture'
 __orca_append_prompt_command "__orca_osc133_prompt_done"
 __orca_had_functrace=""
 [[ -o functrace ]] && __orca_had_functrace=1
 set +T
 __orca_debug_trap_spec="$(trap -p DEBUG)"
 [[ -z "$__orca_had_functrace" ]] || set -T
-if [[ -n "$__orca_debug_trap_spec" ]]; then
+if [[ -n "$__orca_debug_trap_spec" && "$__orca_debug_trap_spec" != "trap -- '__orca_osc133_preexec' DEBUG" ]]; then
   __orca_debug_trap_command="\${__orca_debug_trap_spec#trap -- }"
   __orca_debug_trap_command="\${__orca_debug_trap_command% DEBUG}"
   eval "__orca_user_debug_trap=$__orca_debug_trap_command"
@@ -221,7 +234,9 @@ unset -f __orca_normalize_prompt_command_part __orca_normalize_prompt_command __
 unset __orca_prompt_command_normalized
 # Why: arm DEBUG after wrapper setup so the relay rcfile itself does not emit
 # fake command-start/end markers before the first prompt.
+__orca_initial_prompt=1
 trap '__orca_osc133_preexec' DEBUG
+unset __orca_initializing_wrapper
 `
 
   const files = [
