@@ -152,12 +152,37 @@ describe('emitBrowserCookieImportToast', () => {
     expect(errorToastMock).not.toHaveBeenCalled()
   })
 
-  it('does not offer the default-profile clear action for an isolated profile', () => {
+  it('offers the clear action only for the default profile', () => {
+    emitBrowserCookieImportToast(
+      { ...summary, googleCookiesSkipped: 1 },
+      'Imported 3 cookies.',
+      remoteTarget
+    )
+    expect(warningToastMock).toHaveBeenLastCalledWith(expect.any(String), {
+      duration: 12000,
+      action: { label: 'Clear profile cookies', onClick: expect.any(Function) }
+    })
+
     emitBrowserCookieImportToast({ ...summary, googleCookiesSkipped: 1 }, 'Imported 3 cookies.', {
       ...remoteTarget,
       profileId: 'isolated-profile'
     })
 
     expect(warningToastMock).toHaveBeenLastCalledWith(expect.any(String), { duration: 12000 })
+  })
+
+  it('reports when profile cookies could not be cleared', async () => {
+    clearDefaultSessionCookiesMock.mockResolvedValue(false)
+    emitBrowserCookieImportToast(
+      { ...summary, googleCookiesSkipped: 1 },
+      'Imported 3 cookies.',
+      remoteTarget
+    )
+
+    warningToastMock.mock.calls[0]?.[1].action.onClick()
+
+    await vi.waitFor(() =>
+      expect(errorToastMock).toHaveBeenCalledWith('Failed to clear profile cookies.')
+    )
   })
 })

@@ -6,6 +6,7 @@ import type {
   BrowserSessionProfile
 } from '../../../../shared/browser-workspace-types'
 import { Button } from '../ui/button'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -124,6 +125,10 @@ export function BrowserProfileRow({
     profile.userAgentMode === 'native'
       ? translate('auto.components.settings.BrowserProfileRow.b5c0479e21', 'Unmodified user agent')
       : null
+  const clearProfileCookiesLabel = translate(
+    'auto.lib.browser.cookie.import.toast.clearProfileCookies',
+    'Clear profile cookies'
+  )
 
   // Why: uses div[role=button] instead of <button> to avoid nested <button>
   // elements — the dropdown trigger and trash actions inside also render as
@@ -231,24 +236,32 @@ export function BrowserProfileRow({
           </DropdownMenuContent>
         </DropdownMenu>
         {isDefault ? (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="size-7 text-muted-foreground hover:text-destructive"
-            onClick={async () => {
-              const ok = await useAppStore.getState().clearDefaultSessionCookies()
-              if (ok) {
-                toast.success(
-                  translate(
-                    'auto.components.settings.BrowserProfileRow.2d4bea7f35',
-                    'Default cookies cleared.'
-                  )
-                )
-              }
-            }}
-          >
-            <Trash2 className="size-3" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="size-7 text-muted-foreground hover:text-destructive"
+                aria-label={clearProfileCookiesLabel}
+                onClick={async () => {
+                  const ok = await useAppStore.getState().clearDefaultSessionCookies()
+                  if (ok) {
+                    toast.success(
+                      translate(
+                        'auto.components.settings.BrowserProfileRow.2d4bea7f35',
+                        'Default cookies cleared.'
+                      )
+                    )
+                  }
+                }}
+              >
+                <Trash2 className="size-3" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="top" sideOffset={4}>
+              {clearProfileCookiesLabel}
+            </TooltipContent>
+          </Tooltip>
         ) : (
           <Button
             variant="ghost"

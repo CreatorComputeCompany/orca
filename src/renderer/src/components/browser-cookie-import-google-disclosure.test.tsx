@@ -15,6 +15,8 @@ const DISCLOSURE_DESCRIPTION = 'Sign in to Google directly in Orca.'
 vi.mock('@/components/ui/dropdown-menu', () => dropdownMenuStubs())
 vi.mock('../ui/dropdown-menu', () => dropdownMenuStubs())
 vi.mock('@/components/ui/popover', () => popoverStubs())
+vi.mock('@/components/ui/tooltip', () => tooltipStubs())
+vi.mock('./ui/tooltip', () => tooltipStubs())
 vi.mock('@/store', () => ({ useAppStore: appStoreStub() }))
 vi.mock('../../store', () => ({ useAppStore: appStoreStub() }))
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
@@ -144,6 +146,7 @@ describe('cookie-import Google disclosure footer', () => {
     )
     expect(clearButton).toBeDefined()
     expect(clearButton?.disabled).toBe(false)
+    expect(clearButton?.getAttribute('aria-label')).toBe('Clear profile cookies')
   })
 })
 
@@ -184,6 +187,11 @@ function popoverStubs(): Record<string, unknown> {
   const passthrough = ({ children }: { children?: ReactNode }): ReactNode => children
   const block = ({ children }: { children?: ReactNode }): ReactNode => <div>{children}</div>
   return { Popover: passthrough, PopoverContent: block, PopoverTrigger: passthrough }
+}
+
+function tooltipStubs(): Record<string, unknown> {
+  const passthrough = ({ children }: { children?: ReactNode }): ReactNode => children
+  return { Tooltip: passthrough, TooltipContent: passthrough, TooltipTrigger: passthrough }
 }
 
 function appStoreStub(): unknown {
