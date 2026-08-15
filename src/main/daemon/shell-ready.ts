@@ -158,8 +158,11 @@ __orca_osc133_preexec() {
   elif [[ "\${FUNCNAME[1]:-}" == "__orca_run_prompt_command_array" || "$BASH_COMMAND" == "__orca_run_prompt_command_array" ]]; then
     return 0
   fi
-  case "\${FUNCNAME[1]:-}:$BASH_COMMAND" in
-    __orca_osc133_*:*|*:__orca_osc133_precmd|*:__orca_osc133_epilogue|__bp_*:*|*:__bp_*) return 0 ;;
+  case "\${FUNCNAME[1]:-}" in
+    __orca_osc133_*|__bp_*) return 0 ;;
+  esac
+  case "$BASH_COMMAND" in
+    __orca_osc133_precmd|__orca_osc133_epilogue|__bp_*) return 0 ;;
   esac
   __orca_run_user_debug_trap
   # Why: a framework (bash-preexec/starship) may replace our DEBUG trap at the

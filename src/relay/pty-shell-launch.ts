@@ -191,6 +191,7 @@ __orca_osc133_preexec() {
   esac
   __orca_run_user_debug_trap
   [[ -z "\${__orca_in_prompt_command:-}" ]] || return 0
+  [[ -z "\${__orca_in_command:-}" ]] || return 0
   printf "\\033]133;C\\007"
   __orca_in_command=1
 }

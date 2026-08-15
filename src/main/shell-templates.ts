@@ -62,16 +62,20 @@ __orca_restore_prompt_status() {
 }
 __orca_run_prompt_command_array() {
   local __orca_exit_code=$? __orca_prompt_part __orca_prompt_index __orca_user_count
+  local __orca_suffix_part
   local __orca_final_prompt_command
   local __orca_in_prompt_dispatch=1 __orca_dispatching_user_prompt_command=""
-  for __orca_prompt_part in "\${__orca_prompt_command_prefix[@]}"; do
+  for __orca_prompt_part in "\${__orca_prompt_command_prefix[@]+"\${__orca_prompt_command_prefix[@]}"}"; do
     if (( __orca_exit_code == 0 )); then
       eval "$__orca_prompt_part"
     else
       __orca_restore_prompt_status "$__orca_exit_code" || eval "$__orca_prompt_part"
     fi
   done
-  __orca_user_count=\${#__orca_prompt_command_array[@]}
+  __orca_user_count=0
+  for __orca_prompt_part in "\${__orca_prompt_command_array[@]+"\${__orca_prompt_command_array[@]}"}"; do
+    __orca_user_count=$(( __orca_user_count + 1 ))
+  done
   for (( __orca_prompt_index = 0; __orca_prompt_index + 1 < __orca_user_count; __orca_prompt_index++ )); do
     __orca_prompt_part="\${__orca_prompt_command_array[__orca_prompt_index]}"
     __orca_dispatching_user_prompt_command=1
@@ -84,9 +88,10 @@ __orca_run_prompt_command_array() {
   done
   if (( __orca_user_count > 0 )); then
     __orca_prompt_part="\${__orca_prompt_command_array[__orca_user_count - 1]}"
+    # Why: keep the final user hook and Orca suffixes in one status-preserving eval.
     __orca_final_prompt_command='eval "$__orca_prompt_part"'
-    for __orca_prompt_index in "\${!__orca_prompt_command_suffix[@]}"; do
-      __orca_final_prompt_command+=$'\\n'"\${__orca_prompt_command_suffix[__orca_prompt_index]}"
+    for __orca_suffix_part in "\${__orca_prompt_command_suffix[@]+"\${__orca_prompt_command_suffix[@]}"}"; do
+      __orca_final_prompt_command+=$'\\n'"$__orca_suffix_part"
     done
     __orca_dispatching_user_prompt_command=1
     if (( __orca_exit_code == 0 )); then
@@ -96,7 +101,7 @@ __orca_run_prompt_command_array() {
     fi
     __orca_dispatching_user_prompt_command=""
   else
-    for __orca_prompt_part in "\${__orca_prompt_command_suffix[@]}"; do
+    for __orca_prompt_part in "\${__orca_prompt_command_suffix[@]+"\${__orca_prompt_command_suffix[@]}"}"; do
       if (( __orca_exit_code == 0 )); then
         eval "$__orca_prompt_part"
       else
@@ -110,15 +115,15 @@ __orca_normalize_prompt_command() {
   [[ -z "\${__orca_prompt_command_normalized:-}" ]] || return 0
   local __orca_prompt_part
   local -a __orca_normalized=()
-  for __orca_prompt_part in "\${PROMPT_COMMAND[@]}"; do
+  for __orca_prompt_part in "\${PROMPT_COMMAND[@]+"\${PROMPT_COMMAND[@]}"}"; do
     __orca_normalize_prompt_command_part "$__orca_prompt_part" __orca_prompt_part
     [[ -n "$__orca_prompt_part" ]] && __orca_normalized+=("$__orca_prompt_part")
   done
   __orca_prompt_command_normalized=1
   if (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) )); then
-    PROMPT_COMMAND=("\${__orca_normalized[@]}")
+    PROMPT_COMMAND=("\${__orca_normalized[@]+"\${__orca_normalized[@]}"}")
   else
-    __orca_prompt_command_array=("\${__orca_normalized[@]}")
+    __orca_prompt_command_array=("\${__orca_normalized[@]+"\${__orca_normalized[@]}"}")
     __orca_prompt_command_prefix=()
     __orca_prompt_command_suffix=()
     unset PROMPT_COMMAND
@@ -129,9 +134,9 @@ __orca_prepend_prompt_command() {
   local command="$1"
   __orca_normalize_prompt_command
   if (( BASH_VERSINFO[0] > 5 || (BASH_VERSINFO[0] == 5 && BASH_VERSINFO[1] >= 1) )); then
-    PROMPT_COMMAND=("$command" "\${PROMPT_COMMAND[@]}")
+    PROMPT_COMMAND=("$command" "\${PROMPT_COMMAND[@]+"\${PROMPT_COMMAND[@]}"}")
   else
-    __orca_prompt_command_prefix=("$command" "\${__orca_prompt_command_prefix[@]}")
+    __orca_prompt_command_prefix=("$command" "\${__orca_prompt_command_prefix[@]+"\${__orca_prompt_command_prefix[@]}"}")
   fi
 }
 __orca_append_prompt_command() {

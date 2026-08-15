@@ -170,9 +170,9 @@ __orca_osc133_preexec() {
   esac
   __orca_run_user_debug_trap
   [[ -z "\${__orca_in_prompt_command:-}" ]] || return 0
+  [[ -z "\${__orca_in_command:-}" ]] || return 0
   # Why: bash DEBUG fires for every simple command, including PROMPT_COMMAND
-  # bodies. Skip our own prompt-time helpers so they don't mark the shell as
-  # "in command" before the prompt has even drawn.
+  # bodies and chained traps can call us repeatedly for one command.
   printf "\\033]133;C\\007"
   __orca_in_command=1
 }

@@ -223,8 +223,10 @@ describe('getRelayShellLaunchConfig', () => {
 
   itWithBash('runs the relay bash wrapper without fake C/D markers before the first prompt', () => {
     const config = getRelayShellLaunchConfig('/bin/bash', { HOME: homeDir })
+    const bashRc = readFileSync(config.args[1] as string, 'utf8')
     const output = runInteractiveBashRcfile(config.args[1] as string, homeDir)
 
+    expect(bashRc).toContain('[[ -z "${__orca_in_command:-}" ]] || return 0')
     expectBashOsc133Lifecycle(output)
   })
 

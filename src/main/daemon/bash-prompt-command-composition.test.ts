@@ -88,6 +88,24 @@ describe.skipIf(process.platform === 'win32')('daemon bash PROMPT_COMMAND compos
     expectLifecycle(output, 0)
   })
 
+  itWithBash('composes an unset PROMPT_COMMAND with nounset enabled', () => {
+    const output = runInteractiveBash('set -u\nunset PROMPT_COMMAND\n', tempHome)
+
+    expect(output).not.toContain('unbound variable')
+    expectLifecycle(output)
+  })
+
+  itWithBash('composes an inherited hook with nounset enabled', () => {
+    const output = runInteractiveBash(
+      'set -u\nPROMPT_COMMAND=\'printf "PROMPT_NOUNSET\\\\n"\'\n',
+      tempHome
+    )
+
+    expect(output.match(/PROMPT_NOUNSET\r?\n/g)).toHaveLength(3)
+    expect(output).not.toContain('unbound variable')
+    expectLifecycle(output)
+  })
+
   itWithBash('flattens arrays without duplicating later elements', () => {
     const profile = `PROMPT_COMMAND=('printf "PROMPT_ARRAY_A\\n";' 'printf "PROMPT_ARRAY_B\\n";  ')\n`
     const output = runInteractiveBash(profile, tempHome)
@@ -221,6 +239,13 @@ PROMPT_COMMAND='printf "PROMPT_REMATCH:<%s>\\n" "\${BASH_REMATCH[1]-unset}"'
     const commands = [...output.matchAll(/PROMPT_PREEXEC:<([^>]+)>/g)].map((match) => match[1])
 
     expect(commands).toEqual(['echo __orca_osc133_probe', 'false', 'exit 0'])
+    expectLifecycle(output)
+  })
+
+  itWithBash('does not treat user command text as a bash-preexec helper', () => {
+    const output = runInteractiveBash('', tempHome, 'echo a:__bp_x\nfalse\nexit 0\n')
+
+    expect(output).toContain('a:__bp_x')
     expectLifecycle(output)
   })
 })
