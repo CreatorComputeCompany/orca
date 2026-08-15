@@ -7,7 +7,9 @@ import { getDaemonBashShellReadyRcfileContent } from './shell-ready'
 
 const hasBash = process.platform !== 'win32' && spawnSync('bash', ['--version']).status === 0
 const itWithBash = hasBash ? it : it.skip
-const bashMajor = Number(spawnSync('bash', ['-lc', 'printf %s "${BASH_VERSINFO[0]}"']).stdout)
+const bashMajor = hasBash
+  ? Number(spawnSync('bash', ['-lc', 'printf %s "${BASH_VERSINFO[0]}"']).stdout)
+  : 0
 
 function runInteractiveBash(
   profile: string,
@@ -19,7 +21,7 @@ function runInteractiveBash(
   writeFileSync(rcfile, getDaemonBashShellReadyRcfileContent())
   const result = spawnSync(
     'bash',
-    ['-lc', 'bash --noprofile --rcfile "$1" -i 2>&1', 'bash', rcfile],
+    ['-lc', '"$BASH" --noprofile --rcfile "$1" -i 2>&1', 'bash', rcfile],
     {
       input,
       encoding: 'utf8',
@@ -221,6 +223,8 @@ PROMPT_COMMAND='printf "PROMPT_REMATCH:<%s>\\n" "\${BASH_REMATCH[1]-unset}"'
     const output = runInteractiveBash(profile, tempHome)
 
     expect(output.match(/PROMPT_HOOK\r?\n/g)).toHaveLength(3)
+    expect(output).not.toContain('PROMPT_DEBUG:<(( __orca_exit_code == 0 ))>')
+    expect(output).not.toContain('PROMPT_DEBUG:<__orca_restore_prompt_status')
     expectLifecycle(output)
   })
 

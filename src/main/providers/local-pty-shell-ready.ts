@@ -159,14 +159,14 @@ __orca_osc133_preexec() {
     [[ -n "\${__orca_dispatching_user_prompt_command:-}" ]] || return 0
     if [[ "\${FUNCNAME[1]:-}" == "__orca_run_prompt_command_array" ]]; then
       case "$BASH_COMMAND" in
-        'eval "$__orca_prompt_part"'|'eval "$__orca_final_prompt_command"'|__orca_dispatching_user_prompt_command=*|__orca_osc133_precmd|__orca_osc133_prompt_done|__orca_prompt_mark) return 0 ;;
+        '(( __orca_exit_code == 0 ))'|'__orca_restore_prompt_status "$__orca_exit_code"'|'eval "$__orca_prompt_part"'|'eval "$__orca_final_prompt_command"'|__orca_dispatching_user_prompt_command=*|__orca_osc133_precmd|__orca_osc133_prompt_done|__orca_prompt_mark) return 0 ;;
       esac
     fi
   elif [[ "\${FUNCNAME[1]:-}" == "__orca_run_prompt_command_array" || "$BASH_COMMAND" == "__orca_run_prompt_command_array" ]]; then
     return 0
   fi
   case "\${FUNCNAME[1]:-}:$BASH_COMMAND" in
-    __orca_osc133_*:*|__orca_prompt_mark:*|*:__orca_osc133_precmd|*:__orca_osc133_prompt_done|*:__orca_prompt_mark) return 0 ;;
+    __orca_osc133_*:*|__orca_prompt_mark:*|__orca_restore_prompt_status:*|*:__orca_osc133_precmd|*:__orca_osc133_prompt_done|*:__orca_prompt_mark) return 0 ;;
   esac
   __orca_run_user_debug_trap
   [[ -z "\${__orca_in_prompt_command:-}" ]] || return 0

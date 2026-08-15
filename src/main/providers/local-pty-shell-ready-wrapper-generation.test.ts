@@ -331,8 +331,9 @@ describePosix('local PTY shell-ready launch config', () => {
       writeFileSync(
         join(userDataPath, '.bash_profile'),
         [
+          'set -T',
           'PROMPT_COMMAND=\'AFTER_FIRST_PROMPT=1; printf "PROMPT_HOOK\\n"\'',
-          'trap \'if [[ -n "${AFTER_FIRST_PROMPT:-}" ]]; then\n  printf "USER_DEBUG_AFTER\\n"\nfi\' DEBUG'
+          'trap \'if [[ -n "${AFTER_FIRST_PROMPT:-}" ]]; then\n  printf "USER_DEBUG_AFTER:<%s>\\n" "$BASH_COMMAND"\nfi\' DEBUG'
         ].join('\n')
       )
 
@@ -340,6 +341,8 @@ describePosix('local PTY shell-ready launch config', () => {
 
       expect(output).toContain('PROMPT_HOOK')
       expect(output).toContain('USER_DEBUG_AFTER')
+      expect(output).not.toContain('USER_DEBUG_AFTER:<(( __orca_exit_code == 0 ))>')
+      expect(output).not.toContain('USER_DEBUG_AFTER:<__orca_restore_prompt_status')
       expectBashOsc133Lifecycle(output)
     }
   )
