@@ -73,7 +73,12 @@ import {
 import { isPwshAvailableAsync } from '../pwsh'
 import { LocalPtyProvider } from '../providers/local-pty-provider'
 import { normalizeWindowsTerminalCwd } from '../providers/windows-shell-args'
-import type { IPtyProvider, PtySpawnOptions, PtySpawnResult } from '../providers/types'
+import type {
+  IPtyProvider,
+  PtyProcessInfo,
+  PtySpawnOptions,
+  PtySpawnResult
+} from '../providers/types'
 import { isPtyWriteUnavailableError } from '../providers/pty-write-unavailable-error'
 import {
   inspectPtyProviderProcess,
@@ -5731,16 +5736,26 @@ export function registerPtyHandlers(
         return null
       }
     },
-    listProcesses: async (connectionId) => {
+    listProcesses: async (connectionId, opts) => {
       if (connectionId === null) {
         return localProvider.listProcesses()
       }
       if (connectionId !== undefined) {
-        return getProvider(connectionId).listProcesses()
+        return getProvider(connectionId).listProcesses(opts)
       }
+      // Why: one unreachable relay must not decide liveness for every other provider.
+      // Promise.all failed the whole aggregate on a single SSH rejection, and an
+      // unanswered relay list runs to the mux's 30s default — far past the caller's
+      // budget — so the runtime kept losing the inventory it needs to retire exited
+      // PTYs and every retained pane stayed "active" (STA-517). Settle each SSH
+      // provider on its own and bound it by the caller's deadline; a provider that
+      // does not answer is unknown, not empty — the runtime's hasPty rescue keeps its
+      // panes. A local failure still fails the aggregate, matching pty:listSessions.
       const providerSessions = await Promise.all([
         localProvider.listProcesses(),
-        ...Array.from(sshProviders.values(), (provider) => provider.listProcesses())
+        ...Array.from(sshProviders.values(), (provider) =>
+          provider.listProcesses(opts).catch((): PtyProcessInfo[] => [])
+        )
       ])
       return providerSessions.flat()
     },

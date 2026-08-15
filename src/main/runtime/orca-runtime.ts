@@ -1778,7 +1778,12 @@ type RuntimePtyController = {
   resize?(ptyId: string, cols: number, rows: number): boolean
   // Why: exact-id mobile polls should not enumerate every local and SSH PTY.
   hasPty?(ptyId: string): boolean | null
-  listProcesses?(connectionId?: string | null): Promise<PtyProcessInfo[]>
+  // Why: the caller's budget has to reach the relay. Without it an SSH list runs to
+  // the mux's own 30s default and blows every inventory refresh (STA-517).
+  listProcesses?(
+    connectionId?: string | null,
+    opts?: { deadlineMs?: number }
+  ): Promise<PtyProcessInfo[]>
   serializeBuffer?(
     ptyId: string,
     opts?: { scrollbackRows?: number; altScreenForcesZeroRows?: boolean }
@@ -30203,11 +30208,18 @@ export class OrcaRuntimeService {
     } else {
       this.ptyControllerInventoryGenerationByProvider.set(providerKey, inventoryGeneration)
     }
-    const sessionsResult = await withTimeoutResult(
-      this.ptyController.listProcesses(connectionId),
+    const listBudgetMs =
       deadline === undefined
         ? PTY_CONTROLLER_LIST_TIMEOUT_MS
         : Math.max(1, Math.min(PTY_CONTROLLER_LIST_TIMEOUT_MS, deadline - Date.now()))
+    const sessionsResult = await withTimeoutResult(
+      // Why: give each provider a deadline strictly inside our own, so a relay that
+      // never answers still leaves the aggregate time to return the providers that did
+      // — expiring at the same instant would discard the whole inventory instead.
+      this.ptyController.listProcesses(connectionId, {
+        deadlineMs: Date.now() + Math.max(1, listBudgetMs - PTY_CONTROLLER_LIST_PROVIDER_MARGIN_MS)
+      }),
+      listBudgetMs
     )
     if (!sessionsResult.ok) {
       // Why: a transient controller failure is not evidence that retained PTYs exited.
@@ -30367,17 +30379,6 @@ export class OrcaRuntimeService {
       // Why: fire-and-forget so this listing hot path doesn't serialize a relay round-trip per session and a throw can't abort the sweep below.
       this.refreshPtyForegroundAgent(session.id)
     }
-    for (const [ptyId, receipt] of this.restoredOrchestrationAuthorityByPtyId) {
-      const inScope =
-        connectionId === undefined ||
-        (connectionId === null && receipt.hostScope.kind !== 'ssh') ||
-        (typeof connectionId === 'string' &&
-          receipt.hostScope.kind === 'ssh' &&
-          receipt.hostScope.targetId === connectionId)
-      if (inScope && !allLivePtyIds.has(ptyId)) {
-        this.restoredOrchestrationAuthorityByPtyId.delete(ptyId)
-      }
-    }
     for (const pty of this.ptysById.values()) {
       if (connectionId !== undefined && pty.connectionId !== connectionId) {
         continue
@@ -30398,6 +30399,20 @@ export class OrcaRuntimeService {
         }
         pty.connected = false
         pty.disconnectedAt ??= Date.now()
+      }
+    }
+    // Why: runs after the hasPty rescue so a still-addressable pane keeps its receipt.
+    // A provider that failed to list is absent from `sessions`, and dropping authority on
+    // that silence would retire an orchestration handle the relay can still reach.
+    for (const [ptyId, receipt] of this.restoredOrchestrationAuthorityByPtyId) {
+      const inScope =
+        connectionId === undefined ||
+        (connectionId === null && receipt.hostScope.kind !== 'ssh') ||
+        (typeof connectionId === 'string' &&
+          receipt.hostScope.kind === 'ssh' &&
+          receipt.hostScope.targetId === connectionId)
+      if (inScope && !allLivePtyIds.has(ptyId)) {
+        this.restoredOrchestrationAuthorityByPtyId.delete(ptyId)
       }
     }
     this.pruneDisconnectedPtyRecords()
@@ -36294,6 +36309,9 @@ export function resolveWorktreeScanCacheTtlMs(repo: Pick<Repo, 'path' | 'connect
     : WORKTREE_SCAN_CACHE_TTL_MS
 }
 const PTY_CONTROLLER_LIST_TIMEOUT_MS = 3000
+// Why: the slice of the list budget reserved for the aggregate to collect the providers
+// that answered after a stalled one gives up.
+const PTY_CONTROLLER_LIST_PROVIDER_MARGIN_MS = 500
 // Why: the renderer waits 15s; leave room for the verified failure response and release the spawn fence before its caller times out.
 const WORKTREE_TERMINAL_SLEEP_TIMEOUT_MS = 12_000
 
