@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { GitPushTarget, GitUpstreamStatus } from '../../shared/types'
+import type { GitUpstreamStatus } from '../../shared/git-status-types'
+import type { GitPushTarget } from '../../shared/worktree/types'
 import {
   GitUpstreamStatusReadOwner,
   type GitUpstreamStatusExecutionIdentity
