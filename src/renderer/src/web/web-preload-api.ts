@@ -193,6 +193,7 @@ let worktreeVisibilityDefaultsRuntimeEnvironmentId: string | null = null
 let worktreeVisibilityDefaultsRuntimeValue: WorktreeVisibilityDefaults | null = null
 const runtimeClients = new Map<string, WebRuntimeClient>()
 const manuallyDisconnectedEnvironmentIds = new Set<string>()
+let ephemeralVmEnvironmentHydration: Promise<void> | null = null
 let cachedWorktrees: { loadedAt: number; worktrees: Worktree[] } | null = null
 let cachedDetectedWorktrees: { loadedAt: number; worktrees: Worktree[] } | null = null
 const runtimeCallQueuePool = new RuntimeRpcCallQueuePool()
@@ -519,6 +520,7 @@ const webKeybindingListeners = new Set<(snapshot: KeybindingFileSnapshot) => voi
 
 export function installWebPreloadApi(): void {
   activeEnvironment = readStoredWebRuntimeEnvironment()
+  ephemeralVmEnvironmentHydration = null
   const webWindow = window as unknown as { __ORCA_WEB_CLIENT__?: boolean }
   webWindow.__ORCA_WEB_CLIENT__ = true
   window.electron = createFallbackProxy(['electron']) as Window['electron']
@@ -1475,30 +1477,7 @@ function createEphemeralVmApi(): NonNullable<Partial<PreloadApi>['ephemeralVm']>
     },
     cancelProvision: (args) => callRuntimeResult('ephemeralVm.cancelProvision', args),
     onProvisionEvent: () => noopUnsubscribe,
-    listRuntimes: async () => {
-      const runtimes = await callRuntimeResult<
-        Awaited<ReturnType<NonNullable<PreloadApi['ephemeralVm']>['listRuntimes']>>
-      >('ephemeralVm.listRuntimes')
-      for (const runtime of runtimes) {
-        if (!runtime.runtimeEnvironmentId) {
-          continue
-        }
-        const pairingCode = getEphemeralVmRecipeResultPairingCode(runtime.recipeResult)
-        const offer = pairingCode ? parseWebPairingInput(pairingCode) : null
-        if (!offer) {
-          continue
-        }
-        saveAdditionalWebRuntimeEnvironment({
-          ...createStoredWebRuntimeEnvironment({
-            name: runtime.workspaceName ? `${runtime.workspaceName} VM` : 'Workspace VM',
-            offer
-          }),
-          id: runtime.runtimeEnvironmentId,
-          source: 'ephemeral-vm'
-        })
-      }
-      return runtimes
-    },
+    listRuntimes: listAndStoreEphemeralVmRuntimes,
     attachWorkspace: (args) => callRuntimeResult('ephemeralVm.attachWorkspace', args),
     suspendWorkspace: async () => unsupported(),
     resumeWorkspace: async () => unsupported(),
@@ -1511,6 +1490,7 @@ function createEphemeralVmApi(): NonNullable<Partial<PreloadApi>['ephemeralVm']>
 function createRuntimeEnvironmentsApi(): NonNullable<Partial<PreloadApi>['runtimeEnvironments']> {
   return {
     list: async () => {
+      await hydrateEphemeralVmEnvironments()
       const environment = requireActiveEnvironmentOrNull()
       return [
         ...(environment ? [redactStoredWebRuntimeEnvironment(environment)] : []),
@@ -1525,6 +1505,7 @@ function createRuntimeEnvironmentsApi(): NonNullable<Partial<PreloadApi>['runtim
       const previousEnvironment = activeEnvironment
       closeActiveRuntimeClients()
       activeEnvironment = createStoredWebRuntimeEnvironment({ name, offer, previousEnvironment })
+      ephemeralVmEnvironmentHydration = null
       manuallyDisconnectedEnvironmentIds.clear()
       saveStoredWebRuntimeEnvironment(activeEnvironment)
       return { environment: redactStoredWebRuntimeEnvironment(activeEnvironment) }
@@ -1626,6 +1607,7 @@ function createRuntimeEnvironmentsApi(): NonNullable<Partial<PreloadApi>['runtim
       manuallyDisconnectedEnvironmentIds.clear()
       closeActiveRuntimeClients()
       activeEnvironment = nextEnvironment
+      ephemeralVmEnvironmentHydration = null
       return {
         ok: true,
         environment: redactStoredWebRuntimeEnvironment(nextEnvironment),
@@ -1679,6 +1661,49 @@ function createRuntimeEnvironmentsApi(): NonNullable<Partial<PreloadApi>['runtim
       return subscription
     }
   }
+}
+
+type EphemeralVmRuntimeList = Awaited<
+  ReturnType<NonNullable<PreloadApi['ephemeralVm']>['listRuntimes']>
+>
+
+async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList> {
+  const runtimes = await callRuntimeResult<EphemeralVmRuntimeList>('ephemeralVm.listRuntimes')
+  if (!Array.isArray(runtimes)) {
+    return []
+  }
+  for (const runtime of runtimes) {
+    if (!runtime.runtimeEnvironmentId) {
+      continue
+    }
+    const pairingCode = getEphemeralVmRecipeResultPairingCode(runtime.recipeResult)
+    const offer = pairingCode ? parseWebPairingInput(pairingCode) : null
+    if (!offer) {
+      continue
+    }
+    saveAdditionalWebRuntimeEnvironment({
+      ...createStoredWebRuntimeEnvironment({
+        name: runtime.workspaceName ? `${runtime.workspaceName} VM` : 'Workspace VM',
+        offer
+      }),
+      id: runtime.runtimeEnvironmentId,
+      source: 'ephemeral-vm'
+    })
+  }
+  return runtimes
+}
+
+async function hydrateEphemeralVmEnvironments(): Promise<void> {
+  if (!requireActiveEnvironmentOrNull()) {
+    return
+  }
+  ephemeralVmEnvironmentHydration ??= listAndStoreEphemeralVmRuntimes()
+    .then(() => undefined)
+    .catch((error: unknown) => {
+      ephemeralVmEnvironmentHydration = null
+      console.warn('[web] Failed to discover controller workspace VMs:', error)
+    })
+  await ephemeralVmEnvironmentHydration
 }
 
 function createAiVaultApi(): NonNullable<Partial<PreloadApi>['aiVault']> {
@@ -3787,6 +3812,7 @@ function removeActiveRuntimeEnvironment(): void {
   disconnectActiveRuntimeEnvironment()
   clearStoredWebRuntimeEnvironment()
   activeEnvironment = null
+  ephemeralVmEnvironmentHydration = null
 }
 
 function manuallyDisconnectedResponse(
@@ -3858,9 +3884,13 @@ function updateEnvironmentFromResponse(
       ? (response.result as { pairedDeviceId: string }).pairedDeviceId
       : undefined
   if (activeEnvironment?.id !== environment.id) {
-    saveAdditionalWebRuntimeEnvironment(
-      updateStoredEnvironmentRuntimeIdWithoutSaving(environment, runtimeId, pairedDeviceId)
-    )
+    // A late response from a replaced controller must not resurrect that controller as a
+    // secondary host. Child VM environments remain routable when their status responses land.
+    if (environment.source === 'ephemeral-vm') {
+      saveAdditionalWebRuntimeEnvironment(
+        updateStoredEnvironmentRuntimeIdWithoutSaving(environment, runtimeId, pairedDeviceId)
+      )
+    }
     return
   }
   activeEnvironment = updateStoredEnvironmentRuntimeId(environment, runtimeId, pairedDeviceId)

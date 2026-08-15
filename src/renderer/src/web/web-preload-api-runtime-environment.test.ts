@@ -71,7 +71,7 @@ describe('web runtime environment identity', () => {
           return Promise.resolve({
             id: method,
             ok: true,
-            result: {},
+            result: method === 'ephemeralVm.listRuntimes' ? [] : {},
             _meta: { runtimeId: 'runtime' }
           })
         }
@@ -118,6 +118,7 @@ describe('web runtime environment identity', () => {
 
     expect(calls).toEqual([
       'connect:ws://127.0.0.1:1234',
+      'ephemeralVm.listRuntimes',
       'status.get',
       'connect:wss://child.example',
       'status.get'
@@ -220,8 +221,6 @@ describe('web runtime environment identity', () => {
     writeStoredRuntimeEnvironment(globals.storage, 'controller')
     const { installWebPreloadApi } = await import('./web-preload-api')
     installWebPreloadApi()
-
-    await globals.window.api.ephemeralVm.listRuntimes()
 
     await expect(globals.window.api.runtimeEnvironments.list()).resolves.toMatchObject([
       { id: 'controller' },
