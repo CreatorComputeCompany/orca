@@ -232,6 +232,42 @@ describe('web runtime environment identity', () => {
     ])
   })
 
+  it('resumes a controller VM through the web runtime', async () => {
+    const calls: { method: string; params: unknown }[] = []
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string, params: unknown): Promise<RuntimeRpcResponse<unknown>> {
+          calls.push({ method, params })
+          return Promise.resolve({
+            id: method,
+            ok: true,
+            result: { id: 'vm-runtime-1', runtimeEnvironmentId: 'child-environment' },
+            _meta: { runtimeId: 'controller-runtime' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage, 'controller')
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    await expect(
+      globals.window.api.ephemeralVm.resumeWorkspace({ workspaceId: 'workspace-1' })
+    ).resolves.toMatchObject({
+      id: 'vm-runtime-1',
+      runtimeEnvironmentId: 'child-environment'
+    })
+    expect(calls).toEqual([
+      {
+        method: 'ephemeralVm.resumeWorkspace',
+        params: { workspaceId: 'workspace-1' }
+      }
+    ])
+  })
+
   it('stores paired device identity from a web access link', async () => {
     const globals = installBrowserGlobals('Linux')
     const { installWebPreloadApi } = await import('./web-preload-api')

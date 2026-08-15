@@ -1480,7 +1480,7 @@ function createEphemeralVmApi(): NonNullable<Partial<PreloadApi>['ephemeralVm']>
     listRuntimes: listAndStoreEphemeralVmRuntimes,
     attachWorkspace: (args) => callRuntimeResult('ephemeralVm.attachWorkspace', args),
     suspendWorkspace: async () => unsupported(),
-    resumeWorkspace: async () => unsupported(),
+    resumeWorkspace: (args) => callRuntimeResult('ephemeralVm.resumeWorkspace', args),
     cleanup: (args) => callRuntimeResult('ephemeralVm.cleanup', args),
     stopCleanup: async () => unsupported(),
     getCleanupCommand: async () => unsupported()

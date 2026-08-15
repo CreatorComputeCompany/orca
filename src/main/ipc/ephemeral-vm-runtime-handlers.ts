@@ -195,60 +195,8 @@ export function registerEphemeralVmRuntimeHandlers(store: Store): void {
 
   ipcMain.handle(
     'ephemeralVm:resumeWorkspace',
-    async (_event, args: { workspaceId: string }): Promise<EphemeralVmRuntimeRecord | null> => {
-      const userDataPath = app.getPath('userData')
-      const runtime = listEphemeralVmRuntimes(userDataPath).find(
-        (entry) =>
-          entry.workspaceId === args.workspaceId &&
-          entry.status !== 'cleaned' &&
-          entry.status !== 'cleanup_pending'
-      )
-      if (!runtime?.repoId) {
-        return null
-      }
-      if (runtime.status !== 'suspended' && runtime.status !== 'resume_failed') {
-        return runtime
-      }
-      const recipeContext = getRuntimeRecipeContext(store, userDataPath, runtime.id)
-      const result = await resumeEphemeralVmRuntime({
-        userDataPath,
-        repoPath: recipeContext.repo.repo.path,
-        recipe: recipeContext.recipe,
-        runtimeId: runtime.id
-      })
-      if (!result.ok) {
-        throw new Error(result.error)
-      }
-      if (!result.skipped && runtime.runtimeEnvironmentId) {
-        const pairingCode = getEphemeralVmRecipeResultPairingCode(result.runtime.recipeResult)
-        if (!pairingCode) {
-          throw new Error('Resume result did not include an Orca Server pairing code.')
-        }
-        updateEnvironmentFromPairingCode(userDataPath, runtime.runtimeEnvironmentId, {
-          pairingCode
-        })
-        invalidateRuntimeEnvironmentTransport(runtime.runtimeEnvironmentId)
-      }
-      const connection = getEphemeralVmRecipeResultConnection(result.runtime.recipeResult)
-      if (!result.skipped && connection.type === 'ssh') {
-        try {
-          const ssh = await connectRuntimeOwnedSshTarget({
-            runtimeId: result.runtime.id,
-            connection
-          })
-          return updateEphemeralVmRuntimeStatus(userDataPath, result.runtime.id, {
-            connectionMode: 'ssh',
-            sshTargetId: ssh.targetId
-          })
-        } catch (error) {
-          updateEphemeralVmRuntimeStatus(userDataPath, result.runtime.id, {
-            status: 'resume_failed'
-          })
-          throw error
-        }
-      }
-      return result.runtime
-    }
+    (_event, args: { workspaceId: string }): Promise<EphemeralVmRuntimeRecord | null> =>
+      resumeEphemeralVmWorkspace(store, app.getPath('userData'), args)
   )
 
   ipcMain.handle(
@@ -289,4 +237,62 @@ export function registerEphemeralVmRuntimeHandlers(store: Store): void {
       }
     }
   )
+}
+
+export async function resumeEphemeralVmWorkspace(
+  store: Store,
+  userDataPath: string,
+  args: { workspaceId: string }
+): Promise<EphemeralVmRuntimeRecord | null> {
+  const runtime = listEphemeralVmRuntimes(userDataPath).find(
+    (entry) =>
+      entry.workspaceId === args.workspaceId &&
+      entry.status !== 'cleaned' &&
+      entry.status !== 'cleanup_pending'
+  )
+  if (!runtime?.repoId) {
+    return null
+  }
+  if (runtime.status !== 'suspended' && runtime.status !== 'resume_failed') {
+    return runtime
+  }
+  const recipeContext = getRuntimeRecipeContext(store, userDataPath, runtime.id)
+  const result = await resumeEphemeralVmRuntime({
+    userDataPath,
+    repoPath: recipeContext.repo.repo.path,
+    recipe: recipeContext.recipe,
+    runtimeId: runtime.id
+  })
+  if (!result.ok) {
+    throw new Error(result.error)
+  }
+  if (!result.skipped && runtime.runtimeEnvironmentId) {
+    const pairingCode = getEphemeralVmRecipeResultPairingCode(result.runtime.recipeResult)
+    if (!pairingCode) {
+      throw new Error('Resume result did not include an Orca Server pairing code.')
+    }
+    updateEnvironmentFromPairingCode(userDataPath, runtime.runtimeEnvironmentId, {
+      pairingCode
+    })
+    invalidateRuntimeEnvironmentTransport(runtime.runtimeEnvironmentId)
+  }
+  const connection = getEphemeralVmRecipeResultConnection(result.runtime.recipeResult)
+  if (!result.skipped && connection.type === 'ssh') {
+    try {
+      const ssh = await connectRuntimeOwnedSshTarget({
+        runtimeId: result.runtime.id,
+        connection
+      })
+      return updateEphemeralVmRuntimeStatus(userDataPath, result.runtime.id, {
+        connectionMode: 'ssh',
+        sshTargetId: ssh.targetId
+      })
+    } catch (error) {
+      updateEphemeralVmRuntimeStatus(userDataPath, result.runtime.id, {
+        status: 'resume_failed'
+      })
+      throw error
+    }
+  }
+  return result.runtime
 }

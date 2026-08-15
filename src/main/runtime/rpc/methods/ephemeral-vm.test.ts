@@ -40,7 +40,8 @@ describe('ephemeral VM serve RPC reads', () => {
       provision: vi.fn().mockResolvedValue({ ok: false, error: 'test', stdout: '', stderr: '' }),
       cancelProvision: vi.fn().mockResolvedValue({ cancelled: true }),
       attachWorkspace: vi.fn().mockResolvedValue({ id: 'runtime-1' }),
-      cleanup: vi.fn().mockResolvedValue({ id: 'runtime-1' })
+      cleanup: vi.fn().mockResolvedValue({ id: 'runtime-1' }),
+      resumeWorkspace: vi.fn().mockResolvedValue({ id: 'runtime-1' })
     } as unknown as EphemeralVmRpcReadService
     setEphemeralVmRpcReadService(service)
 
@@ -55,6 +56,7 @@ describe('ephemeral VM serve RPC reads', () => {
       context
     )
     await method('ephemeralVm.cleanup').handler({ runtimeId: 'runtime-1' }, context)
+    await method('ephemeralVm.resumeWorkspace').handler({ workspaceId: 'workspace-1' }, context)
 
     expect(service.listRecipes).toHaveBeenCalledWith({ repoId: 'repo-1' })
     expect(service.listRecipeCatalog).toHaveBeenCalledOnce()
@@ -67,6 +69,7 @@ describe('ephemeral VM serve RPC reads', () => {
       workspaceId: 'workspace-1'
     })
     expect(service.cleanup).toHaveBeenCalledWith({ runtimeId: 'runtime-1' })
+    expect(service.resumeWorkspace).toHaveBeenCalledWith({ workspaceId: 'workspace-1' })
   })
 
   it('fails explicitly before the service is wired', () => {

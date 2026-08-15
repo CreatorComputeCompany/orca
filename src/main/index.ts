@@ -304,7 +304,10 @@ import {
   listEphemeralVmRecipes,
   provisionEphemeralVmForRpc
 } from './ephemeral-vm-controller-service'
-import { listEphemeralVmRuntimeRecords } from './ipc/ephemeral-vm-runtime-handlers'
+import {
+  listEphemeralVmRuntimeRecords,
+  resumeEphemeralVmWorkspace
+} from './ipc/ephemeral-vm-runtime-handlers'
 import { cleanupEphemeralVmRuntimeRecord } from './ephemeral-vm-runtime-cleanup-service'
 import { attachEphemeralVmRuntimeToWorkspace } from './ephemeral-vm-runtime-attachment'
 import {
@@ -2777,7 +2780,8 @@ void app.whenReady().then(async () => {
         runtimeId: args.runtimeId,
         workspaceId: args.workspaceId
       }),
-    cleanup: (args) => cleanupEphemeralVmRuntimeRecord(store!, app.getPath('userData'), args)
+    cleanup: (args) => cleanupEphemeralVmRuntimeRecord(store!, app.getPath('userData'), args),
+    resumeWorkspace: (args) => resumeEphemeralVmWorkspace(store!, app.getPath('userData'), args)
   })
   // Lazy kernel: initialize() only discovers manifests — no worker forks, no
   // panel reads. Zero plugin code runs before an explicit trigger.

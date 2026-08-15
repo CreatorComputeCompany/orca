@@ -23,6 +23,7 @@ export type EphemeralVmRpcReadService = {
     workspaceId: string
   }): Promise<EphemeralVmRuntimeRecord>
   cleanup(args: { runtimeId: string }): Promise<EphemeralVmRuntimeRecord>
+  resumeWorkspace(args: { workspaceId: string }): Promise<EphemeralVmRuntimeRecord | null>
 }
 
 let service: EphemeralVmRpcReadService | null = null
@@ -51,6 +52,7 @@ const ProvisionParams = DoctorParams.extend({
 const CancelProvisionParams = z.object({ provisionId: z.string().min(1) })
 const RuntimeIdParams = z.object({ runtimeId: z.string().min(1) })
 const AttachWorkspaceParams = RuntimeIdParams.extend({ workspaceId: z.string().min(1) })
+const WorkspaceIdParams = z.object({ workspaceId: z.string().min(1) })
 
 export const EPHEMERAL_VM_METHODS: readonly RpcMethod[] = [
   defineMethod({
@@ -92,5 +94,10 @@ export const EPHEMERAL_VM_METHODS: readonly RpcMethod[] = [
     name: 'ephemeralVm.cleanup',
     params: RuntimeIdParams,
     handler: (params) => requireService().cleanup(params)
+  }),
+  defineMethod({
+    name: 'ephemeralVm.resumeWorkspace',
+    params: WorkspaceIdParams,
+    handler: (params) => requireService().resumeWorkspace(params)
   })
 ]
