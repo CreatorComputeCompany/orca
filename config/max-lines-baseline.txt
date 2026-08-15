@@ -22,14 +22,10 @@ inline src/main/browser/grab-guest-script.ts
 inline src/main/browser/snapshot-engine.ts
 inline src/main/claude-accounts/runtime-auth-service.ts
 inline src/main/claude-accounts/service.ts
-inline src/main/claude-usage/scanner.ts
-inline src/main/claude-usage/store.ts
 inline src/main/cli/cli-installer.ts
 inline src/main/cli/wsl-cli-installer.ts
 inline src/main/codex-accounts/runtime-home-service.ts
 inline src/main/codex-accounts/service.ts
-inline src/main/codex-usage/scanner.ts
-inline src/main/codex-usage/store.ts
 inline src/main/codex/config-toml-trust.ts
 inline src/main/codex/hook-service.ts
 inline src/main/copilot/hook-service.ts
@@ -81,8 +77,6 @@ inline src/main/linear/client.ts
 inline src/main/linear/issues.ts
 inline src/main/linear/projects.ts
 inline src/main/memory/collector.ts
-inline src/main/opencode-usage/scanner.ts
-inline src/main/opencode-usage/store.ts
 inline src/main/opencode/hook-service.ts
 inline src/main/persistence.ts
 inline src/main/ports/advertised-url-watcher.ts
@@ -182,7 +176,6 @@ inline src/renderer/src/components/sidebar/WorkspaceKanbanDrawer.tsx
 inline src/renderer/src/components/sidebar/WorktreeContextMenu.tsx
 inline src/renderer/src/components/sidebar/use-workspace-kanban-area-selection.ts
 inline src/renderer/src/components/sidebar/worktree-list-groups.ts
-inline src/renderer/src/components/stats/usage-overview-model.ts
 inline src/renderer/src/components/status-bar/ResourceUsageStatusSegment.tsx
 inline src/renderer/src/components/status-bar/StatusBar.tsx
 inline src/renderer/src/components/status-bar/WorkspaceSpaceManagerPanel.tsx
