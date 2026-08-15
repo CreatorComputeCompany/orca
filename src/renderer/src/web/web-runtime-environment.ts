@@ -16,6 +16,7 @@ export type StoredWebRuntimeEnvironment = Omit<PublicKnownRuntimeEnvironment, 'e
 }
 
 const ENVIRONMENT_STORAGE_KEY = 'orca.web.runtimeEnvironment.v1'
+const ADDITIONAL_ENVIRONMENTS_STORAGE_KEY = 'orca.web.runtimeEnvironments.additional.v1'
 
 export function readStoredWebRuntimeEnvironment(): StoredWebRuntimeEnvironment | null {
   const raw = window.localStorage.getItem(ENVIRONMENT_STORAGE_KEY)
@@ -64,6 +65,38 @@ export function clearStoredWebRuntimeEnvironment(): void {
   window.localStorage.removeItem(ENVIRONMENT_STORAGE_KEY)
 }
 
+export function readAdditionalWebRuntimeEnvironments(): StoredWebRuntimeEnvironment[] {
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(ADDITIONAL_ENVIRONMENTS_STORAGE_KEY) ?? '[]'
+    ) as unknown
+    return Array.isArray(parsed)
+      ? parsed.filter(isStoredWebRuntimeEnvironment).map(normalizeStoredWebRuntimeEnvironment)
+      : []
+  } catch {
+    return []
+  }
+}
+
+export function saveAdditionalWebRuntimeEnvironment(
+  environment: StoredWebRuntimeEnvironment
+): void {
+  const environments = readAdditionalWebRuntimeEnvironments().filter(
+    (entry) => entry.id !== environment.id
+  )
+  window.localStorage.setItem(
+    ADDITIONAL_ENVIRONMENTS_STORAGE_KEY,
+    JSON.stringify([...environments, environment])
+  )
+}
+
+export function removeAdditionalWebRuntimeEnvironment(environmentId: string): void {
+  const environments = readAdditionalWebRuntimeEnvironments().filter(
+    (entry) => entry.id !== environmentId
+  )
+  window.localStorage.setItem(ADDITIONAL_ENVIRONMENTS_STORAGE_KEY, JSON.stringify(environments))
+}
+
 export function createStoredWebRuntimeEnvironment(args: {
   name: string
   offer: WebPairingOffer
@@ -94,6 +127,30 @@ export function createStoredWebRuntimeEnvironment(args: {
         publicKeyB64: args.offer.publicKeyB64
       }
     ]
+  }
+}
+
+function isStoredWebRuntimeEnvironment(value: unknown): value is StoredWebRuntimeEnvironment {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const candidate = value as Partial<StoredWebRuntimeEnvironment>
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.name === 'string' &&
+    Array.isArray(candidate.endpoints) &&
+    candidate.endpoints.length > 0
+  )
+}
+
+function normalizeStoredWebRuntimeEnvironment(
+  environment: StoredWebRuntimeEnvironment
+): StoredWebRuntimeEnvironment {
+  return {
+    ...environment,
+    compatibleEnvironmentIds: environment.compatibleEnvironmentIds?.filter(
+      (environmentId): environmentId is string => typeof environmentId === 'string'
+    )
   }
 }
 

@@ -296,6 +296,17 @@ import { resolveBundledPluginRoot } from './plugins/plugin-bundled-bootstrap'
 import { resolvePluginHostEntryPath } from './plugins/plugin-host-process'
 import { applyPluginConsent, applyPluginEnablement } from './plugins/plugin-enablement'
 import { setPluginServiceForRpc } from './runtime/rpc/methods/plugins'
+import { setEphemeralVmRpcReadService } from './runtime/rpc/methods/ephemeral-vm'
+import {
+  cancelEphemeralVmProvision,
+  doctorEphemeralVm,
+  listEphemeralVmRecipeCatalog,
+  listEphemeralVmRecipes,
+  provisionEphemeralVmForRpc
+} from './ephemeral-vm-controller-service'
+import { listEphemeralVmRuntimeRecords } from './ipc/ephemeral-vm-runtime-handlers'
+import { cleanupEphemeralVmRuntimeRecord } from './ephemeral-vm-runtime-cleanup-service'
+import { attachEphemeralVmRuntimeToWorkspace } from './ephemeral-vm-runtime-attachment'
 import {
   normalizePluginConsents,
   normalizePluginIdList
@@ -2752,6 +2763,22 @@ void app.whenReady().then(async () => {
     applyEnablement: (pluginKey, enabled) =>
       applyPluginEnablement({ store: store!, pluginService: pluginService!, pluginKey, enabled })
   })
+  setEphemeralVmRpcReadService({
+    listRecipes: (args) => listEphemeralVmRecipes(store!, pluginService ?? undefined, args),
+    listRecipeCatalog: () => listEphemeralVmRecipeCatalog(store!, pluginService ?? undefined),
+    doctor: (args) => doctorEphemeralVm(store!, pluginService ?? undefined, args),
+    listRuntimes: async () => listEphemeralVmRuntimeRecords(app.getPath('userData')),
+    provision: (args) =>
+      provisionEphemeralVmForRpc(store!, pluginService ?? undefined, app.getPath('userData'), args),
+    cancelProvision: async (args) => cancelEphemeralVmProvision(args),
+    attachWorkspace: async (args) =>
+      attachEphemeralVmRuntimeToWorkspace({
+        userDataPath: app.getPath('userData'),
+        runtimeId: args.runtimeId,
+        workspaceId: args.workspaceId
+      }),
+    cleanup: (args) => cleanupEphemeralVmRuntimeRecord(store!, app.getPath('userData'), args)
+  })
   // Lazy kernel: initialize() only discovers manifests — no worker forks, no
   // panel reads. Zero plugin code runs before an explicit trigger.
   void pluginService
@@ -3228,6 +3255,7 @@ app.on('will-quit', (e) => {
   // the teardown barrier below — quitting before it resolves would let
   // Electron exit first and orphan the hosts.
   setPluginServiceForRpc(null)
+  setEphemeralVmRpcReadService(null)
   pluginKillListService = null
   pluginMarketplaceService = null
   pluginMarketplaceInstaller = null

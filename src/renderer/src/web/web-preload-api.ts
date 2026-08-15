@@ -103,6 +103,7 @@ import {
 import { normalizeWorktreeVisibilityDefaults } from '../../../shared/external-worktree-visibility'
 import type { RateLimitState } from '../../../shared/rate-limit-types'
 import type { RuntimeStatus, RuntimeSyncWindowGraph } from '../../../shared/runtime-types'
+import { getEphemeralVmRecipeResultPairingCode } from '../../../shared/ephemeral-vm-recipes'
 import { assertFileMutationOwnershipCapability } from '../../../shared/file-mutation-ownership'
 import {
   findKeybindingConflicts,
@@ -120,8 +121,11 @@ import {
   clearStoredWebRuntimeEnvironment,
   createStoredWebRuntimeEnvironment,
   getPreferredWebPairingOffer,
+  readAdditionalWebRuntimeEnvironments,
   readStoredWebRuntimeEnvironment,
   redactStoredWebRuntimeEnvironment,
+  removeAdditionalWebRuntimeEnvironment,
+  saveAdditionalWebRuntimeEnvironment,
   saveStoredWebRuntimeEnvironment,
   updateStoredEnvironmentRuntimeId,
   type StoredWebRuntimeEnvironment
@@ -187,8 +191,7 @@ const CLIPBOARD_IMAGE_SAVE_TIMEOUT_MS = 30_000
 let activeEnvironment: StoredWebRuntimeEnvironment | null = readStoredWebRuntimeEnvironment()
 let worktreeVisibilityDefaultsRuntimeEnvironmentId: string | null = null
 let worktreeVisibilityDefaultsRuntimeValue: WorktreeVisibilityDefaults | null = null
-let activeClient: WebRuntimeClient | null = null
-let activeClientEnvironmentId: string | null = null
+const runtimeClients = new Map<string, WebRuntimeClient>()
 const manuallyDisconnectedEnvironmentIds = new Set<string>()
 let cachedWorktrees: { loadedAt: number; worktrees: Worktree[] } | null = null
 let cachedDetectedWorktrees: { loadedAt: number; worktrees: Worktree[] } | null = null
@@ -868,6 +871,7 @@ function createWebPreloadApi(): Partial<PreloadApi> {
       }
     },
     runtime: createRuntimeApi(),
+    ephemeralVm: createEphemeralVmApi(),
     nativeChat: createNativeChatApi(),
     runtimeEnvironments: createRuntimeEnvironmentsApi(),
     repos: createReposApi(),
@@ -1434,11 +1438,84 @@ function createRuntimeApi(): NonNullable<Partial<PreloadApi>['runtime']> {
   }
 }
 
+function createEphemeralVmApi(): NonNullable<Partial<PreloadApi>['ephemeralVm']> {
+  const unsupported = (): never => {
+    throw new Error('Ephemeral VM mutations are not available in the web client yet.')
+  }
+  return {
+    listRecipes: (args) => callRuntimeResult('ephemeralVm.listRecipes', args),
+    listRecipeCatalog: () => callRuntimeResult('ephemeralVm.listRecipeCatalog'),
+    doctor: (args) => callRuntimeResult('ephemeralVm.doctor', args),
+    provision: async (args) => {
+      type ProvisionResult = Awaited<
+        ReturnType<NonNullable<PreloadApi['ephemeralVm']>['provision']>
+      >
+      const result = await callRuntimeResult<ProvisionResult & { pairingCode?: string }>(
+        'ephemeralVm.provision',
+        args
+      )
+      if (!result.ok || result.connectionType !== 'orca-server') {
+        return result
+      }
+      const offer = result.pairingCode ? parseWebPairingInput(result.pairingCode) : null
+      if (!offer) {
+        throw new Error('The provisioned Orca server returned an invalid access link.')
+      }
+      const environment = {
+        ...createStoredWebRuntimeEnvironment({ name: result.environment.name, offer }),
+        id: result.environment.id,
+        source: 'ephemeral-vm' as const
+      }
+      saveAdditionalWebRuntimeEnvironment(environment)
+      const { pairingCode: _pairingCode, ...publicResult } = result
+      return {
+        ...publicResult,
+        environment: redactStoredWebRuntimeEnvironment(environment)
+      }
+    },
+    cancelProvision: (args) => callRuntimeResult('ephemeralVm.cancelProvision', args),
+    onProvisionEvent: () => noopUnsubscribe,
+    listRuntimes: async () => {
+      const runtimes = await callRuntimeResult<
+        Awaited<ReturnType<NonNullable<PreloadApi['ephemeralVm']>['listRuntimes']>>
+      >('ephemeralVm.listRuntimes')
+      for (const runtime of runtimes) {
+        if (!runtime.runtimeEnvironmentId) {
+          continue
+        }
+        const pairingCode = getEphemeralVmRecipeResultPairingCode(runtime.recipeResult)
+        const offer = pairingCode ? parseWebPairingInput(pairingCode) : null
+        if (!offer) {
+          continue
+        }
+        saveAdditionalWebRuntimeEnvironment({
+          ...createStoredWebRuntimeEnvironment({
+            name: runtime.workspaceName ? `${runtime.workspaceName} VM` : 'Workspace VM',
+            offer
+          }),
+          id: runtime.runtimeEnvironmentId,
+          source: 'ephemeral-vm'
+        })
+      }
+      return runtimes
+    },
+    attachWorkspace: (args) => callRuntimeResult('ephemeralVm.attachWorkspace', args),
+    suspendWorkspace: async () => unsupported(),
+    resumeWorkspace: async () => unsupported(),
+    cleanup: (args) => callRuntimeResult('ephemeralVm.cleanup', args),
+    stopCleanup: async () => unsupported(),
+    getCleanupCommand: async () => unsupported()
+  }
+}
+
 function createRuntimeEnvironmentsApi(): NonNullable<Partial<PreloadApi>['runtimeEnvironments']> {
   return {
     list: async () => {
       const environment = requireActiveEnvironmentOrNull()
-      return environment ? [redactStoredWebRuntimeEnvironment(environment)] : []
+      return [
+        ...(environment ? [redactStoredWebRuntimeEnvironment(environment)] : []),
+        ...readAdditionalWebRuntimeEnvironments().map(redactStoredWebRuntimeEnvironment)
+      ]
     },
     addFromPairingCode: async ({ name, pairingCode }) => {
       const offer = parseWebPairingInput(pairingCode)
@@ -1561,6 +1638,10 @@ function createRuntimeEnvironmentsApi(): NonNullable<Partial<PreloadApi>['runtim
       const environment = resolveEnvironment(selector)
       if (activeEnvironment?.id === environment.id) {
         removeActiveRuntimeEnvironment()
+      } else {
+        runtimeClients.get(environment.id)?.close()
+        runtimeClients.delete(environment.id)
+        removeAdditionalWebRuntimeEnvironment(environment.id)
       }
       manuallyDisconnectedEnvironmentIds.delete(environment.id)
       return { removed: redactStoredWebRuntimeEnvironment(environment) }
@@ -3554,7 +3635,10 @@ function captureWebFileMutationSession(): {
   const environment = requireActiveEnvironment()
   const client = getClientForEnvironment(environment)
   const assertCurrent = (): void => {
-    if (activeClient !== client || requireActiveEnvironmentOrNull()?.id !== environment.id) {
+    if (
+      runtimeClients.get(environment.id) !== client ||
+      requireActiveEnvironmentOrNull()?.id !== environment.id
+    ) {
       throw new Error('Runtime pairing changed; refresh and try again')
     }
   }
@@ -3679,18 +3763,19 @@ function getClientForEnvironment(environment: StoredWebRuntimeEnvironment): WebR
   if (manuallyDisconnectedEnvironmentIds.has(environment.id)) {
     throw new Error('runtime_manually_disconnected')
   }
-  if (!activeClient || activeClientEnvironmentId !== environment.id) {
-    activeClient?.close()
-    activeClient = new WebRuntimeClient(getPreferredWebPairingOffer(environment))
-    activeClientEnvironmentId = environment.id
+  let client = runtimeClients.get(environment.id)
+  if (!client) {
+    client = new WebRuntimeClient(getPreferredWebPairingOffer(environment))
+    runtimeClients.set(environment.id, client)
   }
-  return activeClient
+  return client
 }
 
 function closeActiveRuntimeClients(): void {
-  activeClient?.close()
-  activeClient = null
-  activeClientEnvironmentId = null
+  for (const client of runtimeClients.values()) {
+    client.close()
+  }
+  runtimeClients.clear()
   invalidateRuntimeWorktreeCaches()
 }
 
@@ -3722,12 +3807,21 @@ function manuallyDisconnectedResponse(
 }
 
 function resolveEnvironment(selector: string): StoredWebRuntimeEnvironment {
-  const environment = requireActiveEnvironment()
-  if (selector === environment.id || selector === environment.name || selector === 'active') {
-    return environment
+  const active = requireActiveEnvironment()
+  if (selector === active.id || selector === active.name || selector === 'active') {
+    return active
   }
-  if (environment.compatibleEnvironmentIds?.includes(selector)) {
-    return environment
+  if (active.compatibleEnvironmentIds?.includes(selector)) {
+    return active
+  }
+  const additional = readAdditionalWebRuntimeEnvironments().find(
+    (environment) =>
+      environment.id === selector ||
+      environment.name === selector ||
+      environment.compatibleEnvironmentIds?.includes(selector)
+  )
+  if (additional) {
+    return additional
   }
   throw new Error(`Unknown Orca runtime environment: ${selector}`)
 }
@@ -3755,9 +3849,6 @@ function updateEnvironmentFromResponse(
   environment: StoredWebRuntimeEnvironment,
   response: RuntimeRpcResponse<unknown>
 ): void {
-  if (activeEnvironment?.id !== environment.id) {
-    return
-  }
   const runtimeId = response.ok ? response._meta.runtimeId : (response._meta?.runtimeId ?? null)
   const pairedDeviceId =
     response.ok &&
@@ -3766,7 +3857,27 @@ function updateEnvironmentFromResponse(
     typeof (response.result as { pairedDeviceId?: unknown }).pairedDeviceId === 'string'
       ? (response.result as { pairedDeviceId: string }).pairedDeviceId
       : undefined
+  if (activeEnvironment?.id !== environment.id) {
+    saveAdditionalWebRuntimeEnvironment(
+      updateStoredEnvironmentRuntimeIdWithoutSaving(environment, runtimeId, pairedDeviceId)
+    )
+    return
+  }
   activeEnvironment = updateStoredEnvironmentRuntimeId(environment, runtimeId, pairedDeviceId)
+}
+
+function updateStoredEnvironmentRuntimeIdWithoutSaving(
+  environment: StoredWebRuntimeEnvironment,
+  runtimeId: string | null,
+  pairedDeviceId?: string
+): StoredWebRuntimeEnvironment {
+  return {
+    ...environment,
+    runtimeId,
+    ...(pairedDeviceId ? { pairedDeviceId } : {}),
+    updatedAt: Date.now(),
+    lastUsedAt: Date.now()
+  }
 }
 
 function getStoredSettings(): GlobalSettings {

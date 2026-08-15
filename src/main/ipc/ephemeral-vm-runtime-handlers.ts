@@ -41,6 +41,10 @@ export type EphemeralVmCleanupCommandResult = {
   message?: string
 }
 
+export function listEphemeralVmRuntimeRecords(userDataPath: string): EphemeralVmRuntimeRecord[] {
+  return listEphemeralVmRuntimes(userDataPath)
+}
+
 export function registerEphemeralVmRuntimeHandlers(store: Store): void {
   ipcMain.removeHandler('ephemeralVm:attachWorkspace')
   ipcMain.removeHandler('ephemeralVm:listRuntimes')
@@ -51,7 +55,7 @@ export function registerEphemeralVmRuntimeHandlers(store: Store): void {
   ipcMain.removeHandler('ephemeralVm:getCleanupCommand')
 
   ipcMain.handle('ephemeralVm:listRuntimes', (): EphemeralVmRuntimeRecord[] => {
-    return listEphemeralVmRuntimes(app.getPath('userData'))
+    return listEphemeralVmRuntimeRecords(app.getPath('userData'))
   })
 
   ipcMain.handle(
