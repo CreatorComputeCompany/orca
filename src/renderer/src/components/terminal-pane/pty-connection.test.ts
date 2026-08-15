@@ -12,6 +12,7 @@ import {
   ABORT_TRUNCATED_CONTROL_STRING,
   buildSnapshotReplayPrologue,
   RESET_AFTER_BYTE_GAP,
+  RESET_GRAPHIC_RENDITION,
   RESET_KITTY_KEYBOARD_PROTOCOL,
   RESET_TERMINAL_CURSOR_STYLE
 } from '../../../../shared/terminal-mode-reset-profiles'
@@ -8718,9 +8719,10 @@ describe('connectPanePty', () => {
   it('resets reattach renderer state after daemon snapshot replay without applying the full mode reset', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport('tab-pty')
+    const snapshot = 'ORCA-SGR-REPRO \x1b[1mBOLD-RUN-LEFT-OPEN\x1b[1;34H'
     transport.connect.mockImplementation(async ({ sessionId }: { sessionId?: string }) => {
       if (sessionId) {
-        return { id: sessionId, snapshot: '\x1b[?1004hrestored snapshot' }
+        return { id: sessionId, snapshot }
       }
       return null
     })
@@ -8745,9 +8747,12 @@ describe('connectPanePty', () => {
     connectPanePty(pane as never, manager as never, deps as never)
     await flushAsyncTicks(20)
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('\x1b[2J\x1b[3J\x1b[H', expect.any(Function))
     expect(pane.terminal.write).toHaveBeenCalledWith(
-      '\x1b[?1004hrestored snapshot',
+      `${RESET_GRAPHIC_RENDITION}\x1b[2J\x1b[3J\x1b[H`,
+      expect.any(Function)
+    )
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      `${RESET_GRAPHIC_RENDITION}${snapshot}`,
       expect.any(Function)
     )
     expect(pane.terminal.write).toHaveBeenCalledWith(
@@ -8758,6 +8763,25 @@ describe('connectPanePty', () => {
       POST_REPLAY_MODE_RESET,
       expect.any(Function)
     )
+
+    const rendered = new Terminal({ cols: 40, rows: 6, allowProposedApi: true })
+    try {
+      await writeHeadlessTerminal(rendered, '\x1b[1;44mDIRTY')
+      for (const [data] of pane.terminal.write.mock.calls) {
+        if (data) {
+          await writeHeadlessTerminal(rendered, data)
+        }
+      }
+      await writeHeadlessTerminal(rendered, 'PLAIN')
+      const line = rendered.buffer.active.getLine(rendered.buffer.active.baseY)
+      const plainColumn = line?.translateToString(true).indexOf('PLAIN') ?? -1
+
+      expect(line?.getCell(plainColumn)?.isBold()).toBe(0)
+      expect(line?.getCell(plainColumn)?.getBgColor()).toBe(-1)
+      expect(rendered.buffer.active.getLine(5)?.getCell(39)?.getBgColor()).toBe(-1)
+    } finally {
+      rendered.dispose()
+    }
   })
 
   it('drops a too-wide daemon alt frame and keeps the scrollback prefix', async () => {
@@ -8963,6 +8987,7 @@ describe('connectPanePty', () => {
     expect(writes.join('')).toContain('PREFIX-SCROLLBACK')
     expect(writes.join('')).toContain('RESTORE-LIVE-STATE')
     expect(writes.join('')).not.toContain('ALT-FRAME-BODY')
+    expect(writes).toContain(`${RESET_GRAPHIC_RENDITION}PREFIX-SCROLLBACKRESTORE-LIVE-STATE`)
     expect(writes).toContain(POST_REPLAY_MODE_RESET)
   })
 
@@ -9009,7 +9034,9 @@ describe('connectPanePty', () => {
       }
     )
     const snapshotWriteCall = pane.terminal.write.mock.invocationCallOrder.find(
-      (_order, index) => pane.terminal.write.mock.calls[index][0] === '\x1b[?1004hrestored snapshot'
+      (_order, index) =>
+        pane.terminal.write.mock.calls[index][0] ===
+        `${RESET_GRAPHIC_RENDITION}\x1b[?1004hrestored snapshot`
     )
     expect(resizeToSnapshotCall).toBeDefined()
     expect(snapshotWriteCall).toBeDefined()
@@ -9626,6 +9653,9 @@ describe('connectPanePty', () => {
       const writes = (pane.terminal.write as ReturnType<typeof vi.fn>).mock.calls.map(
         ([data]) => data as string
       )
+      expect(writes).toContain(
+        `${RESET_GRAPHIC_RENDITION}\x1b[?1003h\x1b[?1006h\x1b[?2004huser@host ~ $ `
+      )
       expect(writes).toContain(POST_REPLAY_MODE_RESET)
       expect(writes).not.toContain(POST_REPLAY_LIVE_AGENT_REATTACH_RESET)
     })
@@ -10038,7 +10068,10 @@ describe('connectPanePty', () => {
     connectPanePty(pane as never, manager as never, deps as never)
     await flushAsyncTicks(20)
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('snapshot-payload', expect.any(Function))
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      `${RESET_GRAPHIC_RENDITION}snapshot-payload`,
+      expect.any(Function)
+    )
     expect(pane.terminal.write).not.toHaveBeenCalledWith('replay-payload', expect.any(Function))
   })
 
@@ -10073,7 +10106,10 @@ describe('connectPanePty', () => {
     connectPanePty(pane as never, manager as never, deps as never)
     await flushAsyncTicks(20)
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('replay-payload', expect.any(Function))
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      `${RESET_GRAPHIC_RENDITION}replay-payload`,
+      expect.any(Function)
+    )
     expect(pane.terminal.write).not.toHaveBeenCalledWith('cold-payload', expect.any(Function))
     // Why: the replay branch supersedes cold-restore but must still ack, or the daemon redelivers the cold-restore payload next reattach.
     expect(window.api.pty.ackColdRestore).toHaveBeenCalledWith('tab-pty')
@@ -10144,6 +10180,7 @@ describe('connectPanePty', () => {
     const recoveredCols = 20
     const recoveredRows = 3
     const coldScrollback = '\x1b[1;1HCOLD\x1b[1;15HEND\r\nCOLD_SOURCE_ROW_02'
+    const groundedColdScrollback = `${RESET_GRAPHIC_RENDITION}${coldScrollback}`
     const viewportClear = '\x1b[2J\x1b[H'
     transport.connect.mockImplementation(async ({ sessionId }: { sessionId?: string }) => {
       if (sessionId) {
@@ -10220,10 +10257,10 @@ describe('connectPanePty', () => {
     expect(written).toContain(viewportClear)
     expect(written).not.toContain(NORMAL_BUFFER_PROLOGUE)
     expect(written).toEqual(
-      expect.arrayContaining([coldScrollback, POST_REPLAY_MODE_RESET, blankViewport])
+      expect.arrayContaining([groundedColdScrollback, POST_REPLAY_MODE_RESET, blankViewport])
     )
-    expect(written.indexOf(viewportClear)).toBeLessThan(written.indexOf(coldScrollback))
-    expect(written.indexOf(coldScrollback)).toBeLessThan(written.indexOf(blankViewport))
+    expect(written.indexOf(viewportClear)).toBeLessThan(written.indexOf(groundedColdScrollback))
+    expect(written.indexOf(groundedColdScrollback)).toBeLessThan(written.indexOf(blankViewport))
     const viewportClearOperation = operations.findIndex(
       (operation) => operation.kind === 'write' && operation.data === viewportClear
     )
@@ -10362,7 +10399,10 @@ describe('connectPanePty', () => {
     await flushAsyncTicks(20)
     await new Promise((resolve) => setTimeout(resolve, 70))
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('cold-payload', expect.any(Function))
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      `${RESET_GRAPHIC_RENDITION}cold-payload`,
+      expect.any(Function)
+    )
     expect(pane.terminal.write).not.toHaveBeenCalledWith(
       expect.stringContaining('--- session restored ---'),
       expect.any(Function)
@@ -10453,7 +10493,10 @@ describe('connectPanePty', () => {
     await flushAsyncTicks(20)
     await new Promise((resolve) => setTimeout(resolve, 70))
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('cold-payload', expect.any(Function))
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      `${RESET_GRAPHIC_RENDITION}cold-payload`,
+      expect.any(Function)
+    )
     expect(transport.sendInput).not.toHaveBeenCalled()
     expect(transport.connect).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -10528,7 +10571,10 @@ describe('connectPanePty', () => {
     await flushAsyncTicks(20)
     await new Promise((resolve) => setTimeout(resolve, 70))
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('cold-payload', expect.any(Function))
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      `${RESET_GRAPHIC_RENDITION}cold-payload`,
+      expect.any(Function)
+    )
     expect(pane.terminal.write).not.toHaveBeenCalledWith(
       expect.stringContaining('--- session restored ---'),
       expect.any(Function)
@@ -10679,7 +10725,10 @@ describe('connectPanePty', () => {
     await flushAsyncTicks(20)
     await new Promise((resolve) => setTimeout(resolve, 70))
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('cold-payload', expect.any(Function))
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      `${RESET_GRAPHIC_RENDITION}cold-payload`,
+      expect.any(Function)
+    )
     expect(deps.onShowSessionRestoredBanner).toHaveBeenCalledWith(1, 'restored')
     expect(transport.sendInput).not.toHaveBeenCalled()
     expect(transport.connect).toHaveBeenCalledWith(
@@ -10756,7 +10805,10 @@ describe('connectPanePty', () => {
     await flushAsyncTicks(20)
     await new Promise((resolve) => setTimeout(resolve, 70))
 
-    expect(pane.terminal.write).toHaveBeenCalledWith('cold-payload', expect.any(Function))
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      `${RESET_GRAPHIC_RENDITION}cold-payload`,
+      expect.any(Function)
+    )
     expect(deps.onShowSessionRestoredBanner).not.toHaveBeenCalled()
     expect(transport.connect).not.toHaveBeenCalledWith(
       expect.objectContaining({ command: expect.stringContaining('resume') })
@@ -11817,7 +11869,7 @@ describe('connectPanePty', () => {
     connectPanePty(pane as never, createManager(1) as never, deps as never)
     await flushAsyncTicks(20)
 
-    const snapshotIndex = writes.indexOf('authoritative-snapshot')
+    const snapshotIndex = writes.indexOf(`${RESET_GRAPHIC_RENDITION}authoritative-snapshot`)
     expect(snapshotIndex).toBeGreaterThanOrEqual(0)
     expect(writes).not.toContain('post-snapshot-live')
     for (let step = 0; step < 40; step += 1) {
@@ -21662,7 +21714,7 @@ describe('connectPanePty', () => {
     expect(deps.syncPanePtyLayoutBinding).toHaveBeenCalledWith(1, 'leaf-session')
     expect(deps.updateTabPtyId).toHaveBeenCalledWith('tab-1', 'leaf-session')
     // Why: the relay's replay buffer holds full history, so clear xterm before writing to avoid duplicating prior-session content.
-    expect(writes).toContain('\x1b[2J\x1b[3J\x1b[H')
+    expect(writes).toContain(`${RESET_GRAPHIC_RENDITION}\x1b[2J\x1b[3J\x1b[H`)
     expect(writes).toContain('restored-ssh-output')
     expect(writes).toContain(POST_REPLAY_REATTACH_RESET)
     expect(api.pty.signal).toHaveBeenCalledWith('leaf-session', 'SIGWINCH')
