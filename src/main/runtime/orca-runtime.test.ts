@@ -90,6 +90,7 @@ import { MAX_QUICK_COMMANDS } from '../../shared/terminal-quick-commands'
 import {
   AGENT_PROMPT_BRACKETED_PASTE_END,
   AGENT_PROMPT_BRACKETED_PASTE_START,
+  AGENT_PROMPT_SUBMIT_DELAY_MS,
   buildAgentPromptPasteBytes
 } from '../../shared/agent-prompt-injection'
 import { CLIPBOARD_TEXT_MEASURE_YIELD_CODE_UNITS } from '../../shared/clipboard-text'
@@ -16776,8 +16777,8 @@ describe('OrcaRuntimeService', () => {
     }
   })
 
-  it.each(Object.keys(TUI_AGENT_CONFIG) as TuiAgent[])(
-    'waits for every %s composer output frame to settle before one submit',
+  it.each(['claude', 'codex'] as const)(
+    'waits for %s composer output frames to settle before one submit',
     async (agent) => {
       vi.useFakeTimers()
       try {
@@ -16849,7 +16850,11 @@ describe('OrcaRuntimeService', () => {
     }
   )
 
-  it('gives an unidentified silent composer a full quiet window before submit', async () => {
+  it.each(
+    (Object.keys(TUI_AGENT_CONFIG) as TuiAgent[]).filter(
+      (agent) => agent !== 'claude' && agent !== 'codex'
+    )
+  )('preserves the legacy fixed submit delay for %s', async (agent) => {
     vi.useFakeTimers()
     try {
       const writes: string[] = []
@@ -16863,10 +16868,12 @@ describe('OrcaRuntimeService', () => {
         kill: () => true,
         getForegroundProcess: async () => null
       })
-      const { handle } = await runtime.createTerminal(`path:${TEST_WORKTREE_PATH}`)
+      const { handle } = await runtime.createTerminal(`path:${TEST_WORKTREE_PATH}`, {
+        launchAgent: agent
+      })
 
       const sendPromise = runtime.sendTerminalAgentPrompt(handle, 'review this change')
-      await vi.advanceTimersByTimeAsync(1_499)
+      await vi.advanceTimersByTimeAsync(AGENT_PROMPT_SUBMIT_DELAY_MS - 1)
       expect(writes).not.toContain('\r')
 
       await vi.advanceTimersByTimeAsync(1)
@@ -16900,6 +16907,7 @@ describe('OrcaRuntimeService', () => {
       })
       const { handle } = await runtime.createTerminal(`path:${TEST_WORKTREE_PATH}`)
 
+      await expect(runtime.isTerminalRunningSettledPromptAgent(handle)).resolves.toBe(true)
       const sendPromise = runtime.sendTerminalAgentPrompt(handle, 'review this change')
       await vi.advanceTimersByTimeAsync(1_199)
       expect(writes).not.toContain('\r')
@@ -24007,6 +24015,54 @@ describe('OrcaRuntimeService', () => {
       runtime.isTerminalRunningAgent(handle, { retryForegroundWrappers: false })
     ).resolves.toBe(false)
     expect(getForegroundProcess).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['claude', 'codex'] as const)(
+    'authorizes settled CLI prompts only after positive %s foreground identity',
+    async (agent) => {
+      const runtime = new OrcaRuntimeService(store)
+      runtime.setPtyController({
+        write: () => true,
+        kill: () => true,
+        getForegroundProcess: async () => agent
+      })
+      syncSinglePty(runtime, 'pty-1', { paneTitle: 'bash' })
+      const [terminal] = (await runtime.listTerminals()).terminals
+
+      await expect(runtime.isTerminalRunningSettledPromptAgent(terminal.handle)).resolves.toBe(true)
+    }
+  )
+
+  it('keeps a recognized non-target agent on legacy CLI prompt delivery', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.setPtyController({
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => 'gemini'
+    })
+    syncSinglePty(runtime, 'pty-1', { paneTitle: 'bash' })
+    const [terminal] = (await runtime.listTerminals()).terminals
+
+    await expect(runtime.isTerminalRunningAgent(terminal.handle)).resolves.toBe(true)
+    await expect(runtime.isTerminalRunningSettledPromptAgent(terminal.handle)).resolves.toBe(false)
+  })
+
+  it('keeps stale Codex launch identity on legacy delivery after the shell returns', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    runtime.setPtyController({
+      spawn: vi.fn().mockResolvedValue({ id: 'pty-bg' }),
+      write: () => true,
+      kill: () => true,
+      getForegroundProcess: async () => 'zsh'
+    })
+    const { handle } = await runtime.createTerminal(`path:${TEST_WORKTREE_PATH}`, {
+      command: 'codex',
+      title: 'Codex working',
+      launchAgent: 'codex'
+    })
+
+    await expect(runtime.isTerminalRunningAgent(handle)).resolves.toBe(true)
+    await expect(runtime.isTerminalRunningSettledPromptAgent(handle)).resolves.toBe(false)
   })
 
   it('waits for delayed wrapper foreground cache enrichment', async () => {

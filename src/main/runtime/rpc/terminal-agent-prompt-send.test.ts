@@ -26,7 +26,7 @@ describe('terminal agent prompt send RPC', () => {
     const runtime = makeRuntime({
       resolveLiveLeafForHandle: vi.fn().mockReturnValue({ ptyId: 'pty-1' }),
       getDriver: vi.fn().mockReturnValue({ kind: 'idle' }),
-      isTerminalRunningAgent: vi.fn().mockResolvedValue(true),
+      isTerminalRunningSettledPromptAgent: vi.fn().mockResolvedValue(true),
       sendTerminal,
       sendTerminalAgentPrompt
     })
@@ -43,16 +43,14 @@ describe('terminal agent prompt send RPC', () => {
     )
 
     expect(response.ok).toBe(true)
-    expect(runtime.isTerminalRunningAgent).toHaveBeenCalledWith('terminal-1', {
-      retryForegroundWrappers: false
-    })
+    expect(runtime.isTerminalRunningSettledPromptAgent).toHaveBeenCalledWith('terminal-1')
     expect(sendTerminalAgentPrompt).toHaveBeenCalledWith('terminal-1', 'review this change', {
       beforeWrite: undefined
     })
     expect(sendTerminal).not.toHaveBeenCalled()
   })
 
-  it('preserves direct input when the CLI target is not a running agent', async () => {
+  it('preserves direct input when the CLI target is not a proven settlement agent', async () => {
     const sendTerminal = vi.fn().mockResolvedValue({
       handle: 'terminal-1',
       accepted: true,
@@ -62,7 +60,7 @@ describe('terminal agent prompt send RPC', () => {
     const runtime = makeRuntime({
       resolveLiveLeafForHandle: vi.fn().mockReturnValue({ ptyId: 'pty-1' }),
       getDriver: vi.fn().mockReturnValue({ kind: 'idle' }),
-      isTerminalRunningAgent: vi.fn().mockResolvedValue(false),
+      isTerminalRunningSettledPromptAgent: vi.fn().mockResolvedValue(false),
       sendTerminal,
       sendTerminalAgentPrompt
     })

@@ -93,6 +93,7 @@ import {
 import {
   AGENT_PROMPT_BRACKETED_PASTE_END,
   AGENT_PROMPT_SUBMIT,
+  AGENT_PROMPT_SUBMIT_DELAY_MS,
   buildAgentPromptPasteBytes
 } from '../../shared/agent-prompt-injection'
 import {
@@ -1879,7 +1880,7 @@ const BRACKETED_PASTE_END = '\x1b[201~'
 const BRACKETED_PASTE_QUIET_MS = 1500
 const AGENT_PROMPT_RENDER_TIMEOUT_MS = 8000
 const AGENT_PROMPT_RENDER_QUIET_MS = 1500
-// Why: validated composers emit show-cursor after accepting bracketed paste.
+// Why: Claude and Codex emit show-cursor after accepting bracketed paste.
 const AGENT_PROMPT_RENDER_MARKER = '\x1b[?25h'
 const MOBILE_TERMINAL_SURFACE_TIMEOUT_MS = 10_000
 // Why: the split already failed; the caller waits on this teardown only to learn whether the
@@ -17645,7 +17646,7 @@ export class OrcaRuntimeService {
         const nextChunk = chunks.next()
         await options.beforeWrite?.(ptyId)
         if (nextChunk.done) {
-          renderGate.arm()
+          renderGate?.arm()
         }
         const wrote = this.ptyController?.write(ptyId, chunk.value) ?? false
         if (!wrote) {
@@ -17662,12 +17663,16 @@ export class OrcaRuntimeService {
       if (wrotePasteBytes && !completedPaste) {
         this.ptyController?.write(ptyId, AGENT_PROMPT_BRACKETED_PASTE_END)
       }
-      renderGate.dispose()
+      renderGate?.dispose()
       throw error
     }
 
-    await renderGate.wait()
-    renderGate.dispose()
+    if (renderGate) {
+      await renderGate.wait()
+      renderGate.dispose()
+    } else {
+      await new Promise((resolve) => setTimeout(resolve, AGENT_PROMPT_SUBMIT_DELAY_MS))
+    }
     try {
       await options.beforeWrite?.(ptyId)
     } catch (error) {
@@ -17686,16 +17691,14 @@ export class OrcaRuntimeService {
     arm: () => void
     wait: () => Promise<void>
     dispose: () => void
-  } {
+  } | null {
     const pty = this.ptysById.get(ptyId)
     const agent = pty?.launchAgent ?? pty?.foregroundAgent
-    const readySignal = agent ? TUI_AGENT_CONFIG[agent].draftPasteReadySignal : undefined
-    const requiresRenderMarker =
-      agent === 'claude' ||
-      agent === 'codex' ||
-      readySignal === 'render-cursor-after-bracketed-paste'
+    if (!isTerminalSendSettlementAgent(agent)) {
+      return null
+    }
     let armed = false
-    let canSettle = !requiresRenderMarker
+    let canSettle = false
     let settled = false
     let markerCarry = ''
     let quietTimer: NodeJS.Timeout | null = null
@@ -17753,9 +17756,6 @@ export class OrcaRuntimeService {
         armed = true
         markerCarry = ''
         armHardTimer()
-        if (canSettle) {
-          armQuietTimer()
-        }
       },
       wait: async () => {
         if (settled) {
@@ -32478,6 +32478,30 @@ export class OrcaRuntimeService {
     }
   }
 
+  async isTerminalRunningSettledPromptAgent(handle: string): Promise<boolean> {
+    try {
+      const livePty = this.getLivePtyForHandle(handle)
+      const leaf = livePty ? null : this.getLiveLeafForHandle(handle).leaf
+      const ptyId = livePty?.pty.ptyId ?? leaf?.ptyId ?? null
+      const trackedPty = livePty?.pty ?? (ptyId ? this.ptysById.get(ptyId) : null)
+      if (!ptyId || !trackedPty || !this.ptyController) {
+        return false
+      }
+      const recognized = recognizeAgentProcess(await this.ptyController.getForegroundProcess(ptyId))
+      const recognizedAgent = recognized?.agent
+      if (!isTerminalSendSettlementAgent(recognizedAgent)) {
+        return false
+      }
+      if (!(await this.isTerminalRunningAgent(handle, { retryForegroundWrappers: false }))) {
+        return false
+      }
+      trackedPty.foregroundAgent = recognizedAgent
+      return true
+    } catch {
+      return false
+    }
+  }
+
   private async isPtyRunningAgent(
     pty: RuntimePtyWorktreeRecord,
     leaf: RuntimeLeafRecord | null = null,
@@ -38364,6 +38388,12 @@ function classifyAgentTitle(title: string | null): 'agent' | 'management' | 'neu
     return 'management'
   }
   return detectAgentStatusFromTitle(title) !== null ? 'agent' : 'neutral'
+}
+
+function isTerminalSendSettlementAgent(
+  agent: TuiAgent | null | undefined
+): agent is 'claude' | 'codex' {
+  return agent === 'claude' || agent === 'codex'
 }
 
 function terminalTitleBlocksExplicitAgentStatus(title: string | null): boolean {
