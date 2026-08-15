@@ -1,8 +1,16 @@
 import { toast } from 'sonner'
 import type { BrowserCookieImportSummary } from '../../../shared/browser-workspace-types'
+import type { ExecutionHostId } from '../../../shared/execution-host'
 import { translate } from '@/i18n/i18n'
+import { useAppStore } from '@/store'
 
 type CookieImportWarning = NonNullable<BrowserCookieImportSummary['warning']>
+
+type CookieImportToastTarget = {
+  profileId: string
+  executionHostId: ExecutionHostId
+  executionHostLabel: string
+}
 
 function formatCookieImportWarning(warning: CookieImportWarning): string {
   switch (warning.code) {
@@ -26,18 +34,51 @@ function formatCookieImportWarning(warning: CookieImportWarning): string {
 
 function emitGoogleCookieImportWarning(
   summary: BrowserCookieImportSummary,
-  executionHostLabel: string
+  target: CookieImportToastTarget
 ): void {
   if (!summary.googleCookiesSkipped) {
     return
   }
+  const clearAction =
+    target.profileId === 'default'
+      ? {
+          action: {
+            label: translate(
+              'auto.lib.browser.cookie.import.toast.clearProfileCookies',
+              'Clear profile cookies'
+            ),
+            onClick: () => {
+              void useAppStore
+                .getState()
+                .clearDefaultSessionCookies(target.executionHostId)
+                .then((cleared) => {
+                  if (cleared) {
+                    toast.success(
+                      translate(
+                        'auto.lib.browser.cookie.import.toast.profileCookiesCleared',
+                        'Profile cookies cleared.'
+                      )
+                    )
+                  } else {
+                    toast.error(
+                      translate(
+                        'auto.lib.browser.cookie.import.toast.profileCookiesClearFailed',
+                        'Failed to clear profile cookies.'
+                      )
+                    )
+                  }
+                })
+            }
+          }
+        }
+      : {}
   toast.warning(
     translate(
       'auto.lib.browser.cookie.import.toast.googleCookiesSkipped',
       'Google cookies were not imported. Open a browser in Orca on {{value0}} with this profile, then sign into Google.',
-      { value0: executionHostLabel }
+      { value0: target.executionHostLabel }
     ),
-    { duration: 12000 }
+    { duration: 12000, ...clearAction }
   )
 }
 
@@ -46,7 +87,7 @@ function emitGoogleCookieImportWarning(
 export function emitBrowserCookieImportToast(
   summary: BrowserCookieImportSummary,
   successMessage: string,
-  executionHostLabel: string
+  target: CookieImportToastTarget
 ): void {
   const warning = summary.warning
   if (warning) {
@@ -54,5 +95,5 @@ export function emitBrowserCookieImportToast(
   } else {
     toast.success(successMessage)
   }
-  emitGoogleCookieImportWarning(summary, executionHostLabel)
+  emitGoogleCookieImportWarning(summary, target)
 }

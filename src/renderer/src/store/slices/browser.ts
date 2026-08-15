@@ -236,7 +236,7 @@ export type BrowserSlice = {
     browserFamily: string,
     browserProfile?: string
   ) => Promise<BrowserCookieImportExecutionResult>
-  clearDefaultSessionCookies: () => Promise<boolean>
+  clearDefaultSessionCookies: (executionHostId?: ExecutionHostId) => Promise<boolean>
   browserUrlHistory: BrowserHistoryEntry[]
   addBrowserHistoryEntry: (url: string, title: string) => void
   clearBrowserHistory: () => void
@@ -2304,13 +2304,13 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
     }
   },
 
-  clearDefaultSessionCookies: async () => {
-    const hostId = getBrowserSettingsHostId(get())
-    const runtimeEnvironmentId = getBrowserSettingsRuntimeEnvironmentId(get())
-    if (runtimeEnvironmentId) {
+  clearDefaultSessionCookies: async (executionHostId) => {
+    const hostId = executionHostId ?? getBrowserSettingsHostId(get())
+    const host = parseExecutionHostId(hostId)
+    if (host?.kind === 'runtime') {
       try {
         const result = await callRuntimeRpc<BrowserProfileClearDefaultCookiesResult>(
-          { kind: 'environment', environmentId: runtimeEnvironmentId },
+          { kind: 'environment', environmentId: host.environmentId },
           'browser.profileClearDefaultCookies',
           undefined,
           { timeoutMs: 15_000 }
@@ -2322,6 +2322,9 @@ export const createBrowserSlice: StateCreator<AppState, [], [], BrowserSlice> = 
       } catch {
         return false
       }
+    }
+    if (host?.kind !== 'local') {
+      return false
     }
     try {
       const ok = await window.api.browser.sessionClearDefaultCookies()

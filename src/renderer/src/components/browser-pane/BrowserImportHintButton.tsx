@@ -102,7 +102,11 @@ export function BrowserImportHintButton({
               value2: browserProfile ? ` (${browserProfile})` : ''
             }
           ),
-          result.executionHostLabel
+          {
+            profileId: effectiveProfileId,
+            executionHostId: result.executionHostId,
+            executionHostLabel: result.executionHostLabel
+          }
         )
         return
       }
@@ -123,7 +127,11 @@ export function BrowserImportHintButton({
           'Imported {{value0}} cookies from file.',
           { value0: result.summary.importedCookies }
         ),
-        result.executionHostLabel
+        {
+          profileId: effectiveProfileId,
+          executionHostId: result.executionHostId,
+          executionHostLabel: result.executionHostLabel
+        }
       )
       return
     }

@@ -117,6 +117,34 @@ describe('cookie-import Google disclosure footer', () => {
       DISCLOSURE_DESCRIPTION
     )
   })
+
+  it('keeps the default cookie clear action enabled without import source metadata', () => {
+    act(() =>
+      root.render(
+        <BrowserProfileRow
+          profile={
+            {
+              id: 'default',
+              name: 'Default',
+              partition: 'persist:default',
+              source: null
+            } as never
+          }
+          detectedBrowsers={DETECTED_BROWSERS}
+          importState={null}
+          isActive
+          isDefault
+          onSelect={vi.fn()}
+        />
+      )
+    )
+
+    const clearButton = Array.from(container.querySelectorAll('button')).find((button) =>
+      button.querySelector('.lucide-trash-2')
+    )
+    expect(clearButton).toBeDefined()
+    expect(clearButton?.disabled).toBe(false)
+  })
 })
 
 function catalogEntry(key: string): unknown {

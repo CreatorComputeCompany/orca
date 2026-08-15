@@ -60,7 +60,11 @@ export function BrowserUseCookieImportStep({
             value2: browserProfile ? ` (${browserProfile})` : ''
           }
         ),
-        result.executionHostLabel
+        {
+          profileId,
+          executionHostId: result.executionHostId,
+          executionHostLabel: result.executionHostLabel
+        }
       )
     } else {
       toast.error(result.reason)
@@ -77,7 +81,11 @@ export function BrowserUseCookieImportStep({
           'Imported {{value0}} cookies from file.',
           { value0: result.summary.importedCookies }
         ),
-        result.executionHostLabel
+        {
+          profileId: 'default',
+          executionHostId: result.executionHostId,
+          executionHostLabel: result.executionHostLabel
+        }
       )
     } else if (result.reason !== 'canceled') {
       toast.error(result.reason)

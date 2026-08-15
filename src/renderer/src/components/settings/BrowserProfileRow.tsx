@@ -85,7 +85,11 @@ export function BrowserProfileRow({
                 value2: profile.label
               }
             ),
-        result.executionHostLabel
+        {
+          profileId: profile.id,
+          executionHostId: result.executionHostId,
+          executionHostLabel: result.executionHostLabel
+        }
       )
     } else {
       toast.error(result.reason)
@@ -102,7 +106,11 @@ export function BrowserProfileRow({
           'Imported {{value0}} cookies from file into {{value1}}.',
           { value0: result.summary.importedCookies, value1: profile.label }
         ),
-        result.executionHostLabel
+        {
+          profileId: profile.id,
+          executionHostId: result.executionHostId,
+          executionHostLabel: result.executionHostLabel
+        }
       )
     } else if (result.reason !== 'canceled') {
       toast.error(result.reason)
@@ -227,7 +235,6 @@ export function BrowserProfileRow({
             variant="ghost"
             size="icon"
             className="size-7 text-muted-foreground hover:text-destructive"
-            disabled={!profile.source}
             onClick={async () => {
               const ok = await useAppStore.getState().clearDefaultSessionCookies()
               if (ok) {
