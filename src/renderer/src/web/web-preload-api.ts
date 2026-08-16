@@ -1655,8 +1655,11 @@ function createRuntimeEnvironmentsApi(): NonNullable<Partial<PreloadApi>['runtim
     },
     getStatus: ({ selector, timeoutMs }) =>
       callEnvironmentEnvelope<RuntimeStatus>(selector, 'status.get', undefined, timeoutMs),
-    call: ({ selector, method, params, timeoutMs }) =>
-      callEnvironmentEnvelope(selector, method, params, timeoutMs),
+    call: async ({ selector, method, params, timeoutMs }) => {
+      const environment = resolveEnvironment(selector)
+      const response = await callEnvironmentEnvelope(environment.id, method, params, timeoutMs)
+      return projectRuntimeEnvironmentWorktreeResponse(environment.id, method, response)
+    },
     subscribe: async ({ selector, method, params, timeoutMs }, callbacks) => {
       const environment = resolveEnvironment(selector)
       const client = getClientForEnvironment(environment)
@@ -1710,13 +1713,18 @@ async function hydrateEphemeralVmEnvironments(): Promise<void> {
   if (!requireActiveEnvironmentOrNull()) {
     return
   }
-  ephemeralVmEnvironmentHydration ??= listAndStoreEphemeralVmRuntimes()
+  const hydration = (ephemeralVmEnvironmentHydration ??= listAndStoreEphemeralVmRuntimes()
     .then(() => undefined)
     .catch((error: unknown) => {
-      ephemeralVmEnvironmentHydration = null
       console.warn('[web] Failed to discover controller workspace VMs:', error)
-    })
-  await ephemeralVmEnvironmentHydration
+    }))
+  await hydration
+  // Why: another paired browser can provision a VM after this browser's first
+  // discovery pass. Coalesce concurrent callers, but let the next environment
+  // refresh ask the controller again instead of freezing the initial VM list.
+  if (ephemeralVmEnvironmentHydration === hydration) {
+    ephemeralVmEnvironmentHydration = null
+  }
 }
 
 function createAiVaultApi(): NonNullable<Partial<PreloadApi>['aiVault']> {
@@ -3694,12 +3702,46 @@ function withRuntimeWorktreeOwner<T extends Worktree>(worktree: T, hostId: Execu
   if (runtimeOwner?.kind !== 'runtime') {
     return worktree
   }
+  // Why: the child runtime sees the controller as its direct paired creator,
+  // but the controller VM record knows which human browser requested the VM.
+  // The controller-level human identity must win for multiplayer filtering.
   const creatorProvenance =
-    worktree.creatorProvenance ?? ephemeralVmCreatorByEnvironmentId.get(runtimeOwner.environmentId)
+    ephemeralVmCreatorByEnvironmentId.get(runtimeOwner.environmentId) ?? worktree.creatorProvenance
   return {
     ...worktree,
     runtimeOwnerEnvironmentId: runtimeOwner.environmentId,
     ...(creatorProvenance ? { creatorProvenance } : {})
+  }
+}
+
+function projectRuntimeEnvironmentWorktreeResponse<TResult>(
+  environmentId: string,
+  method: string,
+  response: RuntimeRpcResponse<TResult>
+): RuntimeRpcResponse<TResult> {
+  if (
+    !response.ok ||
+    (method !== 'worktree.list' && method !== 'worktree.detectedList') ||
+    !response.result ||
+    typeof response.result !== 'object'
+  ) {
+    return response
+  }
+  const result = response.result as { worktrees?: unknown }
+  if (!Array.isArray(result.worktrees)) {
+    return response
+  }
+  const hostId = toRuntimeExecutionHostId(environmentId)
+  return {
+    ...response,
+    result: {
+      ...response.result,
+      worktrees: result.worktrees.map((worktree) =>
+        worktree && typeof worktree === 'object'
+          ? withRuntimeWorktreeOwner(worktree as Worktree, hostId)
+          : worktree
+      )
+    } as TResult
   }
 }
 

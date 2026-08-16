@@ -232,6 +232,65 @@ describe('web runtime environment identity', () => {
     ])
   })
 
+  it('refreshes controller VM discovery after another browser provisions a workspace', async () => {
+    const firstPairingCode = encodePairingCode({
+      endpoint: 'wss://first-child.example',
+      deviceToken: 'first-child-token',
+      publicKeyB64: 'first-child-key'
+    })
+    const secondPairingCode = encodePairingCode({
+      endpoint: 'wss://second-child.example',
+      deviceToken: 'second-child-token',
+      publicKeyB64: 'second-child-key'
+    })
+    const runtimes = [
+      {
+        id: 'vm-runtime-1',
+        runtimeEnvironmentId: 'first-child-environment',
+        recipeResult: {
+          pairingCode: firstPairingCode,
+          projectRoot: '/workspace/emma'
+        }
+      }
+    ]
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string): Promise<RuntimeRpcResponse<unknown>> {
+          return Promise.resolve({
+            id: method,
+            ok: true,
+            result: method === 'ephemeralVm.listRuntimes' ? runtimes : {},
+            _meta: { runtimeId: 'controller-runtime' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage, 'controller')
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    await expect(globals.window.api.runtimeEnvironments.list()).resolves.toHaveLength(2)
+
+    runtimes.push({
+      id: 'vm-runtime-2',
+      runtimeEnvironmentId: 'second-child-environment',
+      recipeResult: {
+        pairingCode: secondPairingCode,
+        projectRoot: '/workspace/emma'
+      }
+    })
+
+    await expect(globals.window.api.runtimeEnvironments.list()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'first-child-environment' }),
+        expect.objectContaining({ id: 'second-child-environment' })
+      ])
+    )
+  })
+
   it('projects the controller creator onto a child VM workspace catalog', async () => {
     const childPairingCode = encodePairingCode({
       endpoint: 'wss://shared-child.example',
@@ -260,7 +319,17 @@ describe('web runtime environment identity', () => {
                     }
                   }
                 ]
-              : { worktrees: [{ id: 'workspace-1' }] }
+              : {
+                  worktrees: [
+                    {
+                      id: 'workspace-1',
+                      creatorProvenance: {
+                        kind: 'paired-device',
+                        deviceId: 'controller-to-child-device'
+                      }
+                    }
+                  ]
+                }
           return Promise.resolve({
             id: method,
             ok: true,
