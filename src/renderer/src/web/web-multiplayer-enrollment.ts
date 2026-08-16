@@ -28,7 +28,7 @@ export async function enrollWebMultiplayerIdentity(displayName: string): Promise
     if (!offer) {
       throw new Error('Orca returned an invalid personal access credential.')
     }
-    const environment = createStoredWebRuntimeEnvironment({
+    const refreshed = createStoredWebRuntimeEnvironment({
       name: current.name,
       offer,
       previousEnvironment: current,
@@ -36,10 +36,22 @@ export async function enrollWebMultiplayerIdentity(displayName: string): Promise
         ? { connectionDependency: current.connectionDependency }
         : {})
     })
+    const environment = {
+      ...refreshed,
+      id: current.id,
+      createdAt: current.createdAt,
+      runtimeId: current.runtimeId,
+      preferredEndpointId: current.preferredEndpointId,
+      endpoints: refreshed.endpoints.map((endpoint, index) => ({
+        ...endpoint,
+        id: index === 0 ? current.preferredEndpointId : endpoint.id
+      }))
+    }
     saveStoredWebRuntimeEnvironment(
       withWebMultiplayerIdentity(environment, {
         memberKey: result.member.key,
-        displayName: result.member.displayName
+        displayName: result.member.displayName,
+        originalEnvironmentId: current.id
       })
     )
   } finally {

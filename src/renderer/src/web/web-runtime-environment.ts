@@ -7,6 +7,7 @@ export type StoredWebRuntimeEnvironment = Omit<PublicKnownRuntimeEnvironment, 'e
   compatibleEnvironmentIds?: string[]
   multiplayerMemberKey?: string
   multiplayerDisplayName?: string
+  multiplayerOriginalEnvironmentId?: string
   endpoints: {
     id: string
     kind: 'websocket'
@@ -49,11 +50,12 @@ export function readStoredWebRuntimeEnvironment(): StoredWebRuntimeEnvironment |
       pairedDeviceId: _unvalidatedDeviceId,
       ...environment
     } = parsed
-    return {
+    const normalized = {
       ...environment,
       ...(pairedDeviceId ? { pairedDeviceId } : {}),
       ...(compatibleEnvironmentIds.length > 0 ? { compatibleEnvironmentIds } : {})
     }
+    return repairMultiplayerEnvironmentId(normalized)
   } catch {
     return null
   }
@@ -134,14 +136,41 @@ export function createStoredWebRuntimeEnvironment(args: {
 
 export function withWebMultiplayerIdentity(
   environment: StoredWebRuntimeEnvironment,
-  identity: { memberKey: string; displayName: string }
+  identity: { memberKey: string; displayName: string; originalEnvironmentId: string }
 ): StoredWebRuntimeEnvironment {
   return {
     ...environment,
     multiplayerMemberKey: identity.memberKey,
     multiplayerDisplayName: identity.displayName,
+    multiplayerOriginalEnvironmentId: identity.originalEnvironmentId,
     updatedAt: Date.now()
   }
+}
+
+function repairMultiplayerEnvironmentId(
+  environment: StoredWebRuntimeEnvironment
+): StoredWebRuntimeEnvironment {
+  const inferredOriginalId = environment.compatibleEnvironmentIds?.at(-1)
+  const originalId = environment.multiplayerOriginalEnvironmentId ?? inferredOriginalId
+  if (!environment.multiplayerMemberKey || !originalId || environment.id === originalId) {
+    return environment
+  }
+  const preferredEndpointId = `ws-${originalId}`
+  const repaired = {
+    ...environment,
+    id: originalId,
+    multiplayerOriginalEnvironmentId: originalId,
+    preferredEndpointId,
+    compatibleEnvironmentIds: environment.compatibleEnvironmentIds?.filter(
+      (environmentId) => environmentId !== originalId
+    ),
+    endpoints: environment.endpoints.map((endpoint, index) => ({
+      ...endpoint,
+      id: index === 0 ? preferredEndpointId : endpoint.id
+    }))
+  }
+  window.localStorage.setItem(ENVIRONMENT_STORAGE_KEY, JSON.stringify(repaired))
+  return repaired
 }
 
 function isStoredWebRuntimeEnvironment(value: unknown): value is StoredWebRuntimeEnvironment {
