@@ -31,6 +31,9 @@ export const KnownRuntimeEnvironmentSchema = z.object({
    * to this client. Child VM transport credentials identify the controller, not
    * the human browser that requested the VM. */
   workspaceVisibilityDeviceId: z.string().min(1).optional(),
+  /** Stable account owner and the account viewing this child environment. */
+  workspaceOwnerMemberKey: z.string().min(1).optional(),
+  workspaceViewerMemberKey: z.string().min(1).optional(),
   lastUsedAt: z.number().finite().nullable(),
   runtimeId: z.string().min(1).nullable(),
   source: RuntimeEnvironmentSourceSchema.optional(),

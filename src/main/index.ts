@@ -318,8 +318,11 @@ import {
 } from './ephemeral-vm-runtime-sharing'
 import {
   canDeviceAccessEphemeralVmRuntime,
-  findMultiplayerMemberByDevice
+  findMultiplayerMemberByDevice,
+  findMultiplayerMemberByKey,
+  resolveEphemeralVmRuntimeOwnerMemberKey
 } from './runtime/multiplayer-identity-store'
+import { migrateEphemeralVmRuntimeMemberOwnership } from './ephemeral-vm-runtime-member-ownership'
 import { assertEphemeralVmRuntimeAccess } from './ephemeral-vm-runtime-access'
 import {
   createViewerPairingCode,
@@ -2780,6 +2783,7 @@ void app.whenReady().then(async () => {
     applyEnablement: (pluginKey, enabled) =>
       applyPluginEnablement({ store: store!, pluginService: pluginService!, pluginKey, enabled })
   })
+  migrateEphemeralVmRuntimeMemberOwnership(app.getPath('userData'))
   setEphemeralVmRpcReadService({
     listRecipes: (args) => listEphemeralVmRecipes(store!, pluginService ?? undefined, args),
     listRecipeCatalog: () => listEphemeralVmRecipeCatalog(store!, pluginService ?? undefined),
@@ -2823,24 +2827,32 @@ void app.whenReady().then(async () => {
         userDataPath: app.getPath('userData'),
         ...args
       })
-      if (args.sharing === 'private' && runtime.creatorProvenance?.kind === 'paired-device') {
-        const owner = findMultiplayerMemberByDevice(
+      if (args.sharing === 'private') {
+        const ownerMemberKey = resolveEphemeralVmRuntimeOwnerMemberKey(
           app.getPath('userData'),
-          runtime.creatorProvenance.deviceId
+          runtime
         )
+        const owner = ownerMemberKey
+          ? findMultiplayerMemberByKey(app.getPath('userData'), ownerMemberKey)
+          : null
         runtimeRpc?.revokeMobileRuntimeEnvironmentAccess(
           args.runtimeEnvironmentId,
-          new Set(owner?.deviceIds ?? [runtime.creatorProvenance.deviceId])
+          new Set(owner?.deviceIds ?? [])
         )
       }
       return updated
     },
     provision: async (args) => {
+      const ownerMemberKey =
+        args.creatorProvenance?.kind === 'paired-device'
+          ? findMultiplayerMemberByDevice(app.getPath('userData'), args.creatorProvenance.deviceId)
+              ?.key
+          : undefined
       const result = await provisionEphemeralVmForRpc(
         store!,
         pluginService ?? undefined,
         app.getPath('userData'),
-        args
+        { ...args, ...(ownerMemberKey ? { ownerMemberKey } : {}) }
       )
       if (
         !result.ok ||

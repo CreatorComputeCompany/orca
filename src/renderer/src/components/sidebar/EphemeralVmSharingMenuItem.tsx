@@ -19,12 +19,16 @@ export function EphemeralVmSharingMenuItem({
     state.runtimeEnvironments?.find((entry) => entry.id === worktree.runtimeOwnerEnvironmentId)
   )
   const creator = worktree.creatorProvenance
+  const memberOwnsWorkspace = worktree.ownerMemberKey
+    ? worktree.ownerMemberKey === environment?.workspaceViewerMemberKey
+    : null
   const canManage =
     worktree.ephemeralVmSharing !== undefined &&
     worktree.runtimeOwnerEnvironmentId !== undefined &&
-    (creator?.kind === 'host' ||
-      (creator?.kind === 'paired-device' &&
-        creator.deviceId === environment?.workspaceVisibilityDeviceId))
+    (memberOwnsWorkspace ??
+      (creator?.kind === 'host' ||
+        (creator?.kind === 'paired-device' &&
+          creator.deviceId === environment?.workspaceVisibilityDeviceId)))
   if (!canManage || !worktree.runtimeOwnerEnvironmentId) {
     return null
   }

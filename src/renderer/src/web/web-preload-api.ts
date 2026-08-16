@@ -1506,16 +1506,24 @@ function createEphemeralVmApi(): NonNullable<Partial<PreloadApi>['ephemeralVm']>
       if (!offer) {
         throw new Error('The provisioned Orca server returned an invalid access link.')
       }
+      const viewerMemberKey = readStoredWebRuntimeEnvironment()?.multiplayerMemberKey
       const environment = {
         ...createStoredWebRuntimeEnvironment({ name: result.environment.name, offer }),
         id: result.environment.id,
         source: 'ephemeral-vm' as const,
+        ...(result.runtime.ownerMemberKey
+          ? { workspaceOwnerMemberKey: result.runtime.ownerMemberKey }
+          : {}),
+        ...(viewerMemberKey ? { workspaceViewerMemberKey: viewerMemberKey } : {}),
         ...(result.runtime.creatorProvenance?.kind === 'paired-device'
           ? { workspaceVisibilityDeviceId: result.runtime.creatorProvenance.deviceId }
           : {})
       }
       if (result.runtime.creatorProvenance) {
         ephemeralVmCreatorByEnvironmentId.set(environment.id, result.runtime.creatorProvenance)
+      }
+      if (result.runtime.ownerMemberKey) {
+        ephemeralVmOwnerMemberByEnvironmentId.set(environment.id, result.runtime.ownerMemberKey)
       }
       ephemeralVmSharingByEnvironmentId.set(environment.id, result.runtime.sharing ?? 'private')
       saveAdditionalWebRuntimeEnvironment(environment)
@@ -1739,6 +1747,7 @@ type EphemeralVmRuntimeList = Awaited<
 >
 
 const ephemeralVmCreatorByEnvironmentId = new Map<string, WorkspaceCreatorProvenance>()
+const ephemeralVmOwnerMemberByEnvironmentId = new Map<string, string>()
 const ephemeralVmSharingByEnvironmentId = new Map<string, EphemeralVmWorkspaceSharing>()
 const retiredEphemeralVmEnvironmentIds = new Set<string>()
 
@@ -1767,13 +1776,21 @@ async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList
   }
   invalidateRuntimeWorktreeCaches()
   ephemeralVmCreatorByEnvironmentId.clear()
+  ephemeralVmOwnerMemberByEnvironmentId.clear()
   ephemeralVmSharingByEnvironmentId.clear()
+  const viewerMemberKey = readStoredWebRuntimeEnvironment()?.multiplayerMemberKey
   for (const runtime of runtimes) {
     if (!runtime.runtimeEnvironmentId) {
       continue
     }
     if (runtime.creatorProvenance) {
       ephemeralVmCreatorByEnvironmentId.set(runtime.runtimeEnvironmentId, runtime.creatorProvenance)
+    }
+    if (runtime.ownerMemberKey) {
+      ephemeralVmOwnerMemberByEnvironmentId.set(
+        runtime.runtimeEnvironmentId,
+        runtime.ownerMemberKey
+      )
     }
     ephemeralVmSharingByEnvironmentId.set(
       runtime.runtimeEnvironmentId,
@@ -1807,6 +1824,8 @@ async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList
         id: index === 0 ? preferredEndpointId : endpoint.id
       })),
       source: 'ephemeral-vm',
+      ...(runtime.ownerMemberKey ? { workspaceOwnerMemberKey: runtime.ownerMemberKey } : {}),
+      ...(viewerMemberKey ? { workspaceViewerMemberKey: viewerMemberKey } : {}),
       ...(runtime.creatorProvenance?.kind === 'paired-device'
         ? { workspaceVisibilityDeviceId: runtime.creatorProvenance.deviceId }
         : {})
@@ -3744,8 +3763,9 @@ function withEphemeralVmCreatorResponse(
   response: RuntimeRpcResponse<unknown>
 ): RuntimeRpcResponse<unknown> {
   const creatorProvenance = ephemeralVmCreatorByEnvironmentId.get(environmentId)
+  const ownerMemberKey = ephemeralVmOwnerMemberByEnvironmentId.get(environmentId)
   if (
-    !creatorProvenance ||
+    (!creatorProvenance && !ownerMemberKey) ||
     !response.ok ||
     (method !== 'worktree.list' && method !== 'worktree.detectedList') ||
     !response.result ||
@@ -3762,8 +3782,14 @@ function withEphemeralVmCreatorResponse(
     result: {
       ...result,
       worktrees: result.worktrees.map((worktree: unknown) =>
-        worktree && typeof worktree === 'object' && !('creatorProvenance' in worktree)
-          ? { ...worktree, creatorProvenance }
+        worktree && typeof worktree === 'object'
+          ? {
+              ...worktree,
+              ...(creatorProvenance && !('creatorProvenance' in worktree)
+                ? { creatorProvenance }
+                : {}),
+              ...(ownerMemberKey && !('ownerMemberKey' in worktree) ? { ownerMemberKey } : {})
+            }
           : worktree
       )
     }
@@ -3814,10 +3840,12 @@ function withRuntimeWorktreeOwner<T extends Worktree>(worktree: T, hostId: Execu
   const creatorProvenance =
     ephemeralVmCreatorByEnvironmentId.get(runtimeOwner.environmentId) ?? worktree.creatorProvenance
   const ephemeralVmSharing = ephemeralVmSharingByEnvironmentId.get(runtimeOwner.environmentId)
+  const ownerMemberKey = ephemeralVmOwnerMemberByEnvironmentId.get(runtimeOwner.environmentId)
   return {
     ...worktree,
     runtimeOwnerEnvironmentId: runtimeOwner.environmentId,
     ...(creatorProvenance ? { creatorProvenance } : {}),
+    ...(ownerMemberKey ? { ownerMemberKey } : {}),
     ...(ephemeralVmSharing ? { ephemeralVmSharing } : {})
   }
 }

@@ -70,6 +70,8 @@ export type Worktree = {
   runtimeOwnerEnvironmentId?: string
   /** Authenticated client that created this workspace. Missing means unknown legacy origin. */
   creatorProvenance?: WorkspaceCreatorProvenance
+  /** Stable multiplayer account that owns the workspace across devices. */
+  ownerMemberKey?: string
   /** Team visibility projected from the controller-owned VM record. */
   ephemeralVmSharing?: EphemeralVmWorkspaceSharing
   /** Host-specific setup used to create/run this workspace. */

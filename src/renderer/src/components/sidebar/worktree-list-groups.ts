@@ -1110,7 +1110,8 @@ export function buildRows(
   hostLabelById?: ReadonlyMap<string, string>,
   defaultHostId: ExecutionHostId = LOCAL_EXECUTION_HOST_ID,
   pinnedDisplayPolicy: PinnedWorktreeDisplayPolicy = getPinnedWorktreeDisplayPolicy(settings),
-  currentWorkspaceDeviceIds: ReadonlySet<string> = new Set()
+  currentWorkspaceDeviceIds: ReadonlySet<string> = new Set(),
+  currentWorkspaceMemberKeys: ReadonlySet<string> = new Set()
 ): Row[] {
   const result: Row[] = []
   const projectIndex = buildProjectGroupingIndex(projectGrouping)
@@ -1447,7 +1448,11 @@ export function buildRows(
         const collaborativeItems = new Map<WorkspaceCollaborationSection, Worktree[]>()
         const ordinaryItems: Worktree[] = []
         for (const item of items) {
-          const section = getWorkspaceCollaborationSection(item, currentWorkspaceDeviceIds)
+          const section = getWorkspaceCollaborationSection(
+            item,
+            currentWorkspaceDeviceIds,
+            currentWorkspaceMemberKeys
+          )
           if (!section) {
             ordinaryItems.push(item)
             continue

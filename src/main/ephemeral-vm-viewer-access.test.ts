@@ -120,6 +120,7 @@ function setupRuntime(): { userDataPath: string; runtime: EphemeralVmRuntimeReco
       recipeId: 'boxd',
       runtimeEnvironmentId: environment.id,
       creatorProvenance: { kind: 'paired-device', deviceId: 'steven-controller-device' },
+      ownerMemberKey: 'steven',
       sharing: 'shared',
       connectionMode: 'orca-server',
       status: 'running',

@@ -63,6 +63,11 @@ export const EphemeralVmRuntimeRecordSchema = z.object({
   workspaceId: z.string().min(1).optional(),
   workspaceName: z.string().min(1).optional(),
   creatorProvenance: WorkspaceCreatorProvenanceSchema.optional(),
+  /** Stable multiplayer account that owns the workspace across devices. */
+  ownerMemberKey: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{0,62}$/)
+    .optional(),
   sharing: EphemeralVmWorkspaceSharingSchema.optional(),
   connectionMode: EphemeralVmRuntimeConnectionModeSchema.optional(),
   runtimeEnvironmentId: z.string().min(1).optional(),

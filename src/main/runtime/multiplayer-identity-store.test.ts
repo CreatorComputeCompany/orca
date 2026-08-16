@@ -20,12 +20,14 @@ function temporaryUserData(): string {
 
 function runtime(
   creatorDeviceId: string,
-  sharing: 'private' | 'shared' = 'private'
+  sharing: 'private' | 'shared' = 'private',
+  ownerMemberKey?: string
 ): EphemeralVmRuntimeRecord {
   return {
     id: 'runtime-1',
     recipeId: 'boxd',
     creatorProvenance: { kind: 'paired-device', deviceId: creatorDeviceId },
+    ...(ownerMemberKey ? { ownerMemberKey } : {}),
     sharing,
     status: 'running',
     cleanupStatus: 'not_started',
@@ -116,5 +118,25 @@ describe('multiplayer identity store', () => {
     })
 
     expect(findMultiplayerMemberByDevice(userDataPath, 'browser')?.key).toBe('niall')
+  })
+
+  it('uses stable account ownership when the creator device is no longer enrolled', () => {
+    const userDataPath = temporaryUserData()
+    enrollMultiplayerDevice({
+      userDataPath,
+      memberKey: 'jake',
+      displayName: 'Jake',
+      deviceId: 'jake-phone'
+    })
+    enrollMultiplayerDevice({
+      userDataPath,
+      memberKey: 'steven',
+      displayName: 'Steven',
+      deviceId: 'steven-browser'
+    })
+
+    const owned = runtime('retired-creator-browser', 'private', 'jake')
+    expect(canDeviceAccessEphemeralVmRuntime(userDataPath, 'jake-phone', owned)).toBe(true)
+    expect(canDeviceAccessEphemeralVmRuntime(userDataPath, 'steven-browser', owned)).toBe(false)
   })
 })

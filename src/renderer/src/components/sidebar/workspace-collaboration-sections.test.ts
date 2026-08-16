@@ -41,6 +41,21 @@ describe('getWorkspaceCollaborationSection', () => {
     ).toBeNull()
   })
 
+  it('classifies ownership by account after the creator browser is replaced', () => {
+    expect(
+      getWorkspaceCollaborationSection(
+        {
+          ...base,
+          ephemeralVmSharing: 'private',
+          ownerMemberKey: 'jake',
+          creatorProvenance: { kind: 'paired-device', deviceId: 'retired-browser' }
+        },
+        new Set(),
+        new Set(['jake'])
+      )
+    ).toBe('mine')
+  })
+
   it('builds a top-level Multiplayer section and project collaboration sections', () => {
     const mine: Worktree = {
       ...worktree,

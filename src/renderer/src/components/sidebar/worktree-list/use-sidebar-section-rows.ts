@@ -158,6 +158,15 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
       ),
     [runtimeEnvironments]
   )
+  const currentWorkspaceMemberKeys = useMemo(
+    () =>
+      new Set(
+        runtimeEnvironments.flatMap((environment) =>
+          environment.workspaceViewerMemberKey ? [environment.workspaceViewerMemberKey] : []
+        )
+      ),
+    [runtimeEnvironments]
+  )
 
   const rows: Row[] = useMemo(
     () =>
@@ -184,7 +193,8 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
         hostLabelById,
         defaultHostId,
         args.pinnedDisplayPolicy,
-        currentWorkspaceDeviceIds
+        currentWorkspaceDeviceIds,
+        currentWorkspaceMemberKeys
       ),
     [
       args.groupBy,
@@ -208,7 +218,8 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
       pendingCreations,
       hostLabelById,
       args.pinnedDisplayPolicy,
-      currentWorkspaceDeviceIds
+      currentWorkspaceDeviceIds,
+      currentWorkspaceMemberKeys
     ]
   )
   const orderedHostOptions = useMemo(

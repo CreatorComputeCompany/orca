@@ -103,6 +103,7 @@ export type EphemeralVmProvisionArgs = {
   ref?: string
   provisionId?: string
   creatorProvenance?: WorkspaceCreatorProvenance
+  ownerMemberKey?: string
 }
 
 export type EphemeralVmProvisionRpcResult =
@@ -171,6 +172,7 @@ export async function provisionEphemeralVmForRpc(
       workspaceId: args.workspaceId,
       workspaceName: args.workspaceName,
       creatorProvenance: args.creatorProvenance,
+      ownerMemberKey: args.ownerMemberKey,
       ...(repoUrl ? { repoUrl } : {}),
       ...(args.branch ? { branch: args.branch } : {}),
       ...(sourceRef ? { ref: sourceRef } : {}),

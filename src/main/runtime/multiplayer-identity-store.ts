@@ -104,11 +104,29 @@ export function canDeviceAccessEphemeralVmRuntime(
   if (runtime.sharing === 'shared') {
     return true
   }
+  const actorMember = findMultiplayerMemberByDevice(userDataPath, deviceId)
+  const ownerMemberKey = resolveEphemeralVmRuntimeOwnerMemberKey(userDataPath, runtime)
+  if (ownerMemberKey) {
+    return actorMember?.key === ownerMemberKey
+  }
   const creator = runtime.creatorProvenance
   return (
     creator?.kind === 'paired-device' &&
     devicesBelongToSameMember(userDataPath, deviceId, creator.deviceId)
   )
+}
+
+export function resolveEphemeralVmRuntimeOwnerMemberKey(
+  userDataPath: string,
+  runtime: EphemeralVmRuntimeRecord
+): string | null {
+  if (runtime.ownerMemberKey) {
+    return runtime.ownerMemberKey
+  }
+  const creator = runtime.creatorProvenance
+  return creator?.kind === 'paired-device'
+    ? (findMultiplayerMemberByDevice(userDataPath, creator.deviceId)?.key ?? null)
+    : null
 }
 
 function storePath(userDataPath: string): string {

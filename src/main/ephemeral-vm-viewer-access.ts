@@ -8,7 +8,10 @@ import { resolveEnvironment } from '../shared/runtime-environment-store'
 import { withEphemeralVmRecipeResultPairingCode } from '../shared/ephemeral-vm-recipes'
 import type { EphemeralVmRuntimeRecord } from '../shared/ephemeral-vm-runtimes'
 import type { WorkspaceCreatorProvenance } from '../shared/worktree/types'
-import { findMultiplayerMemberByDevice } from './runtime/multiplayer-identity-store'
+import {
+  findMultiplayerMemberByDevice,
+  resolveEphemeralVmRuntimeOwnerMemberKey
+} from './runtime/multiplayer-identity-store'
 
 const VIEWER_ACCESS_TIMEOUT_MS = 15_000
 
@@ -62,18 +65,14 @@ export async function revokeNonOwnerViewerAccess(args: {
   if (!args.runtime.runtimeEnvironmentId || args.runtime.connectionMode === 'ssh') {
     return
   }
-  const creator = args.runtime.creatorProvenance
-  if (creator?.kind !== 'paired-device') {
-    throw new Error('Workspace VM owner identity is unavailable.')
-  }
-  const owner = findMultiplayerMemberByDevice(args.userDataPath, creator.deviceId)
-  if (!owner) {
+  const ownerMemberKey = resolveEphemeralVmRuntimeOwnerMemberKey(args.userDataPath, args.runtime)
+  if (!ownerMemberKey) {
     throw new Error('Workspace VM owner is not enrolled.')
   }
   const response = await sendRemoteRuntimeRequest<ManagedRuntimeRevokeResult>(
     getManagerPairing(args.userDataPath, args.runtime.runtimeEnvironmentId),
     'pairing.revokeManagedRuntimeAccess',
-    { retainGrantKeys: [owner.key] },
+    { retainGrantKeys: [ownerMemberKey] },
     VIEWER_ACCESS_TIMEOUT_MS
   )
   if (!response.ok) {

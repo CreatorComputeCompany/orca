@@ -33,6 +33,7 @@ export type ProvisionEphemeralVmRuntimeArgs = {
   workspaceId?: string
   workspaceName?: string
   creatorProvenance?: WorkspaceCreatorProvenance
+  ownerMemberKey?: string
   repoUrl?: string
   branch?: string
   ref?: string

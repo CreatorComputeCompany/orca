@@ -57,6 +57,7 @@ import { encodeMobilePairingQr } from './mobile-pairing-qr'
 import { MobileRuntimeFederationGateway } from './mobile-runtime-federation-gateway'
 import { MultiplayerAccountStore } from './multiplayer-account-store'
 import { createMultiplayerAuthHttpHandler } from './multiplayer-auth-http'
+import { migrateEphemeralVmRuntimeMemberOwnership } from '../ephemeral-vm-runtime-member-ownership'
 import type { RuntimeWorktreePsResult } from '../../shared/runtime-types'
 import type {
   MultiplayerAuthRegisterParams,
@@ -663,6 +664,7 @@ export class OrcaRuntimeRpcServer {
       displayName: member.displayName,
       deviceId: offer.deviceId
     })
+    migrateEphemeralVmRuntimeMemberOwnership(this.userDataPath)
     return {
       email,
       member: {
@@ -691,6 +693,7 @@ export class OrcaRuntimeRpcServer {
           deviceId
         })
       }
+      migrateEphemeralVmRuntimeMemberOwnership(this.userDataPath)
       const account = await this.multiplayerAccounts.register({
         email: params.email,
         password: params.password,
