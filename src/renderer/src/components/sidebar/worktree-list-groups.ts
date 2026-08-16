@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- Why: sidebar row construction keeps every grouping mode in one pure module so reveal, virtualized rendering, and tests share the same flat row contract. */
-import { CircleX, FolderTree, List, Pin } from 'lucide-react'
+import { CircleX, FolderTree, List, Pin, User, Users } from 'lucide-react'
 import type React from 'react'
 import type { FolderWorkspace } from '../../../../shared/folder-workspace-types'
 import type { ProjectGroup } from '../../../../shared/project-group-types'
@@ -50,6 +50,10 @@ import {
   getCyclicProjectedWorktreeLineageIds,
   getLineageRenderInfo
 } from './worktree-lineage-projection'
+import {
+  getWorkspaceCollaborationSection,
+  type WorkspaceCollaborationSection
+} from './workspace-collaboration-sections'
 
 export { getLineageRenderInfo } from './worktree-lineage-projection'
 
@@ -78,6 +82,7 @@ export type GroupHeaderRow = {
   hostWorktreeCounts?: ReadonlyMap<ExecutionHostId, number>
   hostWorktreeIds?: ReadonlyMap<ExecutionHostId, readonly string[]>
   worktreeIds?: readonly string[]
+  collaborationSection?: WorkspaceCollaborationSection
 }
 
 export type WorktreeRow = {
@@ -387,6 +392,39 @@ export const ALL_GROUP_META = {
   tone: 'text-foreground',
   icon: List
 } as const
+
+const COLLABORATION_GROUP_META = {
+  mine: {
+    get label() {
+      return translate('auto.components.sidebar.worktree.list.groups.collaboration.mine', 'Mine')
+    },
+    icon: User
+  },
+  teammate: {
+    get label() {
+      return translate(
+        'auto.components.sidebar.worktree.list.groups.collaboration.teammate',
+        'Teammate'
+      )
+    },
+    icon: User
+  },
+  shared: {
+    get label() {
+      return translate(
+        'auto.components.sidebar.worktree.list.groups.collaboration.shared',
+        'Shared'
+      )
+    },
+    icon: Users
+  }
+} as const
+
+const COLLABORATION_GROUP_ORDER: readonly WorkspaceCollaborationSection[] = [
+  'mine',
+  'teammate',
+  'shared'
+]
 
 export const LINEAGE_GROUP_PREFIX = 'lineage:'
 
@@ -1020,7 +1058,8 @@ export function buildRows(
   folderWorkspaces: readonly FolderWorkspace[] = [],
   hostLabelById?: ReadonlyMap<string, string>,
   defaultHostId: ExecutionHostId = LOCAL_EXECUTION_HOST_ID,
-  pinnedDisplayPolicy: PinnedWorktreeDisplayPolicy = getPinnedWorktreeDisplayPolicy(settings)
+  pinnedDisplayPolicy: PinnedWorktreeDisplayPolicy = getPinnedWorktreeDisplayPolicy(settings),
+  currentWorkspaceDeviceIds: ReadonlySet<string> = new Set()
 ): Row[] {
   const result: Row[] = []
   const projectIndex = buildProjectGroupingIndex(projectGrouping)
@@ -1334,26 +1373,58 @@ export function buildRows(
             : undefined
         const hostContextLabelByWorktreeId =
           groupBy === 'repo' ? undefined : mixedWorktreeHostContextLabels
-        if (groupBy === 'repo') {
-          appendWorktreeRows(result, items, repoMap, lineageById, worktreeMap, {
+        const appendItems = (
+          itemsToAppend: Worktree[],
+          sectionKey = key,
+          groupDepth = projectGroupDepth
+        ): void => {
+          appendWorktreeRows(result, itemsToAppend, repoMap, lineageById, worktreeMap, {
             nestLineage,
             collapsedGroups,
-            groupDepth: projectGroupDepth,
-            sectionKey: key,
+            groupDepth,
+            sectionKey,
             hostContextLabelByRepoId,
             hostContextLabelByWorktreeId,
             cyclicLineageIds
           })
-        } else {
-          appendWorktreeRows(result, items, repoMap, lineageById, worktreeMap, {
-            nestLineage,
-            collapsedGroups,
-            groupDepth: projectGroupDepth,
-            sectionKey: key,
-            hostContextLabelByRepoId,
-            hostContextLabelByWorktreeId,
-            cyclicLineageIds
+        }
+        if (groupBy !== 'repo') {
+          appendItems(items)
+          continue
+        }
+        const collaborativeItems = new Map<WorkspaceCollaborationSection, Worktree[]>()
+        const ordinaryItems: Worktree[] = []
+        for (const item of items) {
+          const section = getWorkspaceCollaborationSection(item, currentWorkspaceDeviceIds)
+          if (!section) {
+            ordinaryItems.push(item)
+            continue
+          }
+          const sectionItems = collaborativeItems.get(section) ?? []
+          sectionItems.push(item)
+          collaborativeItems.set(section, sectionItems)
+        }
+        appendItems(ordinaryItems)
+        for (const section of COLLABORATION_GROUP_ORDER) {
+          const sectionItems = collaborativeItems.get(section)
+          if (!sectionItems?.length) {
+            continue
+          }
+          const sectionKey = `${key}:collaboration:${section}`
+          const meta = COLLABORATION_GROUP_META[section]
+          result.push({
+            type: 'header',
+            key: sectionKey,
+            label: meta.label,
+            count: sectionItems.length,
+            tone: 'text-muted-foreground',
+            icon: meta.icon,
+            projectGroupDepth: projectGroupDepth + 1,
+            collaborationSection: section
           })
+          if (!collapsedGroups.has(sectionKey)) {
+            appendItems(sectionItems, sectionKey, projectGroupDepth + 1)
+          }
         }
       }
     }

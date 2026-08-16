@@ -145,6 +145,15 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
     () => new Map(hostOptions.map((host) => [host.id, host.label])),
     [hostOptions]
   )
+  const currentWorkspaceDeviceIds = useMemo(
+    () =>
+      new Set(
+        runtimeEnvironments.flatMap((environment) =>
+          environment.workspaceVisibilityDeviceId ? [environment.workspaceVisibilityDeviceId] : []
+        )
+      ),
+    [runtimeEnvironments]
+  )
 
   const rows: Row[] = useMemo(
     () =>
@@ -170,7 +179,8 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
         args.visibleFolderWorkspacesForRows,
         hostLabelById,
         defaultHostId,
-        args.pinnedDisplayPolicy
+        args.pinnedDisplayPolicy,
+        currentWorkspaceDeviceIds
       ),
     [
       args.groupBy,
@@ -193,7 +203,8 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
       args.newExternalWorktreesInboxByRepo,
       pendingCreations,
       hostLabelById,
-      args.pinnedDisplayPolicy
+      args.pinnedDisplayPolicy,
+      currentWorkspaceDeviceIds
     ]
   )
   const orderedHostOptions = useMemo(
