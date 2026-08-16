@@ -54,6 +54,7 @@ export async function persistProvisionedEphemeralVmRuntime(
       ...(args.projectId ? { projectId: args.projectId } : {}),
       ...(args.workspaceId ? { workspaceId: args.workspaceId } : {}),
       ...(args.workspaceName ? { workspaceName: args.workspaceName } : {}),
+      ...(args.creatorProvenance ? { creatorProvenance: args.creatorProvenance } : {}),
       status: 'running',
       connectionMode: connection.type,
       cleanupStatus: args.recipe.destroyDisabled ? 'disabled' : 'not_started',

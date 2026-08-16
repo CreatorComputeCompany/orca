@@ -14,7 +14,11 @@ function method(name: string): RpcMethod {
   return found
 }
 
-const context = { runtime: {} } as RpcContext
+const context = {
+  runtime: {},
+  pairedDeviceId: 'device-jake',
+  clientKind: 'runtime'
+} as RpcContext
 
 afterEach(() => setEphemeralVmRpcReadService(null))
 
@@ -62,7 +66,11 @@ describe('ephemeral VM serve RPC reads', () => {
     expect(service.listRecipeCatalog).toHaveBeenCalledOnce()
     expect(service.doctor).toHaveBeenCalledWith({ repoId: 'repo-1', recipeId: 'boxd' })
     expect(service.listRuntimes).toHaveBeenCalledOnce()
-    expect(service.provision).toHaveBeenCalledWith({ repoId: 'repo-1', recipeId: 'boxd' })
+    expect(service.provision).toHaveBeenCalledWith({
+      repoId: 'repo-1',
+      recipeId: 'boxd',
+      creatorProvenance: { kind: 'paired-device', deviceId: 'device-jake' }
+    })
     expect(service.cancelProvision).toHaveBeenCalledWith({ provisionId: 'create-1' })
     expect(service.attachWorkspace).toHaveBeenCalledWith({
       runtimeId: 'runtime-1',

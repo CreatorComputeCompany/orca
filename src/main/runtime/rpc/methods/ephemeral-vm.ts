@@ -10,6 +10,7 @@ import type {
   EphemeralVmProvisionRpcResult
 } from '../../../ephemeral-vm-controller-service'
 import { defineMethod, type RpcMethod } from '../core'
+import { resolveRpcWorkspaceCreatorProvenance } from '../workspace-creator-context'
 
 export type EphemeralVmRpcReadService = {
   listRecipes(args: { repoId: string }): Promise<EphemeralVmRecipeListResult>
@@ -78,7 +79,11 @@ export const EPHEMERAL_VM_METHODS: readonly RpcMethod[] = [
   defineMethod({
     name: 'ephemeralVm.provision',
     params: ProvisionParams,
-    handler: (params) => requireService().provision(params)
+    handler: (params, context) =>
+      requireService().provision({
+        ...params,
+        creatorProvenance: resolveRpcWorkspaceCreatorProvenance(context)
+      })
   }),
   defineMethod({
     name: 'ephemeralVm.cancelProvision',

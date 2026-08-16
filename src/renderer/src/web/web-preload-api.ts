@@ -43,7 +43,11 @@ import type {
   RemoveWorktreeResult
 } from '../../../shared/worktree/create-types'
 import type { WorkspaceLineage, WorktreeLineage } from '../../../shared/worktree/lineage-types'
-import type { DetectedWorktreeListResult, Worktree } from '../../../shared/worktree/types'
+import type {
+  DetectedWorktreeListResult,
+  WorkspaceCreatorProvenance,
+  Worktree
+} from '../../../shared/worktree/types'
 import type { SkillDiscoveryResult } from '../../../shared/skills'
 import type { SkillFreshnessInventory } from '../../../shared/skill-freshness'
 import type { SshConnectionState, SshTarget } from '../../../shared/ssh-types'
@@ -1468,6 +1472,9 @@ function createEphemeralVmApi(): NonNullable<Partial<PreloadApi>['ephemeralVm']>
         id: result.environment.id,
         source: 'ephemeral-vm' as const
       }
+      if (result.runtime.creatorProvenance) {
+        ephemeralVmCreatorByEnvironmentId.set(environment.id, result.runtime.creatorProvenance)
+      }
       saveAdditionalWebRuntimeEnvironment(environment)
       const { pairingCode: _pairingCode, ...publicResult } = result
       return {
@@ -1667,14 +1674,20 @@ type EphemeralVmRuntimeList = Awaited<
   ReturnType<NonNullable<PreloadApi['ephemeralVm']>['listRuntimes']>
 >
 
+const ephemeralVmCreatorByEnvironmentId = new Map<string, WorkspaceCreatorProvenance>()
+
 async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList> {
   const runtimes = await callRuntimeResult<EphemeralVmRuntimeList>('ephemeralVm.listRuntimes')
   if (!Array.isArray(runtimes)) {
     return []
   }
+  ephemeralVmCreatorByEnvironmentId.clear()
   for (const runtime of runtimes) {
     if (!runtime.runtimeEnvironmentId) {
       continue
+    }
+    if (runtime.creatorProvenance) {
+      ephemeralVmCreatorByEnvironmentId.set(runtime.runtimeEnvironmentId, runtime.creatorProvenance)
     }
     const pairingCode = getEphemeralVmRecipeResultPairingCode(runtime.recipeResult)
     const offer = pairingCode ? parseWebPairingInput(pairingCode) : null
@@ -3597,7 +3610,7 @@ async function callEnvironmentEnvelope<TResult = unknown>(
   if (manuallyDisconnectedEnvironmentIds.has(environment.id)) {
     return manuallyDisconnectedResponse(environment)
   }
-  const response = await runtimeCallQueuePool.enqueue(environment.id, method, () => {
+  const rawResponse = await runtimeCallQueuePool.enqueue(environment.id, method, () => {
     if (manuallyDisconnectedEnvironmentIds.has(environment.id)) {
       return Promise.resolve(manuallyDisconnectedResponse(environment))
     }
@@ -3606,8 +3619,41 @@ async function callEnvironmentEnvelope<TResult = unknown>(
   if (manuallyDisconnectedEnvironmentIds.has(environment.id)) {
     return manuallyDisconnectedResponse(environment)
   }
+  const response = withEphemeralVmCreatorResponse(environment.id, method, rawResponse)
   updateEnvironmentFromResponse(environment, response)
   return response as RuntimeRpcResponse<TResult>
+}
+
+function withEphemeralVmCreatorResponse(
+  environmentId: string,
+  method: string,
+  response: RuntimeRpcResponse<unknown>
+): RuntimeRpcResponse<unknown> {
+  const creatorProvenance = ephemeralVmCreatorByEnvironmentId.get(environmentId)
+  if (
+    !creatorProvenance ||
+    !response.ok ||
+    (method !== 'worktree.list' && method !== 'worktree.detectedList') ||
+    !response.result ||
+    typeof response.result !== 'object'
+  ) {
+    return response
+  }
+  const result = response.result as { worktrees?: unknown }
+  if (!Array.isArray(result.worktrees)) {
+    return response
+  }
+  return {
+    ...response,
+    result: {
+      ...result,
+      worktrees: result.worktrees.map((worktree: unknown) =>
+        worktree && typeof worktree === 'object' && !('creatorProvenance' in worktree)
+          ? { ...worktree, creatorProvenance }
+          : worktree
+      )
+    }
+  }
 }
 
 async function callRuntimeResult<TResult>(
@@ -3648,7 +3694,13 @@ function withRuntimeWorktreeOwner<T extends Worktree>(worktree: T, hostId: Execu
   if (runtimeOwner?.kind !== 'runtime') {
     return worktree
   }
-  return { ...worktree, runtimeOwnerEnvironmentId: runtimeOwner.environmentId }
+  const creatorProvenance =
+    worktree.creatorProvenance ?? ephemeralVmCreatorByEnvironmentId.get(runtimeOwner.environmentId)
+  return {
+    ...worktree,
+    runtimeOwnerEnvironmentId: runtimeOwner.environmentId,
+    ...(creatorProvenance ? { creatorProvenance } : {})
+  }
 }
 
 function captureWebFileMutationSession(): {

@@ -32,6 +32,7 @@ function runtimeRecord(
     projectId: 'project-1',
     workspaceId: 'workspace-1',
     workspaceName: 'Fix Login Race',
+    creatorProvenance: { kind: 'paired-device', deviceId: 'device-jake' },
     status: 'running',
     cleanupStatus: 'not_started',
     createdAt: 1_000,

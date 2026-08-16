@@ -232,6 +232,73 @@ describe('web runtime environment identity', () => {
     ])
   })
 
+  it('projects the controller creator onto a child VM workspace catalog', async () => {
+    const childPairingCode = encodePairingCode({
+      endpoint: 'wss://shared-child.example',
+      deviceToken: 'shared-child-token',
+      publicKeyB64: 'shared-child-key'
+    })
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        constructor(private readonly offer: { endpoint: string }) {}
+
+        call(method: string): Promise<RuntimeRpcResponse<unknown>> {
+          const result =
+            this.offer.endpoint === 'ws://127.0.0.1:1234'
+              ? [
+                  {
+                    id: 'vm-runtime-1',
+                    runtimeEnvironmentId: 'shared-child-environment',
+                    creatorProvenance: {
+                      kind: 'paired-device',
+                      deviceId: 'controller-device-jake'
+                    },
+                    recipeResult: {
+                      schemaVersion: 1,
+                      pairingCode: childPairingCode,
+                      projectRoot: '/workspace/emma'
+                    }
+                  }
+                ]
+              : { worktrees: [{ id: 'workspace-1' }] }
+          return Promise.resolve({
+            id: method,
+            ok: true,
+            result,
+            _meta: { runtimeId: 'runtime' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage, 'controller')
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    await globals.window.api.runtimeEnvironments.list()
+    const response = await globals.window.api.runtimeEnvironments.call({
+      selector: 'shared-child-environment',
+      method: 'worktree.list'
+    })
+
+    expect(response).toMatchObject({
+      ok: true,
+      result: {
+        worktrees: [
+          {
+            id: 'workspace-1',
+            creatorProvenance: {
+              kind: 'paired-device',
+              deviceId: 'controller-device-jake'
+            }
+          }
+        ]
+      }
+    })
+  })
+
   it('resumes a controller VM through the web runtime', async () => {
     const calls: { method: string; params: unknown }[] = []
     vi.doMock('./web-runtime-client', () => ({

@@ -40,7 +40,10 @@ export function isWorkspaceFromOtherDevice(
   if (!pairedDeviceId) {
     return false
   }
-  return creator.kind !== 'paired-device' || creator.deviceId !== pairedDeviceId
+  if (creator.kind !== 'paired-device') {
+    return true
+  }
+  return ![...pairedDeviceIdsByEnvironment.values()].includes(creator.deviceId)
 }
 
 export function isFolderWorkspaceFromOtherDevice(

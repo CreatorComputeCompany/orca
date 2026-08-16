@@ -20,6 +20,7 @@ import {
 } from './ephemeral-vm-runtime-provisioning-persistence'
 import { getProvisionedRootResumeIntegrityError } from './ephemeral-vm-resume-integrity'
 import { runControlledEphemeralVmRuntimeCleanup } from './ephemeral-vm-runtime-cleanup-control'
+import type { WorkspaceCreatorProvenance } from '../shared/worktree/types'
 
 export { stopEphemeralVmRuntimeCleanup } from './ephemeral-vm-runtime-cleanup-control'
 
@@ -31,6 +32,7 @@ export type ProvisionEphemeralVmRuntimeArgs = {
   projectId?: string
   workspaceId?: string
   workspaceName?: string
+  creatorProvenance?: WorkspaceCreatorProvenance
   repoUrl?: string
   branch?: string
   ref?: string

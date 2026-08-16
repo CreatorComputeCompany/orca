@@ -32,6 +32,7 @@ import {
 import type { PluginService } from './plugins/plugin-service'
 import { getApprovedPluginVmRecipes } from './plugins/plugin-approved-vm-recipes'
 import { resolveProvisionedRootSource } from './ephemeral-vm-provisioned-root-source'
+import type { WorkspaceCreatorProvenance } from '../shared/worktree/types'
 
 const activeProvisionControllers = new Map<string, AbortController>()
 export async function listEphemeralVmRecipes(
@@ -101,6 +102,7 @@ export type EphemeralVmProvisionArgs = {
   branch?: string
   ref?: string
   provisionId?: string
+  creatorProvenance?: WorkspaceCreatorProvenance
 }
 
 export type EphemeralVmProvisionRpcResult =
@@ -168,6 +170,7 @@ export async function provisionEphemeralVmForRpc(
       projectId: args.projectId,
       workspaceId: args.workspaceId,
       workspaceName: args.workspaceName,
+      creatorProvenance: args.creatorProvenance,
       ...(repoUrl ? { repoUrl } : {}),
       ...(args.branch ? { branch: args.branch } : {}),
       ...(sourceRef ? { ref: sourceRef } : {}),
