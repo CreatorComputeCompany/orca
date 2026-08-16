@@ -110,13 +110,20 @@ export function getRuntimeRecipeContext(
   if (!repo.ok) {
     throw new Error(repo.message)
   }
-  // Pre-snapshot runtimes can only be attributed to repo-owned recipes. Never
-  // substitute a later same-id plugin recipe for an older runtime lifecycle.
-  const recipe =
-    runtime.recipe ??
-    (loadHooks(repo.repo.path)?.environmentRecipes ?? []).find(
-      (entry) => entry.id === runtime.recipeId
-    )
+  const currentRepoRecipe = (loadHooks(repo.repo.path)?.environmentRecipes ?? []).find(
+    (entry) => entry.id === runtime.recipeId
+  )
+  // Keep the persisted recipe authoritative. A repository may add a missing resume hook after a
+  // runtime was created, though, and without adopting that hook an unreachable running VM can never
+  // refresh its rotated pairing identity. Only inherit the hook when the repo still has the exact
+  // same create command; this cannot substitute a later same-id plugin or an unrelated recipe.
+  const recipe = runtime.recipe
+    ? currentRepoRecipe?.create === runtime.recipe.create &&
+      !runtime.recipe.resume &&
+      currentRepoRecipe.resume
+      ? { ...runtime.recipe, resume: currentRepoRecipe.resume }
+      : runtime.recipe
+    : currentRepoRecipe
   if (!recipe) {
     throw new Error(`Recipe not found: ${runtime.recipeId}`)
   }

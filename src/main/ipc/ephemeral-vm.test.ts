@@ -53,6 +53,7 @@ vi.mock('./runtime-environment-transport-routing', () => ({
 }))
 
 import { registerEphemeralVmHandlers } from './ephemeral-vm'
+import { getRuntimeRecipeContext } from './ephemeral-vm-recipe-context'
 
 const tempDirs: string[] = []
 
@@ -299,6 +300,51 @@ describe('registerEphemeralVmHandlers', () => {
     expect(provisioned.runtime.recipe).toMatchObject({ id: 'plugin-cloud' })
     expect(cleaned).toEqual(expect.objectContaining({ status: 'cleaned' }))
     expect(readFileSync(join(repoPath, 'plugin-cleaned.txt'), 'utf8')).toBe('yes')
+  })
+
+  it('adopts a newly added repo resume hook for the same persisted recipe', () => {
+    const userDataPath = makeDir('orca-ephemeral-vm-ipc-user-data-')
+    const repoPath = makeDir('orca-ephemeral-vm-ipc-repo-')
+    writeFileSync(
+      join(repoPath, 'orca.yaml'),
+      [
+        'environmentRecipes:',
+        '  - id: cloud-sandbox',
+        '    name: Cloud Sandbox',
+        '    create: ./scripts/create.sh',
+        '    resume: ./scripts/resume.sh'
+      ].join('\n')
+    )
+    upsertEphemeralVmRuntime(userDataPath, {
+      id: 'runtime-with-old-snapshot',
+      recipeId: 'cloud-sandbox',
+      recipe: {
+        id: 'cloud-sandbox',
+        name: 'Cloud Sandbox',
+        create: './scripts/create.sh'
+      },
+      repoId: 'repo-1',
+      status: 'running',
+      cleanupStatus: 'not_started',
+      createdAt: 1,
+      updatedAt: 1,
+      recipeResult: {
+        schemaVersion: 1,
+        pairingCode: makePairingCode(),
+        projectRoot: '/workspace/repo'
+      }
+    })
+
+    const resolved = getRuntimeRecipeContext(
+      makeStore(repoPath) as never,
+      userDataPath,
+      'runtime-with-old-snapshot'
+    )
+
+    expect(resolved.recipe).toMatchObject({
+      create: './scripts/create.sh',
+      resume: './scripts/resume.sh'
+    })
   })
 
   it('never substitutes a later same-id plugin recipe for a legacy runtime', async () => {
