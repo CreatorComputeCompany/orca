@@ -6,8 +6,11 @@ import type { Worktree } from '../../../shared/worktree/types'
 const mocks = vi.hoisted(() => {
   const state = {
     startupWorktreeRefreshCompleted: false,
+    activeWorktreeId: null as string | null,
+    activeWorkspaceExecutionHostId: null as string | null,
     setRuntimeEnvironments: vi.fn(),
-    fetchAllWorktrees: vi.fn()
+    fetchAllWorktrees: vi.fn(),
+    revealWorktreeInSidebar: vi.fn()
   }
   const useAppStore = Object.assign(
     (selector: (value: typeof state) => unknown) => selector(state),
@@ -19,7 +22,8 @@ const mocks = vi.hoisted(() => {
     worktrees: [] as Worktree[],
     refreshedWorktrees: [] as Worktree[],
     activateWorktreeFromSidebar: vi.fn(),
-    toastError: vi.fn()
+    toastError: vi.fn(),
+    toastSuccess: vi.fn()
   }
 })
 
@@ -32,7 +36,9 @@ vi.mock('@/lib/sidebar-worktree-activation', () => ({
   activateWorktreeFromSidebar: mocks.activateWorktreeFromSidebar
 }))
 vi.mock('@/lib/web-client-location', () => ({ isWebClientLocation: () => true }))
-vi.mock('sonner', () => ({ toast: { error: mocks.toastError } }))
+vi.mock('sonner', () => ({
+  toast: { error: mocks.toastError, success: mocks.toastSuccess }
+}))
 
 import { useWebWorkspaceLink } from './use-web-workspace-link'
 
@@ -42,6 +48,12 @@ describe('useWebWorkspaceLink', () => {
     mocks.worktrees = []
     mocks.refreshedWorktrees = []
     mocks.state.startupWorktreeRefreshCompleted = false
+    mocks.state.activeWorktreeId = null
+    mocks.state.activeWorkspaceExecutionHostId = null
+    mocks.activateWorktreeFromSidebar.mockImplementation(async (worktreeId, executionHostId) => {
+      mocks.state.activeWorktreeId = worktreeId
+      mocks.state.activeWorkspaceExecutionHostId = executionHostId
+    })
     window.history.replaceState(null, '', '/web-index.html?workspace=runtime-123')
     Object.assign(window, {
       api: {
@@ -65,6 +77,9 @@ describe('useWebWorkspaceLink', () => {
         'runtime:runtime-123'
       )
     )
+    expect(mocks.state.revealWorktreeInSidebar).toHaveBeenCalledWith('worktree-1', {
+      behavior: 'smooth'
+    })
   })
 
   it('wakes and refreshes an accessible sleeping workspace before opening it', async () => {
@@ -83,6 +98,9 @@ describe('useWebWorkspaceLink', () => {
         workspaceId: 'worktree-1'
       })
     )
+    expect(mocks.state.revealWorktreeInSidebar).toHaveBeenCalledWith('worktree-1', {
+      behavior: 'smooth'
+    })
     await waitFor(() =>
       expect(mocks.activateWorktreeFromSidebar).toHaveBeenCalledWith(
         'worktree-1',

@@ -10,6 +10,7 @@ import {
 } from '@/lib/web-workspace-link'
 import { isWebClientLocation } from '@/lib/web-client-location'
 import { translate } from '@/i18n/i18n'
+import type { Worktree } from '../../../shared/worktree/types'
 
 function showUnavailableWorkspaceToast(description?: string): void {
   toast.error(translate('app.webWorkspaceLink.unavailable', 'Workspace is not available'), {
@@ -20,6 +21,30 @@ function showUnavailableWorkspaceToast(description?: string): void {
         'It may be private, deleted, or shared with a different account.'
       )
   })
+}
+
+async function openLinkedWorktree(worktree: Worktree, runtimeEnvironmentId: string): Promise<void> {
+  const executionHostId = toRuntimeExecutionHostId(runtimeEnvironmentId)
+  await activateWorktreeFromSidebar(worktree.id, executionHostId)
+  const state = useAppStore.getState()
+  if (
+    state.activeWorktreeId !== worktree.id ||
+    state.activeWorkspaceExecutionHostId !== executionHostId
+  ) {
+    showUnavailableWorkspaceToast(
+      translate(
+        'app.webWorkspaceLink.activationFailed',
+        'Orca found the workspace but could not open it.'
+      )
+    )
+    return
+  }
+  state.revealWorktreeInSidebar(worktree.id, { behavior: 'smooth' })
+  toast.success(
+    translate('app.webWorkspaceLink.opened', 'Opened {{workspace}}', {
+      workspace: worktree.displayName
+    })
+  )
 }
 
 export function useWebWorkspaceLink(): void {
@@ -41,7 +66,7 @@ export function useWebWorkspaceLink(): void {
     const worktree = findWorktreeForWebWorkspaceReference(worktrees, targetEnvironmentId)
     if (worktree) {
       handledRef.current = true
-      void activateWorktreeFromSidebar(worktree.id, toRuntimeExecutionHostId(targetEnvironmentId))
+      void openLinkedWorktree(worktree, targetEnvironmentId)
       return
     }
     if (!startupWorktreeRefreshCompleted) {
@@ -73,10 +98,7 @@ export function useWebWorkspaceLink(): void {
           showUnavailableWorkspaceToast()
           return
         }
-        await activateWorktreeFromSidebar(
-          refreshedWorktree.id,
-          toRuntimeExecutionHostId(targetEnvironmentId)
-        )
+        await openLinkedWorktree(refreshedWorktree, targetEnvironmentId)
       } catch (error) {
         handledRef.current = true
         showUnavailableWorkspaceToast(error instanceof Error ? error.message : String(error))
