@@ -6,6 +6,8 @@ import { activateWorktreeFromSidebar } from '@/lib/sidebar-worktree-activation'
 import { toRuntimeExecutionHostId } from '../../../shared/execution-host'
 import {
   findWorktreeForWebWorkspaceReference,
+  readWebSessionReference,
+  toWebSessionTerminalTabId,
   readWebWorkspaceReference
 } from '@/lib/web-workspace-link'
 import { isWebClientLocation } from '@/lib/web-client-location'
@@ -23,7 +25,45 @@ function showUnavailableWorkspaceToast(description?: string): void {
   })
 }
 
-async function openLinkedWorktree(worktree: Worktree, runtimeEnvironmentId: string): Promise<void> {
+const LINKED_SESSION_WAIT_MS = 5_000
+
+function findLinkedSessionTab(worktreeId: string, terminalTabId: string) {
+  return useAppStore.getState().tabsByWorktree[worktreeId]?.find((tab) => tab.id === terminalTabId)
+}
+
+async function waitForLinkedSessionTab(worktreeId: string, terminalTabId: string) {
+  const existing = findLinkedSessionTab(worktreeId, terminalTabId)
+  if (existing) {
+    return existing
+  }
+  return await new Promise<ReturnType<typeof findLinkedSessionTab>>((resolve) => {
+    const timeoutId = window.setTimeout(() => {
+      unsubscribe()
+      resolve(undefined)
+    }, LINKED_SESSION_WAIT_MS)
+    const unsubscribe = useAppStore.subscribe(() => {
+      const tab = findLinkedSessionTab(worktreeId, terminalTabId)
+      if (!tab) {
+        return
+      }
+      window.clearTimeout(timeoutId)
+      unsubscribe()
+      resolve(tab)
+    })
+    const racedTab = findLinkedSessionTab(worktreeId, terminalTabId)
+    if (racedTab) {
+      window.clearTimeout(timeoutId)
+      unsubscribe()
+      resolve(racedTab)
+    }
+  })
+}
+
+async function openLinkedWorktree(
+  worktree: Worktree,
+  runtimeEnvironmentId: string,
+  sessionReference: string | null
+): Promise<void> {
   const executionHostId = toRuntimeExecutionHostId(runtimeEnvironmentId)
   await activateWorktreeFromSidebar(worktree.id, executionHostId)
   const state = useAppStore.getState()
@@ -40,6 +80,43 @@ async function openLinkedWorktree(worktree: Worktree, runtimeEnvironmentId: stri
     return
   }
   state.revealWorktreeInSidebar(worktree.id, { behavior: 'smooth' })
+  if (sessionReference) {
+    const terminalTabId = toWebSessionTerminalTabId(sessionReference)
+    const tab = await waitForLinkedSessionTab(worktree.id, terminalTabId)
+    if (!tab) {
+      toast.warning(
+        translate('app.webWorkspaceLink.sessionUnavailable', 'Session is no longer available'),
+        {
+          description: translate(
+            'app.webWorkspaceLink.sessionUnavailableDescription',
+            'Opened {{workspace}} instead.',
+            { workspace: worktree.displayName }
+          )
+        }
+      )
+      return
+    }
+    useAppStore.getState().setActiveTab(terminalTabId)
+    if (useAppStore.getState().activeTabIdByWorktree[worktree.id] !== terminalTabId) {
+      toast.warning(
+        translate('app.webWorkspaceLink.sessionUnavailable', 'Session is no longer available'),
+        {
+          description: translate(
+            'app.webWorkspaceLink.sessionUnavailableDescription',
+            'Opened {{workspace}} instead.',
+            { workspace: worktree.displayName }
+          )
+        }
+      )
+      return
+    }
+    toast.success(
+      translate('app.webWorkspaceLink.sessionOpened', 'Opened {{session}}', {
+        session: tab.customTitle ?? tab.title
+      })
+    )
+    return
+  }
   toast.success(
     translate('app.webWorkspaceLink.opened', 'Opened {{workspace}}', {
       workspace: worktree.displayName
@@ -50,6 +127,10 @@ async function openLinkedWorktree(worktree: Worktree, runtimeEnvironmentId: stri
 export function useWebWorkspaceLink(): void {
   const targetEnvironmentId = useMemo(
     () => (isWebClientLocation() ? readWebWorkspaceReference(window.location) : null),
+    []
+  )
+  const targetSessionReference = useMemo(
+    () => (isWebClientLocation() ? readWebSessionReference(window.location) : null),
     []
   )
   const worktrees = useAllWorktrees()
@@ -66,7 +147,7 @@ export function useWebWorkspaceLink(): void {
     const worktree = findWorktreeForWebWorkspaceReference(worktrees, targetEnvironmentId)
     if (worktree) {
       handledRef.current = true
-      void openLinkedWorktree(worktree, targetEnvironmentId)
+      void openLinkedWorktree(worktree, targetEnvironmentId, targetSessionReference)
       return
     }
     if (!startupWorktreeRefreshCompleted) {
@@ -98,11 +179,11 @@ export function useWebWorkspaceLink(): void {
           showUnavailableWorkspaceToast()
           return
         }
-        await openLinkedWorktree(refreshedWorktree, targetEnvironmentId)
+        await openLinkedWorktree(refreshedWorktree, targetEnvironmentId, targetSessionReference)
       } catch (error) {
         handledRef.current = true
         showUnavailableWorkspaceToast(error instanceof Error ? error.message : String(error))
       }
     })()
-  }, [startupWorktreeRefreshCompleted, targetEnvironmentId, worktrees])
+  }, [startupWorktreeRefreshCompleted, targetEnvironmentId, targetSessionReference, worktrees])
 }

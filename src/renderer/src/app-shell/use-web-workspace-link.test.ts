@@ -8,13 +8,19 @@ const mocks = vi.hoisted(() => {
     startupWorktreeRefreshCompleted: false,
     activeWorktreeId: null as string | null,
     activeWorkspaceExecutionHostId: null as string | null,
+    activeTabIdByWorktree: {} as Record<string, string>,
+    tabsByWorktree: {} as Record<
+      string,
+      { id: string; title: string; customTitle: string | null }[]
+    >,
     setRuntimeEnvironments: vi.fn(),
     fetchAllWorktrees: vi.fn(),
-    revealWorktreeInSidebar: vi.fn()
+    revealWorktreeInSidebar: vi.fn(),
+    setActiveTab: vi.fn()
   }
   const useAppStore = Object.assign(
     (selector: (value: typeof state) => unknown) => selector(state),
-    { getState: () => state }
+    { getState: () => state, subscribe: vi.fn() }
   )
   return {
     state,
@@ -23,7 +29,8 @@ const mocks = vi.hoisted(() => {
     refreshedWorktrees: [] as Worktree[],
     activateWorktreeFromSidebar: vi.fn(),
     toastError: vi.fn(),
-    toastSuccess: vi.fn()
+    toastSuccess: vi.fn(),
+    toastWarning: vi.fn()
   }
 })
 
@@ -37,7 +44,7 @@ vi.mock('@/lib/sidebar-worktree-activation', () => ({
 }))
 vi.mock('@/lib/web-client-location', () => ({ isWebClientLocation: () => true }))
 vi.mock('sonner', () => ({
-  toast: { error: mocks.toastError, success: mocks.toastSuccess }
+  toast: { error: mocks.toastError, success: mocks.toastSuccess, warning: mocks.toastWarning }
 }))
 
 import { useWebWorkspaceLink } from './use-web-workspace-link'
@@ -50,6 +57,13 @@ describe('useWebWorkspaceLink', () => {
     mocks.state.startupWorktreeRefreshCompleted = false
     mocks.state.activeWorktreeId = null
     mocks.state.activeWorkspaceExecutionHostId = null
+    mocks.state.activeTabIdByWorktree = {}
+    mocks.state.tabsByWorktree = {}
+    mocks.state.setActiveTab.mockImplementation((tabId: string) => {
+      if (mocks.state.activeWorktreeId) {
+        mocks.state.activeTabIdByWorktree[mocks.state.activeWorktreeId] = tabId
+      }
+    })
     mocks.activateWorktreeFromSidebar.mockImplementation(async (worktreeId, executionHostId) => {
       mocks.state.activeWorktreeId = worktreeId
       mocks.state.activeWorkspaceExecutionHostId = executionHostId
@@ -80,6 +94,31 @@ describe('useWebWorkspaceLink', () => {
     expect(mocks.state.revealWorktreeInSidebar).toHaveBeenCalledWith('worktree-1', {
       behavior: 'smooth'
     })
+  })
+
+  it('opens the exact synchronized terminal session when the URL names one', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/web-index.html?workspace=runtime-123&session=host-tab-456'
+    )
+    mocks.worktrees = [
+      {
+        id: 'worktree-1',
+        displayName: 'Shared worktree',
+        runtimeOwnerEnvironmentId: 'runtime-123'
+      } as Worktree
+    ]
+    mocks.state.tabsByWorktree = {
+      'worktree-1': [{ id: 'web-terminal-host-tab-456', title: 'Codex session', customTitle: null }]
+    }
+
+    renderHook(() => useWebWorkspaceLink())
+
+    await waitFor(() =>
+      expect(mocks.state.setActiveTab).toHaveBeenCalledWith('web-terminal-host-tab-456')
+    )
+    expect(mocks.toastSuccess).toHaveBeenCalledWith('Opened Codex session')
   })
 
   it('wakes and refreshes an accessible sleeping workspace before opening it', async () => {

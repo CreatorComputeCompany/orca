@@ -5,6 +5,15 @@
       "rootDescription": "The app shell could not finish rendering. Retry to remount it, or relaunch Orca if the error persists.",
       "webTitle": "Orca web hit a renderer error.",
       "webDescription": "Retry the web client or reconnect to the paired runtime."
+    },
+    "webWorkspaceLink": {
+      "activationFailed": "Orca found the workspace but could not open it.",
+      "opened": "Opened {{workspace}}",
+      "sessionOpened": "Opened {{session}}",
+      "sessionUnavailable": "Session is no longer available",
+      "sessionUnavailableDescription": "Opened {{workspace}} instead.",
+      "unavailable": "Workspace is not available",
+      "unavailableDescription": "It may be private, deleted, or shared with a different account."
     }
   },
   "browser": {
@@ -4772,6 +4781,7 @@
           "fed49903c9": "{{value0}} live {{value1}}"
         },
         "WorktreeContextMenu": {
+          "copyWorkspaceLink": "Copy workspace link",
           "c39c37676a": "Create a group and move this project into it.",
           "6664418e98": "New Project Group",
           "e091caab15": "The project could not be found",
@@ -15369,7 +15379,8 @@
         "SortableTabContextMenu": {
           "switchToTerminalView": "Switch to terminal view",
           "switchToChatView": "Switch to chat view",
-          "closeTabsToLeft": "Close Tabs To The Left"
+          "closeTabsToLeft": "Close Tabs To The Left",
+          "copySessionLink": "Copy session link"
         },
         "BrowserTab": {
           "closeOthers": "Close Others",
