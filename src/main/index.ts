@@ -80,6 +80,8 @@ import {
 import { callRuntimeEnvironment } from './ipc/runtime-environment-transport-routing'
 import { resolveEnvironment } from '../shared/runtime-environment-store'
 import { getPreferredPairingOffer } from '../shared/runtime-environments'
+import { encodePairingOffer } from '../shared/pairing'
+import { withEphemeralVmRecipeResultPairingCode } from '../shared/ephemeral-vm-recipes'
 import { OrcaRuntimeRpcServer } from './runtime/runtime-rpc'
 import {
   recordRuntimeRpcStartFailure,
@@ -2775,12 +2777,31 @@ void app.whenReady().then(async () => {
     doctor: (args) => doctorEphemeralVm(store!, pluginService ?? undefined, args),
     listRuntimes: async (actor) => {
       const runtimes = listEphemeralVmRuntimeRecords(app.getPath('userData'))
-      if (actor.kind === 'host') {
-        return runtimes
-      }
-      return runtimes.filter((runtime) =>
-        canDeviceAccessEphemeralVmRuntime(app.getPath('userData'), actor.deviceId, runtime)
-      )
+      const accessibleRuntimes =
+        actor.kind === 'host'
+          ? runtimes
+          : runtimes.filter((runtime) =>
+              canDeviceAccessEphemeralVmRuntime(app.getPath('userData'), actor.deviceId, runtime)
+            )
+      return accessibleRuntimes.map((runtime) => {
+        if (!runtime.runtimeEnvironmentId || runtime.connectionMode === 'ssh') {
+          return runtime
+        }
+        try {
+          const environment = resolveEnvironment(
+            app.getPath('userData'),
+            runtime.runtimeEnvironmentId
+          )
+          const pairingCode = encodePairingOffer(getPreferredPairingOffer(environment))
+          return {
+            ...runtime,
+            recipeResult: withEphemeralVmRecipeResultPairingCode(runtime.recipeResult, pairingCode)
+          }
+        } catch (error) {
+          console.warn(`[ephemeral-vm] Failed to project current access for ${runtime.id}:`, error)
+          return runtime
+        }
+      })
     },
     setSharing: async (args) =>
       setEphemeralVmRuntimeSharing({ userDataPath: app.getPath('userData'), ...args }),

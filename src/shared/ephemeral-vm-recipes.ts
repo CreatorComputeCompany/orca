@@ -207,6 +207,22 @@ export function getEphemeralVmRecipeResultPairingCode(
   return connection.type === 'orca-server' ? connection.pairingCode : null
 }
 
+export function withEphemeralVmRecipeResultPairingCode(
+  result: EphemeralVmRecipeResult,
+  pairingCode: string
+): EphemeralVmRecipeResult {
+  if ('connection' in result) {
+    if (result.connection.type !== 'orca-server') {
+      return result
+    }
+    return {
+      ...result,
+      connection: { ...result.connection, pairingCode }
+    }
+  }
+  return { ...result, pairingCode }
+}
+
 export function isAbsoluteRuntimePath(path: string): boolean {
   return (
     path.startsWith('/') ||
