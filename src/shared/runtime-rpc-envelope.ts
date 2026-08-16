@@ -23,6 +23,7 @@ const Success = z
   .object({
     id: z.string(),
     ok: z.literal(true),
+    streaming: z.literal(true).optional(),
     result: z.unknown(),
     _meta: MetaSuccess
   })
@@ -54,6 +55,7 @@ export const RuntimeRpcEnvelopeSchema = z.union([Success, Failure, Keepalive])
 export type RuntimeRpcSuccess<TResult> = {
   id: string
   ok: true
+  streaming?: true
   result: TResult
   _meta: {
     runtimeId: string

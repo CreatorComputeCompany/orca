@@ -48,6 +48,16 @@ function response(result: unknown): RuntimeRpcResponse<unknown> {
   return { id: 'child-request', ok: true, result, _meta: { runtimeId: 'child-runtime' } }
 }
 
+function streamingResponse(result: unknown): RuntimeRpcResponse<unknown> {
+  return {
+    id: 'child-request',
+    ok: true,
+    streaming: true,
+    result,
+    _meta: { runtimeId: 'child-runtime' }
+  }
+}
+
 function makeGateway(call = vi.fn()) {
   const subscribe = vi.fn()
   const gateway = new MobileRuntimeFederationGateway('controller-runtime', {
@@ -231,7 +241,7 @@ describe('MobileRuntimeFederationGateway', () => {
 
     childCallbacks!.onEvent({
       type: 'response',
-      response: response({ type: 'subscribed', streamId: 7, lines: [] })
+      response: streamingResponse({ type: 'subscribed', streamId: 7, lines: [] })
     })
     const output = new Uint8Array([1, 2, 3])
     childCallbacks!.onEvent({ type: 'binary', bytes: output })
@@ -250,6 +260,7 @@ describe('MobileRuntimeFederationGateway', () => {
     })
     expect(JSON.parse(replies[0]!)).toMatchObject({
       id: 'subscribe',
+      streaming: true,
       result: { type: 'subscribed', streamId: 7 }
     })
 
