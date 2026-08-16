@@ -6,9 +6,12 @@ import { Label } from '@/components/ui/label'
 import { registerWebMultiplayerAccount } from './web-multiplayer-enrollment'
 import { readStoredWebRuntimeEnvironment } from './web-runtime-environment'
 
-type Props = { onEnrolled: () => void }
+type Props = { onEnrolled: () => void; onSignIn: () => void }
 
-export default function WebMultiplayerIdentitySetup({ onEnrolled }: Props): React.JSX.Element {
+export default function WebMultiplayerIdentitySetup({
+  onEnrolled,
+  onSignIn
+}: Props): React.JSX.Element {
   const existing = readStoredWebRuntimeEnvironment()
   const [displayName, setDisplayName] = useState(existing?.multiplayerDisplayName ?? '')
   const [email, setEmail] = useState('')
@@ -123,6 +126,9 @@ export default function WebMultiplayerIdentitySetup({ onEnrolled }: Props): Reac
           disabled={submitting || !displayName.trim() || !email.trim() || password.length < 12}
         >
           {submitting ? 'Creating account…' : 'Create account'}
+        </Button>
+        <Button variant="ghost" onClick={onSignIn} disabled={submitting}>
+          Already have an account? Sign in
         </Button>
         <p className="text-xs leading-4 text-muted-foreground">
           Your password is stored as a salted hash and is never recoverable from the controller.

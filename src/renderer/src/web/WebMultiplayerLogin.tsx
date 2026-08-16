@@ -8,11 +8,13 @@ import { loginWebMultiplayerAccount } from './web-multiplayer-enrollment'
 type Props = {
   onAuthenticated: () => void
   onUseAccessLink: () => void
+  secondaryActionLabel?: string
 }
 
 export default function WebMultiplayerLogin({
   onAuthenticated,
-  onUseAccessLink
+  onUseAccessLink,
+  secondaryActionLabel = 'Use an enrollment link instead'
 }: Props): React.JSX.Element {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -77,7 +79,7 @@ export default function WebMultiplayerLogin({
           {submitting ? 'Signing in…' : 'Sign in'}
         </Button>
         <Button variant="ghost" onClick={onUseAccessLink}>
-          Use an enrollment link instead
+          {secondaryActionLabel}
         </Button>
       </div>
     </div>

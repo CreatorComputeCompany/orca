@@ -58,6 +58,21 @@ function WebRoot(): React.JSX.Element {
     Boolean(readStoredWebRuntimeEnvironment()?.multiplayerAuthEmail)
   )
   const [showAccessLink, setShowAccessLink] = useState(false)
+  const [showAccountLogin, setShowAccountLogin] = useState(false)
+
+  if (showAccountLogin) {
+    return (
+      <WebMultiplayerLogin
+        onAuthenticated={() => {
+          setHasEnvironment(true)
+          setHasMultiplayerAccount(true)
+          setShowAccountLogin(false)
+        }}
+        onUseAccessLink={() => setShowAccountLogin(false)}
+        secondaryActionLabel="Back to account setup"
+      />
+    )
+  }
 
   if (!hasEnvironment) {
     if (!showAccessLink && startupDecision.kind === 'show-connect' && !initialPairingInput) {
@@ -82,7 +97,12 @@ function WebRoot(): React.JSX.Element {
   }
 
   if (!hasMultiplayerAccount) {
-    return <WebMultiplayerIdentitySetup onEnrolled={() => setHasMultiplayerAccount(true)} />
+    return (
+      <WebMultiplayerIdentitySetup
+        onEnrolled={() => setHasMultiplayerAccount(true)}
+        onSignIn={() => setShowAccountLogin(true)}
+      />
+    )
   }
 
   installWebPreloadApi()
