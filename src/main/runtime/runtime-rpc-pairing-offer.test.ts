@@ -52,6 +52,32 @@ describe('OrcaRuntimeRpcServer', () => {
     await server.stop()
   })
 
+  it('mints distinct fresh browser credentials on the remembered public endpoint', async () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-rpc-'))
+    const server = new OrcaRuntimeRpcServer({
+      runtime: new OrcaRuntimeService(),
+      userDataPath,
+      enableWebSocket: true,
+      wsPort: 0,
+      webClientRoot: userDataPath
+    })
+    await server.start()
+
+    server.createPairingOffer({ address: 'wss://team.example.test', name: 'Bootstrap' })
+    const first = server.createPairingOffer({ name: 'Jake web', fresh: true })
+    const second = server.createPairingOffer({ name: 'Niall web', fresh: true })
+
+    expect(first).toMatchObject({ available: true, endpoint: 'wss://team.example.test' })
+    expect(second).toMatchObject({ available: true, endpoint: 'wss://team.example.test' })
+    if (first.available && second.available) {
+      expect(first.deviceId).not.toBe(second.deviceId)
+      expect(parsePairingCode(first.pairingUrl)?.deviceToken).not.toBe(
+        parsePairingCode(second.pairingUrl)?.deviceToken
+      )
+    }
+    await server.stop()
+  })
+
   it('reports why pairing is unavailable before the WebSocket listener is ready', () => {
     const server = new OrcaRuntimeRpcServer({
       runtime: new OrcaRuntimeService(),

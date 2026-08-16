@@ -56,6 +56,10 @@ import {
 import { encodeMobilePairingQr } from './mobile-pairing-qr'
 import { MobileRuntimeFederationGateway } from './mobile-runtime-federation-gateway'
 import type { RuntimeWorktreePsResult } from '../../shared/runtime-types'
+import {
+  enrollMultiplayerDevice,
+  findMultiplayerMemberByDevice
+} from './multiplayer-identity-store'
 
 const DEFAULT_WS_PORT = 6768
 
@@ -518,6 +522,7 @@ export class OrcaRuntimeRpcServer {
   private deviceRegistry: DeviceRegistry | null = null
   private e2eeKeypair: E2EEKeypair | null = null
   private pairingInitializationFailure: PairingOfferUnavailable | null = null
+  private preferredPairingAddress: string | null = null
   private tlsFingerprint: string | null = null
   private activeTransports: RpcTransport[] = []
   private transports: RuntimeTransportMetadata[] = []
@@ -686,6 +691,7 @@ export class OrcaRuntimeRpcServer {
     // Why: STA-2370 — recorded on the grant so a "This computer only" client reconnecting cannot make the
     // next launch bind every interface. Defaults to network reach, which is what every other caller means.
     reach?: RuntimePairingReach
+    fresh?: boolean
   }):
     | PairingOfferUnavailable
     | {
@@ -713,7 +719,13 @@ export class OrcaRuntimeRpcServer {
       return pairingUnavailable('e2ee_key_unavailable', E2EE_KEY_UNAVAILABLE_GUIDANCE)
     }
 
-    const advertised = resolveAdvertisedPairingEndpoint(rawEndpoint, args.address)
+    if (args.address) {
+      this.preferredPairingAddress = args.address
+    }
+    const advertised = resolveAdvertisedPairingEndpoint(
+      rawEndpoint,
+      args.address ?? this.preferredPairingAddress
+    )
     if (!advertised.ok) {
       return pairingUnavailable(advertised.reason, advertised.guidance)
     }
@@ -723,9 +735,11 @@ export class OrcaRuntimeRpcServer {
     let device: DeviceEntry
     try {
       const reach = args.reach ?? 'network'
-      device = args.rotate
-        ? this.deviceRegistry.rotatePendingDevice(deviceName, scope, reach)
-        : this.deviceRegistry.getOrCreatePendingDevice(deviceName, scope, reach)
+      device = args.fresh
+        ? this.deviceRegistry.addDevice(deviceName, scope, reach)
+        : args.rotate
+          ? this.deviceRegistry.rotatePendingDevice(deviceName, scope, reach)
+          : this.deviceRegistry.getOrCreatePendingDevice(deviceName, scope, reach)
     } catch (error) {
       console.error('[runtime] Failed to persist pairing credential:', error)
       return pairingUnavailable('device_registry_unavailable', DEVICE_REGISTRY_UNAVAILABLE_GUIDANCE)
@@ -1730,12 +1744,26 @@ export class OrcaRuntimeRpcServer {
             connectionMode?: MobilePairingConnectionMode
             rotate?: boolean
           }) => {
+            const member = findMultiplayerMemberByDevice(
+              this.userDataPath,
+              authenticatedSocket.device.deviceId
+            )
             const offer = await this.createMobilePairingOffer({
               ...params,
-              name: `Mobile ${new Date().toLocaleDateString()}`
+              name: `Mobile ${new Date().toLocaleDateString()}`,
+              // Why: a pending QR cannot move between members; each enrolled browser gets its own credential.
+              rotate: member ? true : params.rotate
             })
             if (!offer.available) {
               return offer
+            }
+            if (member) {
+              enrollMultiplayerDevice({
+                userDataPath: this.userDataPath,
+                memberKey: member.key,
+                displayName: member.displayName,
+                deviceId: offer.deviceId
+              })
             }
             const qr = await encodeMobilePairingQr(offer.pairingUrl)
             return {
@@ -1746,6 +1774,36 @@ export class OrcaRuntimeRpcServer {
               endpoint: offer.endpoint,
               deviceId: offer.deviceId,
               connectionMode: offer.connectionMode
+            }
+          },
+          enrollMultiplayerIdentity: async (params: { memberKey: string; displayName: string }) => {
+            const offer = this.createPairingOffer({
+              name: `${params.displayName.trim()} web`,
+              scope: 'runtime',
+              fresh: true
+            })
+            if (!offer.available) {
+              throw new Error(offer.guidance)
+            }
+            enrollMultiplayerDevice({
+              userDataPath: this.userDataPath,
+              memberKey: params.memberKey,
+              displayName: params.displayName,
+              deviceId: authenticatedSocket.device.deviceId
+            })
+            const member = enrollMultiplayerDevice({
+              userDataPath: this.userDataPath,
+              memberKey: params.memberKey,
+              displayName: params.displayName,
+              deviceId: offer.deviceId
+            })
+            return {
+              member: {
+                key: member.key,
+                displayName: member.displayName,
+                deviceIds: member.deviceIds
+              },
+              pairingUrl: offer.pairingUrl
             }
           }
         }
@@ -1772,7 +1830,8 @@ export class OrcaRuntimeRpcServer {
         }
         const result = await this.mobileRuntimeFederation.mergeWorktreeCatalog(
           localResponse.result as RuntimeWorktreePsResult,
-          rawParams
+          rawParams,
+          device.deviceId
         )
         replyForRequest(
           JSON.stringify({
@@ -1788,6 +1847,7 @@ export class OrcaRuntimeRpcServer {
         device.scope === 'mobile' &&
         (await this.mobileRuntimeFederation.tryForward(request, replyForRequest, {
           connectionId,
+          pairedDeviceId: device.deviceId,
           signal: abortRegistration?.signal,
           sendBinary,
           registerBinaryStreamHandler: (streamId, handler) =>

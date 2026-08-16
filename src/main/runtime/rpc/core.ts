@@ -14,11 +14,18 @@ import type {
   MobilePairingOfferParams,
   MobilePairingOfferResult
 } from '../../../shared/mobile-pairing-host-contract'
+import type {
+  MultiplayerIdentityEnrollParams,
+  MultiplayerIdentityEnrollResult
+} from '../../../shared/multiplayer-identity-contract'
 
 export type PairingRpcContext = {
   getEndpoints(params: PairingGetEndpointsParams): Promise<PairingGetEndpointsResult>
   provisionRelay(params: PairingProvisionRelayParams): Promise<DeviceCredentialInstalled>
   createMobileOffer?(params: MobilePairingOfferParams): Promise<MobilePairingOfferResult>
+  enrollMultiplayerIdentity?(
+    params: MultiplayerIdentityEnrollParams
+  ): Promise<MultiplayerIdentityEnrollResult>
 }
 
 export type RpcEnvelopeMeta = {

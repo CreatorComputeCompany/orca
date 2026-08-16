@@ -20,15 +20,24 @@ export type EphemeralVmRpcReadService = {
   listRecipes(args: { repoId: string }): Promise<EphemeralVmRecipeListResult>
   listRecipeCatalog(): Promise<EphemeralVmRecipeCatalogEntry[]>
   doctor(args: { repoId: string; recipeId: string }): Promise<EphemeralVmRecipeDoctorResult>
-  listRuntimes(): Promise<EphemeralVmRuntimeRecord[]>
+  listRuntimes(
+    actor: ReturnType<typeof resolveRpcWorkspaceCreatorProvenance>
+  ): Promise<EphemeralVmRuntimeRecord[]>
   provision(args: EphemeralVmProvisionArgs): Promise<EphemeralVmProvisionRpcResult>
   cancelProvision(args: { provisionId: string }): Promise<{ cancelled: boolean }>
   attachWorkspace(args: {
     runtimeId: string
     workspaceId: string
+    actor: ReturnType<typeof resolveRpcWorkspaceCreatorProvenance>
   }): Promise<EphemeralVmRuntimeRecord>
-  cleanup(args: { runtimeId: string }): Promise<EphemeralVmRuntimeRecord>
-  resumeWorkspace(args: { workspaceId: string }): Promise<EphemeralVmRuntimeRecord | null>
+  cleanup(args: {
+    runtimeId: string
+    actor: ReturnType<typeof resolveRpcWorkspaceCreatorProvenance>
+  }): Promise<EphemeralVmRuntimeRecord>
+  resumeWorkspace(args: {
+    workspaceId: string
+    actor: ReturnType<typeof resolveRpcWorkspaceCreatorProvenance>
+  }): Promise<EphemeralVmRuntimeRecord | null>
   setSharing(args: {
     runtimeEnvironmentId: string
     sharing: EphemeralVmWorkspaceSharing
@@ -87,7 +96,8 @@ export const EPHEMERAL_VM_METHODS: readonly RpcMethod[] = [
   defineMethod({
     name: 'ephemeralVm.listRuntimes',
     params: null,
-    handler: () => requireService().listRuntimes()
+    handler: (_params, context) =>
+      requireService().listRuntimes(resolveRpcWorkspaceCreatorProvenance(context))
   }),
   defineMethod({
     name: 'ephemeralVm.setSharing',
@@ -115,16 +125,28 @@ export const EPHEMERAL_VM_METHODS: readonly RpcMethod[] = [
   defineMethod({
     name: 'ephemeralVm.attachWorkspace',
     params: AttachWorkspaceParams,
-    handler: (params) => requireService().attachWorkspace(params)
+    handler: (params, context) =>
+      requireService().attachWorkspace({
+        ...params,
+        actor: resolveRpcWorkspaceCreatorProvenance(context)
+      })
   }),
   defineMethod({
     name: 'ephemeralVm.cleanup',
     params: RuntimeIdParams,
-    handler: (params) => requireService().cleanup(params)
+    handler: (params, context) =>
+      requireService().cleanup({
+        ...params,
+        actor: resolveRpcWorkspaceCreatorProvenance(context)
+      })
   }),
   defineMethod({
     name: 'ephemeralVm.resumeWorkspace',
     params: WorkspaceIdParams,
-    handler: (params) => requireService().resumeWorkspace(params)
+    handler: (params, context) =>
+      requireService().resumeWorkspace({
+        ...params,
+        actor: resolveRpcWorkspaceCreatorProvenance(context)
+      })
   })
 ]

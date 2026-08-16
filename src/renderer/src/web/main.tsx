@@ -5,6 +5,7 @@ import { lazyWithRetry as lazy } from '@/lib/lazy-with-retry'
 import ReactDOM from 'react-dom/client'
 import { useTranslation } from 'react-i18next'
 import WebConnect from './WebConnect'
+import WebMultiplayerIdentitySetup from './WebMultiplayerIdentitySetup'
 import { RecoverableRenderErrorBoundary } from '../components/error-boundaries/RecoverableRenderErrorBoundary'
 import {
   clearPairingInputFromAddressBar,
@@ -52,6 +53,9 @@ function WebRoot(): React.JSX.Element {
     }
     return startupDecision.kind === 'use-stored-environment'
   })
+  const [hasMultiplayerIdentity, setHasMultiplayerIdentity] = useState(() =>
+    Boolean(readStoredWebRuntimeEnvironment()?.multiplayerMemberKey)
+  )
 
   if (!hasEnvironment) {
     return (
@@ -62,6 +66,10 @@ function WebRoot(): React.JSX.Element {
         onConnected={() => setHasEnvironment(true)}
       />
     )
+  }
+
+  if (!hasMultiplayerIdentity) {
+    return <WebMultiplayerIdentitySetup onEnrolled={() => setHasMultiplayerIdentity(true)} />
   }
 
   installWebPreloadApi()

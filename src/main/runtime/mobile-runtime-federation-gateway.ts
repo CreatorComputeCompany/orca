@@ -9,7 +9,7 @@ import {
   encodeTerminalStreamFrame,
   type TerminalStreamFrame
 } from '../../shared/terminal-stream-protocol'
-import type { RpcRequest, RpcResponse } from './rpc/core'
+import type { RpcRequest } from './rpc/core'
 import { errorResponse, successResponse } from './rpc/errors'
 import { resolveWorktreeCatalogSnapshot } from './rpc/worktree-catalog-snapshot'
 import {
@@ -29,8 +29,11 @@ import {
   stripFederatedSelectorPrefix,
   visitFederatedResponseValues
 } from './mobile-runtime-federation-routing'
+import { MobileRuntimeFederationOwnerIndex } from './mobile-runtime-federation-owner-index'
+import { normalizeFederatedRuntimeResponse } from './mobile-runtime-federation-response'
 
 export type MobileRuntimeFederationContext = {
+  pairedDeviceId?: string
   connectionId?: string
   signal?: AbortSignal
   sendBinary: (bytes: Uint8Array<ArrayBufferLike>) => boolean | void
@@ -41,8 +44,7 @@ export type MobileRuntimeFederationContext = {
 }
 
 export class MobileRuntimeFederationGateway {
-  private readonly worktreeOwners = new Map<string, string>()
-  private readonly terminalOwners = new Map<string, string>()
+  private readonly owners = new MobileRuntimeFederationOwnerIndex()
   private readonly childCatalogs = new Map<string, RuntimeWorktreePsSummary[]>()
   private readonly subscriptions = new Map<string, RemoteRuntimeSubscription>()
 
@@ -60,13 +62,17 @@ export class MobileRuntimeFederationGateway {
 
   async mergeWorktreeCatalog(
     local: RuntimeWorktreePsResult,
-    params: { limit?: number; afterSnapshotId?: string | null }
+    params: { limit?: number; afterSnapshotId?: string | null },
+    pairedDeviceId?: string
   ): Promise<RuntimeWorktreePsConditionalResult> {
-    const targets = this.dependencies.listTargets()
-    const liveEnvironmentIds = new Set(targets.map(({ environmentId }) => environmentId))
-    for (const environmentId of this.childCatalogs.keys()) {
-      if (!liveEnvironmentIds.has(environmentId)) {
-        this.childCatalogs.delete(environmentId)
+    const ownerKey = pairedDeviceId ?? 'host'
+    const targets = this.dependencies.listTargets(pairedDeviceId)
+    const liveEnvironmentIds = new Set(
+      targets.map(({ environmentId }) => this.scopedKey(ownerKey, environmentId))
+    )
+    for (const catalogKey of this.childCatalogs.keys()) {
+      if (catalogKey.startsWith(`${ownerKey}:`) && !liveEnvironmentIds.has(catalogKey)) {
+        this.childCatalogs.delete(catalogKey)
       }
     }
 
@@ -87,18 +93,18 @@ export class MobileRuntimeFederationGateway {
             (worktree): worktree is RuntimeWorktreePsSummary =>
               isWorktreeSummary(worktree) && worktree.worktreeId === target.workspaceId
           )
-          this.childCatalogs.set(target.environmentId, rows)
+          this.childCatalogs.set(this.scopedKey(ownerKey, target.environmentId), rows)
         } catch {
           // Why: retain the last confirmed child catalog through a transient Boxd reconnect.
         }
       })
     )
 
-    this.worktreeOwners.clear()
+    this.owners.clearWorktrees(ownerKey)
     const childRows = targets.flatMap(({ environmentId }) => {
-      const rows = this.childCatalogs.get(environmentId) ?? []
+      const rows = this.childCatalogs.get(this.scopedKey(ownerKey, environmentId)) ?? []
       for (const row of rows) {
-        this.worktreeOwners.set(row.worktreeId, environmentId)
+        this.owners.setWorktree(ownerKey, row.worktreeId, environmentId)
       }
       return rows
     })
@@ -117,7 +123,8 @@ export class MobileRuntimeFederationGateway {
     reply: (response: string) => void,
     context: MobileRuntimeFederationContext
   ): Promise<boolean> {
-    const environmentId = this.resolveRequestOwner(request)
+    const ownerKey = context.pairedDeviceId ?? 'host'
+    const environmentId = this.resolveRequestOwner(request, ownerKey)
     if (!environmentId) {
       return false
     }
@@ -136,8 +143,8 @@ export class MobileRuntimeFederationGateway {
         request.method,
         request.params ?? {}
       )
-      this.recordResourceOwners(environmentId, response)
-      reply(JSON.stringify(this.normalizeResponse(request.id, response)))
+      this.recordResourceOwners(environmentId, response, ownerKey)
+      reply(JSON.stringify(normalizeFederatedRuntimeResponse(request.id, response, this.runtimeId)))
     } catch (error) {
       reply(
         JSON.stringify(
@@ -190,7 +197,11 @@ export class MobileRuntimeFederationGateway {
               return
             }
             if (event.type === 'response') {
-              this.recordResourceOwners(environmentId, event.response)
+              this.recordResourceOwners(
+                environmentId,
+                event.response,
+                context.pairedDeviceId ?? 'host'
+              )
               const streamId = federatedResponseStreamId(event.response)
               if (streamId !== null) {
                 unregisterBinary()
@@ -200,7 +211,11 @@ export class MobileRuntimeFederationGateway {
                     ?.sendBinary(encodeTerminalStreamFrame(frame))
                 })
               }
-              reply(JSON.stringify(this.normalizeResponse(request.id, event.response)))
+              reply(
+                JSON.stringify(
+                  normalizeFederatedRuntimeResponse(request.id, event.response, this.runtimeId)
+                )
+              )
               if (federatedResponseEndsStream(event.response)) {
                 this.subscriptions.get(subscriptionKey)?.close()
               }
@@ -238,28 +253,36 @@ export class MobileRuntimeFederationGateway {
     }
   }
 
-  private resolveRequestOwner(request: RpcRequest): string | null {
+  private resolveRequestOwner(request: RpcRequest, ownerKey: string): string | null {
     const params = asFederationRecord(request.params)
     const worktree = firstFederationString(params, ['worktree', 'worktreeId'])
     if (worktree) {
-      const owner = this.worktreeOwners.get(stripFederatedSelectorPrefix(worktree))
+      const owner = this.owners.resolveWorktree(ownerKey, stripFederatedSelectorPrefix(worktree))
       if (owner) {
         return owner
       }
     }
     const terminal = firstFederationString(params, ['terminal', 'expectedTerminal'])
-    return terminal ? (this.terminalOwners.get(terminal) ?? null) : null
+    return terminal ? this.owners.resolveTerminal(ownerKey, terminal) : null
   }
 
-  private recordResourceOwners(environmentId: string, response: RuntimeRpcResponse<unknown>): void {
+  private recordResourceOwners(
+    environmentId: string,
+    response: RuntimeRpcResponse<unknown>,
+    ownerKey: string
+  ): void {
     if (!response.ok) {
       return
     }
     visitFederatedResponseValues(response.result, (key, value) => {
       if (typeof value === 'string' && isTerminalHandleKey(key)) {
-        this.terminalOwners.set(value, environmentId)
+        this.owners.setTerminal(ownerKey, value, environmentId)
       }
     })
+  }
+
+  private scopedKey(ownerKey: string, resource: string): string {
+    return `${ownerKey}:${resource}`
   }
 
   private closeSubscriptions(request: RpcRequest, connectionId?: string): void {
@@ -285,23 +308,6 @@ export class MobileRuntimeFederationGateway {
       firstFederationString(params, ['worktree', 'worktreeId'])?.replace(/^id:/, '') ??
       request.id
     return `${connectionId ?? 'unknown'}:${request.method}:${resource}`
-  }
-
-  private normalizeResponse(id: string, response: RuntimeRpcResponse<unknown>): RpcResponse {
-    if (response.ok) {
-      const normalized = successResponse(id, this.meta(), response.result)
-      if ('streaming' in response && response.streaming === true) {
-        normalized.streaming = true
-      }
-      return normalized
-    }
-    return errorResponse(
-      id,
-      this.meta(),
-      response.error.code,
-      response.error.message,
-      response.error.data
-    )
   }
 
   private meta(): { runtimeId: string } {

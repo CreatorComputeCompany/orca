@@ -1510,8 +1510,8 @@ function createEphemeralVmApi(): NonNullable<Partial<PreloadApi>['ephemeralVm']>
         ...createStoredWebRuntimeEnvironment({ name: result.environment.name, offer }),
         id: result.environment.id,
         source: 'ephemeral-vm' as const,
-        ...(requireActiveEnvironment().pairedDeviceId
-          ? { workspaceVisibilityDeviceId: requireActiveEnvironment().pairedDeviceId }
+        ...(result.runtime.creatorProvenance?.kind === 'paired-device'
+          ? { workspaceVisibilityDeviceId: result.runtime.creatorProvenance.deviceId }
           : {})
       }
       if (result.runtime.creatorProvenance) {
@@ -1782,8 +1782,8 @@ async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList
         id: index === 0 ? preferredEndpointId : endpoint.id
       })),
       source: 'ephemeral-vm',
-      ...(requireActiveEnvironment().pairedDeviceId
-        ? { workspaceVisibilityDeviceId: requireActiveEnvironment().pairedDeviceId }
+      ...(runtime.creatorProvenance?.kind === 'paired-device'
+        ? { workspaceVisibilityDeviceId: runtime.creatorProvenance.deviceId }
         : {})
     })
   }

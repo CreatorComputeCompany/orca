@@ -311,6 +311,8 @@ import {
 import { cleanupEphemeralVmRuntimeRecord } from './ephemeral-vm-runtime-cleanup-service'
 import { attachEphemeralVmRuntimeToWorkspace } from './ephemeral-vm-runtime-attachment'
 import { setEphemeralVmRuntimeSharing } from './ephemeral-vm-runtime-sharing'
+import { canDeviceAccessEphemeralVmRuntime } from './runtime/multiplayer-identity-store'
+import { assertEphemeralVmRuntimeAccess } from './ephemeral-vm-runtime-access'
 import {
   normalizePluginConsents,
   normalizePluginIdList
@@ -2771,20 +2773,48 @@ void app.whenReady().then(async () => {
     listRecipes: (args) => listEphemeralVmRecipes(store!, pluginService ?? undefined, args),
     listRecipeCatalog: () => listEphemeralVmRecipeCatalog(store!, pluginService ?? undefined),
     doctor: (args) => doctorEphemeralVm(store!, pluginService ?? undefined, args),
-    listRuntimes: async () => listEphemeralVmRuntimeRecords(app.getPath('userData')),
+    listRuntimes: async (actor) => {
+      const runtimes = listEphemeralVmRuntimeRecords(app.getPath('userData'))
+      if (actor.kind === 'host') {
+        return runtimes
+      }
+      return runtimes.filter((runtime) =>
+        canDeviceAccessEphemeralVmRuntime(app.getPath('userData'), actor.deviceId, runtime)
+      )
+    },
     setSharing: async (args) =>
       setEphemeralVmRuntimeSharing({ userDataPath: app.getPath('userData'), ...args }),
     provision: (args) =>
       provisionEphemeralVmForRpc(store!, pluginService ?? undefined, app.getPath('userData'), args),
     cancelProvision: async (args) => cancelEphemeralVmProvision(args),
-    attachWorkspace: async (args) =>
-      attachEphemeralVmRuntimeToWorkspace({
+    attachWorkspace: async (args) => {
+      assertEphemeralVmRuntimeAccess({
+        userDataPath: app.getPath('userData'),
+        actor: args.actor,
+        runtimeId: args.runtimeId
+      })
+      return attachEphemeralVmRuntimeToWorkspace({
         userDataPath: app.getPath('userData'),
         runtimeId: args.runtimeId,
         workspaceId: args.workspaceId
-      }),
-    cleanup: (args) => cleanupEphemeralVmRuntimeRecord(store!, app.getPath('userData'), args),
-    resumeWorkspace: (args) => resumeEphemeralVmWorkspace(store!, app.getPath('userData'), args)
+      })
+    },
+    cleanup: (args) => {
+      assertEphemeralVmRuntimeAccess({
+        userDataPath: app.getPath('userData'),
+        actor: args.actor,
+        runtimeId: args.runtimeId
+      })
+      return cleanupEphemeralVmRuntimeRecord(store!, app.getPath('userData'), args)
+    },
+    resumeWorkspace: (args) => {
+      assertEphemeralVmRuntimeAccess({
+        userDataPath: app.getPath('userData'),
+        actor: args.actor,
+        workspaceId: args.workspaceId
+      })
+      return resumeEphemeralVmWorkspace(store!, app.getPath('userData'), args)
+    }
   })
   // Lazy kernel: initialize() only discovers manifests — no worker forks, no
   // panel reads. Zero plugin code runs before an explicit trigger.

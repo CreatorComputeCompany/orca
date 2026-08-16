@@ -5,6 +5,8 @@ import { translate } from '@/i18n/i18n'
 
 export type StoredWebRuntimeEnvironment = Omit<PublicKnownRuntimeEnvironment, 'endpoints'> & {
   compatibleEnvironmentIds?: string[]
+  multiplayerMemberKey?: string
+  multiplayerDisplayName?: string
   endpoints: {
     id: string
     kind: 'websocket'
@@ -127,6 +129,18 @@ export function createStoredWebRuntimeEnvironment(args: {
         publicKeyB64: args.offer.publicKeyB64
       }
     ]
+  }
+}
+
+export function withWebMultiplayerIdentity(
+  environment: StoredWebRuntimeEnvironment,
+  identity: { memberKey: string; displayName: string }
+): StoredWebRuntimeEnvironment {
+  return {
+    ...environment,
+    multiplayerMemberKey: identity.memberKey,
+    multiplayerDisplayName: identity.displayName,
+    updatedAt: Date.now()
   }
 }
 

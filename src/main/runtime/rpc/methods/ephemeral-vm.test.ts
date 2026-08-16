@@ -70,7 +70,10 @@ describe('ephemeral VM serve RPC reads', () => {
     expect(service.listRecipes).toHaveBeenCalledWith({ repoId: 'repo-1' })
     expect(service.listRecipeCatalog).toHaveBeenCalledOnce()
     expect(service.doctor).toHaveBeenCalledWith({ repoId: 'repo-1', recipeId: 'boxd' })
-    expect(service.listRuntimes).toHaveBeenCalledOnce()
+    expect(service.listRuntimes).toHaveBeenCalledWith({
+      kind: 'paired-device',
+      deviceId: 'device-jake'
+    })
     expect(service.setSharing).toHaveBeenCalledWith({
       runtimeEnvironmentId: 'environment-1',
       sharing: 'shared',
@@ -84,10 +87,17 @@ describe('ephemeral VM serve RPC reads', () => {
     expect(service.cancelProvision).toHaveBeenCalledWith({ provisionId: 'create-1' })
     expect(service.attachWorkspace).toHaveBeenCalledWith({
       runtimeId: 'runtime-1',
-      workspaceId: 'workspace-1'
+      workspaceId: 'workspace-1',
+      actor: { kind: 'paired-device', deviceId: 'device-jake' }
     })
-    expect(service.cleanup).toHaveBeenCalledWith({ runtimeId: 'runtime-1' })
-    expect(service.resumeWorkspace).toHaveBeenCalledWith({ workspaceId: 'workspace-1' })
+    expect(service.cleanup).toHaveBeenCalledWith({
+      runtimeId: 'runtime-1',
+      actor: { kind: 'paired-device', deviceId: 'device-jake' }
+    })
+    expect(service.resumeWorkspace).toHaveBeenCalledWith({
+      workspaceId: 'workspace-1',
+      actor: { kind: 'paired-device', deviceId: 'device-jake' }
+    })
   })
 
   it('fails explicitly before the service is wired', () => {

@@ -6,6 +6,7 @@ import {
   callRuntimeEnvironment,
   subscribeRuntimeEnvironment
 } from '../ipc/runtime-environment-transport-routing'
+import { canDeviceAccessEphemeralVmRuntime } from './multiplayer-identity-store'
 
 const CHILD_RUNTIME_TIMEOUT_MS = 60_000
 
@@ -15,7 +16,7 @@ export type ChildRuntimeTarget = {
 }
 
 export type MobileRuntimeFederationDependencies = {
-  listTargets: () => ChildRuntimeTarget[]
+  listTargets: (deviceId?: string) => ChildRuntimeTarget[]
   call: (
     environmentId: string,
     method: string,
@@ -36,7 +37,7 @@ export function createMobileRuntimeFederationDependencies(
   userDataPath: string
 ): MobileRuntimeFederationDependencies {
   return {
-    listTargets: () => listChildRuntimeTargets(userDataPath),
+    listTargets: (deviceId) => listChildRuntimeTargets(userDataPath, deviceId),
     call: (environmentId, method, params) =>
       callRuntimeEnvironment(userDataPath, environmentId, method, params, CHILD_RUNTIME_TIMEOUT_MS),
     subscribe: (environmentId, method, params, callbacks) =>
@@ -51,7 +52,7 @@ export function createMobileRuntimeFederationDependencies(
   }
 }
 
-function listChildRuntimeTargets(userDataPath: string): ChildRuntimeTarget[] {
+function listChildRuntimeTargets(userDataPath: string, deviceId?: string): ChildRuntimeTarget[] {
   const environmentIds = new Set(
     listEnvironments(userDataPath)
       .filter(({ source }) => source === 'ephemeral-vm')
@@ -66,6 +67,7 @@ function listChildRuntimeTargets(userDataPath: string): ChildRuntimeTarget[] {
         workspaceId: string
       } =>
         runtime.status === 'running' &&
+        (!deviceId || canDeviceAccessEphemeralVmRuntime(userDataPath, deviceId, runtime)) &&
         Boolean(runtime.runtimeEnvironmentId) &&
         Boolean(runtime.workspaceId) &&
         environmentIds.has(runtime.runtimeEnvironmentId!)

@@ -7,6 +7,7 @@ import type {
   EphemeralVmWorkspaceSharing
 } from '../shared/ephemeral-vm-runtimes'
 import type { WorkspaceCreatorProvenance } from '../shared/worktree/types'
+import { devicesBelongToSameMember } from './runtime/multiplayer-identity-store'
 
 export function setEphemeralVmRuntimeSharing(args: {
   userDataPath: string
@@ -20,7 +21,7 @@ export function setEphemeralVmRuntimeSharing(args: {
   if (!runtime) {
     throw new Error(`Unknown ephemeral VM environment: ${args.runtimeEnvironmentId}`)
   }
-  if (!sameCreator(runtime.creatorProvenance, args.actor)) {
+  if (!sameCreator(args.userDataPath, runtime.creatorProvenance, args.actor)) {
     throw new Error('Only the workspace creator can change sharing.')
   }
   return updateEphemeralVmRuntimeStatus(args.userDataPath, runtime.id, {
@@ -29,6 +30,7 @@ export function setEphemeralVmRuntimeSharing(args: {
 }
 
 function sameCreator(
+  userDataPath: string,
   creator: WorkspaceCreatorProvenance | undefined,
   actor: WorkspaceCreatorProvenance
 ): boolean {
@@ -38,5 +40,8 @@ function sameCreator(
   if (creator.kind === 'host') {
     return true
   }
-  return actor.kind === 'paired-device' && creator.deviceId === actor.deviceId
+  return (
+    actor.kind === 'paired-device' &&
+    devicesBelongToSameMember(userDataPath, creator.deviceId, actor.deviceId)
+  )
 }
