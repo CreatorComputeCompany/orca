@@ -385,6 +385,16 @@ export const PINNED_GROUP_META = {
 
 export const ALL_GROUP_KEY = 'all'
 
+export const MULTIPLAYER_GROUP_KEY = 'multiplayer'
+
+export const MULTIPLAYER_GROUP_META = {
+  get label() {
+    return translate('auto.components.sidebar.worktree.list.groups.multiplayer', 'Multiplayer')
+  },
+  tone: 'text-foreground',
+  icon: Users
+} as const
+
 export const ALL_GROUP_META = {
   get label() {
     return translate('auto.components.sidebar.worktree.list.groups.0ed04075b8', 'All')
@@ -567,6 +577,47 @@ function emitPinnedGroup(
         result.push(buildImportedWorktreesCardRow(candidate, 'pinned-fallback'))
       }
     }
+  }
+}
+
+function emitMultiplayerGroup(
+  worktrees: Worktree[],
+  repoMap: Map<string, Repo>,
+  defaultHostId: ExecutionHostId,
+  collapsedGroups: ReadonlySet<string>,
+  result: Row[]
+): void {
+  const shared = worktrees.filter((worktree) => worktree.ephemeralVmSharing === 'shared')
+  if (shared.length === 0) {
+    return
+  }
+  result.push({
+    type: 'header',
+    key: MULTIPLAYER_GROUP_KEY,
+    label: MULTIPLAYER_GROUP_META.label,
+    count: shared.length,
+    tone: MULTIPLAYER_GROUP_META.tone,
+    icon: MULTIPLAYER_GROUP_META.icon,
+    hostWorktreeCounts: getHostWorktreeCounts(shared, repoMap, defaultHostId),
+    hostWorktreeIds: getHostWorktreeIds(shared, repoMap, defaultHostId),
+    worktreeIds: shared.map((worktree) => worktree.id)
+  })
+  if (collapsedGroups.has(MULTIPLAYER_GROUP_KEY)) {
+    return
+  }
+  for (const worktree of shared) {
+    result.push(
+      buildWorktreeRow(worktree, repoMap, {
+        rowKey: `${MULTIPLAYER_GROUP_KEY}:${worktree.id}`,
+        sectionKey: MULTIPLAYER_GROUP_KEY,
+        depth: 0,
+        groupDepth: 0,
+        lineageTrail: [],
+        isLastLineageChild: false,
+        lineageChildCount: 0,
+        lineageCollapsed: false
+      })
+    )
   }
 }
 
@@ -1103,6 +1154,7 @@ export function buildRows(
     settings,
     projectGrouping
   })
+  emitMultiplayerGroup(worktrees, repoMap, defaultHostId, collapsedGroups, result)
   emitPinnedGroup(
     worktrees,
     repoMap,

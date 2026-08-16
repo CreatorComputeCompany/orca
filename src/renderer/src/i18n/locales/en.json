@@ -5099,7 +5099,13 @@
               "682ed5d551": "Closed",
               "7c2f009786": "In progress",
               "6798dc7c94": "In review",
-              "5076efc3d2": "Done"
+              "5076efc3d2": "Done",
+              "multiplayer": "Multiplayer",
+              "collaboration": {
+                "mine": "Mine",
+                "teammate": "Teammate",
+                "shared": "Shared"
+              }
             }
           }
         },
@@ -5456,6 +5462,13 @@
           "projectOnly": "Added in this project only.",
           "useGlobalFor": "Use global for {{value0}}",
           "useGlobal": "Use global"
+        },
+        "EphemeralVmSharingMenuItem": {
+          "privateSuccess": "Workspace is private",
+          "sharedSuccess": "Workspace shared with the team",
+          "error": "Could not update workspace sharing",
+          "makePrivate": "Make private",
+          "share": "Share with team"
         }
       },
       "shared": {

@@ -13,7 +13,7 @@ import type {
   WorkspaceStatusDefinition
 } from '../../../../../shared/worktree/types'
 import type { GroupHeaderRow, WorktreeGroupBy } from '../worktree-list-groups'
-import { PINNED_GROUP_KEY } from '../worktree-list-groups'
+import { MULTIPLAYER_GROUP_KEY, PINNED_GROUP_KEY } from '../worktree-list-groups'
 import { getWorkspaceStatusFromGroupKey } from '../workspace-status'
 import { getVirtualRowTransform } from '../worktree-list-virtual-rows'
 import { resolveProjectGroupHeaderColor } from '../project-header-color'
@@ -136,6 +136,7 @@ export function renderWorktreeSectionHeaderRow(args: {
       ? getWorkspaceStatusFromGroupKey(row.key, ctx.workspaceStatuses)
       : null
   const isPinnedHeader = row.key === PINNED_GROUP_KEY
+  const isMultiplayerHeader = row.key === MULTIPLAYER_GROUP_KEY
   const repoHeaderColor = resolveProjectGroupHeaderColor({
     groupBy: ctx.groupBy,
     headerKey: row.key,
@@ -172,7 +173,8 @@ export function renderWorktreeSectionHeaderRow(args: {
       isProjectGroupHeader ||
       isCollaborationHeader ||
       headerWorkspaceStatus !== null ||
-      isPinnedHeader)
+      isPinnedHeader ||
+      isMultiplayerHeader)
   return (
     <div
       key={vItem.key}

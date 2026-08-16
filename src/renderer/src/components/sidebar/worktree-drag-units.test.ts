@@ -109,6 +109,27 @@ describe('getWorktreeDragUnitGroups', () => {
       }
     ])
   })
+
+  it('never treats Multiplayer shortcuts as manual drag slots', () => {
+    const groups = getWorktreeDragUnitGroups([
+      header('multiplayer'),
+      item('shared', 0, 'multiplayer'),
+      header('all'),
+      item('shared'),
+      item('private')
+    ])
+
+    expect(groups).toEqual([
+      {
+        key: 'all',
+        worktreeIds: ['shared', 'private'],
+        units: [
+          { worktreeId: 'shared', worktreeIds: ['shared'] },
+          { worktreeId: 'private', worktreeIds: ['private'] }
+        ]
+      }
+    ])
+  })
 })
 
 describe('getFullDropIndexForWorktreeDragUnit', () => {

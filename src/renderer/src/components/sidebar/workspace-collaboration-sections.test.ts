@@ -41,7 +41,7 @@ describe('getWorkspaceCollaborationSection', () => {
     ).toBeNull()
   })
 
-  it('builds collapsible Mine and Shared sections inside a project', () => {
+  it('builds a top-level Multiplayer section and project collaboration sections', () => {
     const mine: Worktree = {
       ...worktree,
       id: 'mine',
@@ -87,6 +87,49 @@ describe('getWorkspaceCollaborationSection', () => {
       rows.flatMap((row) =>
         row.type === 'header' ? [row.label] : row.type === 'item' ? [row.worktree.id] : []
       )
-    ).toEqual([repo.displayName, 'Mine', 'mine', 'Shared', 'shared'])
+    ).toEqual(['Multiplayer', 'shared', repo.displayName, 'Mine', 'mine', 'Shared', 'shared'])
+  })
+
+  it('keeps Multiplayer above status grouping', () => {
+    const shared: Worktree = {
+      ...worktree,
+      id: 'shared',
+      ephemeralVmSharing: 'shared',
+      creatorProvenance: { kind: 'paired-device', deviceId: 'jake-device' }
+    }
+    const rows = buildRows(
+      'workspace-status',
+      [shared],
+      new Map([[repo.id, repo]]),
+      null,
+      new Set()
+    )
+
+    expect(
+      rows.flatMap((row) =>
+        row.type === 'header' ? [row.label] : row.type === 'item' ? [row.worktree.id] : []
+      )
+    ).toEqual(['Multiplayer', 'shared', 'In progress', 'shared'])
+  })
+
+  it('collapses Multiplayer without hiding the natural workspace row', () => {
+    const shared: Worktree = {
+      ...worktree,
+      id: 'shared',
+      ephemeralVmSharing: 'shared'
+    }
+    const rows = buildRows(
+      'none',
+      [shared],
+      new Map([[repo.id, repo]]),
+      null,
+      new Set(['multiplayer'])
+    )
+
+    expect(rows).toMatchObject([
+      { type: 'header', key: 'multiplayer', count: 1 },
+      { type: 'header', key: 'all', count: 1 },
+      { type: 'item', sectionKey: 'all', worktree: { id: 'shared' } }
+    ])
   })
 })
