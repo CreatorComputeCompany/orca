@@ -18,6 +18,12 @@ import type {
   MultiplayerIdentityEnrollParams,
   MultiplayerIdentityEnrollResult
 } from '../../../shared/multiplayer-identity-contract'
+import type {
+  ManagedRuntimeOfferParams,
+  ManagedRuntimeOfferResult,
+  ManagedRuntimeRevokeParams,
+  ManagedRuntimeRevokeResult
+} from '../../../shared/managed-runtime-access-contract'
 
 export type PairingRpcContext = {
   getEndpoints(params: PairingGetEndpointsParams): Promise<PairingGetEndpointsResult>
@@ -26,6 +32,10 @@ export type PairingRpcContext = {
   enrollMultiplayerIdentity?(
     params: MultiplayerIdentityEnrollParams
   ): Promise<MultiplayerIdentityEnrollResult>
+  createManagedRuntimeOffer?(params: ManagedRuntimeOfferParams): Promise<ManagedRuntimeOfferResult>
+  revokeManagedRuntimeAccess?(
+    params: ManagedRuntimeRevokeParams
+  ): Promise<ManagedRuntimeRevokeResult>
 }
 
 export type RpcEnvelopeMeta = {

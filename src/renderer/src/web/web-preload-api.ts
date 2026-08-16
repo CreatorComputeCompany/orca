@@ -1741,6 +1741,21 @@ async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList
   if (!Array.isArray(runtimes)) {
     return []
   }
+  const accessibleEnvironmentIds = new Set(
+    runtimes.flatMap((runtime) =>
+      runtime.runtimeEnvironmentId ? [runtime.runtimeEnvironmentId] : []
+    )
+  )
+  for (const environment of readAdditionalWebRuntimeEnvironments()) {
+    if (environment.source !== 'ephemeral-vm' || accessibleEnvironmentIds.has(environment.id)) {
+      continue
+    }
+    runtimeClients.get(environment.id)?.close()
+    runtimeClients.delete(environment.id)
+    manuallyDisconnectedEnvironmentIds.delete(environment.id)
+    removeAdditionalWebRuntimeEnvironment(environment.id)
+  }
+  invalidateRuntimeWorktreeCaches()
   ephemeralVmCreatorByEnvironmentId.clear()
   ephemeralVmSharingByEnvironmentId.clear()
   for (const runtime of runtimes) {

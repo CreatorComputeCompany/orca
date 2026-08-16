@@ -71,6 +71,14 @@ export async function prepareRequestForCreate(
     return null
   }
   appendProvisioningWarnings(creationId, preparedTarget.warnings)
+  if (preparedTarget.environment) {
+    store.setRuntimeEnvironments([
+      ...store.runtimeEnvironments.filter(
+        (environment) => environment.id !== preparedTarget.environment?.id
+      ),
+      preparedTarget.environment
+    ])
+  }
   const preparedRequest: WorktreeCreationRequest = {
     ...request,
     repoId: preparedTarget.setup.repo.id,

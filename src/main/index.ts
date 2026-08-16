@@ -78,10 +78,9 @@ import {
   type OrchestrationEnvironmentTransport
 } from './runtime/orchestration/environment-transport'
 import { callRuntimeEnvironment } from './ipc/runtime-environment-transport-routing'
+import { withEphemeralVmRecipeResultPairingCode } from '../shared/ephemeral-vm-recipes'
 import { resolveEnvironment } from '../shared/runtime-environment-store'
 import { getPreferredPairingOffer } from '../shared/runtime-environments'
-import { encodePairingOffer } from '../shared/pairing'
-import { withEphemeralVmRecipeResultPairingCode } from '../shared/ephemeral-vm-recipes'
 import { OrcaRuntimeRpcServer } from './runtime/runtime-rpc'
 import {
   recordRuntimeRpcStartFailure,
@@ -312,9 +311,17 @@ import {
 } from './ipc/ephemeral-vm-runtime-handlers'
 import { cleanupEphemeralVmRuntimeRecord } from './ephemeral-vm-runtime-cleanup-service'
 import { attachEphemeralVmRuntimeToWorkspace } from './ephemeral-vm-runtime-attachment'
-import { setEphemeralVmRuntimeSharing } from './ephemeral-vm-runtime-sharing'
+import {
+  assertEphemeralVmRuntimeSharingActor,
+  setEphemeralVmRuntimeSharing
+} from './ephemeral-vm-runtime-sharing'
 import { canDeviceAccessEphemeralVmRuntime } from './runtime/multiplayer-identity-store'
 import { assertEphemeralVmRuntimeAccess } from './ephemeral-vm-runtime-access'
+import {
+  createViewerPairingCode,
+  projectEphemeralVmViewerAccess,
+  revokeNonOwnerViewerAccess
+} from './ephemeral-vm-viewer-access'
 import {
   normalizePluginConsents,
   normalizePluginIdList
@@ -1925,7 +1932,8 @@ async function printServeReady(options: ServeOptions): Promise<void> {
     : runtimeRpc.createPairingOffer({
         address: options.pairingAddress,
         name: `${options.mobilePairing ? 'Mobile' : 'CLI'} ${new Date().toLocaleDateString()}`,
-        scope: options.mobilePairing ? 'mobile' : 'runtime'
+        scope: options.mobilePairing ? 'mobile' : 'runtime',
+        ...(options.recipeJson ? { pairingManagement: 'exclusive' as const } : {})
       })
   const pairingQr =
     pairing.available && options.mobilePairing
@@ -2783,30 +2791,66 @@ void app.whenReady().then(async () => {
           : runtimes.filter((runtime) =>
               canDeviceAccessEphemeralVmRuntime(app.getPath('userData'), actor.deviceId, runtime)
             )
-      return accessibleRuntimes.map((runtime) => {
-        if (!runtime.runtimeEnvironmentId || runtime.connectionMode === 'ssh') {
-          return runtime
-        }
-        try {
-          const environment = resolveEnvironment(
-            app.getPath('userData'),
-            runtime.runtimeEnvironmentId
-          )
-          const pairingCode = encodePairingOffer(getPreferredPairingOffer(environment))
-          return {
-            ...runtime,
-            recipeResult: withEphemeralVmRecipeResultPairingCode(runtime.recipeResult, pairingCode)
+      return await Promise.all(
+        accessibleRuntimes.map(async (runtime) => {
+          try {
+            return await projectEphemeralVmViewerAccess({
+              userDataPath: app.getPath('userData'),
+              runtime,
+              actor
+            })
+          } catch (error) {
+            console.warn(
+              `[ephemeral-vm] Failed to project current access for ${runtime.id}:`,
+              error
+            )
+            return null
           }
-        } catch (error) {
-          console.warn(`[ephemeral-vm] Failed to project current access for ${runtime.id}:`, error)
-          return runtime
-        }
-      })
+        })
+      ).then((projected) => projected.filter((runtime) => runtime !== null))
     },
-    setSharing: async (args) =>
-      setEphemeralVmRuntimeSharing({ userDataPath: app.getPath('userData'), ...args }),
-    provision: (args) =>
-      provisionEphemeralVmForRpc(store!, pluginService ?? undefined, app.getPath('userData'), args),
+    setSharing: async (args) => {
+      const runtime = assertEphemeralVmRuntimeSharingActor({
+        userDataPath: app.getPath('userData'),
+        runtimeEnvironmentId: args.runtimeEnvironmentId,
+        actor: args.actor
+      })
+      if (args.sharing === 'private') {
+        await revokeNonOwnerViewerAccess({ userDataPath: app.getPath('userData'), runtime })
+      }
+      return setEphemeralVmRuntimeSharing({ userDataPath: app.getPath('userData'), ...args })
+    },
+    provision: async (args) => {
+      const result = await provisionEphemeralVmForRpc(
+        store!,
+        pluginService ?? undefined,
+        app.getPath('userData'),
+        args
+      )
+      if (
+        !result.ok ||
+        result.connectionType !== 'orca-server' ||
+        args.creatorProvenance?.kind !== 'paired-device'
+      ) {
+        return result
+      }
+      const pairingCode = await createViewerPairingCode({
+        userDataPath: app.getPath('userData'),
+        runtime: result.runtime,
+        actor: args.creatorProvenance
+      })
+      return {
+        ...result,
+        runtime: {
+          ...result.runtime,
+          recipeResult: withEphemeralVmRecipeResultPairingCode(
+            result.runtime.recipeResult,
+            pairingCode
+          )
+        },
+        pairingCode
+      }
+    },
     cancelProvision: async (args) => cancelEphemeralVmProvision(args),
     attachWorkspace: async (args) => {
       assertEphemeralVmRuntimeAccess({

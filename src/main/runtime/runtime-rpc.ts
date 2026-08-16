@@ -692,6 +692,8 @@ export class OrcaRuntimeRpcServer {
     // next launch bind every interface. Defaults to network reach, which is what every other caller means.
     reach?: RuntimePairingReach
     fresh?: boolean
+    pairingManagement?: 'exclusive'
+    managedRuntimeGrantKey?: string
   }):
     | PairingOfferUnavailable
     | {
@@ -735,11 +737,19 @@ export class OrcaRuntimeRpcServer {
     let device: DeviceEntry
     try {
       const reach = args.reach ?? 'network'
-      device = args.fresh
-        ? this.deviceRegistry.addDevice(deviceName, scope, reach)
-        : args.rotate
-          ? this.deviceRegistry.rotatePendingDevice(deviceName, scope, reach)
-          : this.deviceRegistry.getOrCreatePendingDevice(deviceName, scope, reach)
+      device =
+        args.pairingManagement === 'exclusive'
+          ? this.deviceRegistry.replaceRuntimeDevicesWithPairingManager(deviceName, reach)
+          : args.managedRuntimeGrantKey
+            ? this.deviceRegistry.getOrCreateManagedRuntimeDevice(
+                args.managedRuntimeGrantKey,
+                deviceName
+              )
+            : args.fresh
+              ? this.deviceRegistry.addDevice(deviceName, scope, reach)
+              : args.rotate
+                ? this.deviceRegistry.rotatePendingDevice(deviceName, scope, reach)
+                : this.deviceRegistry.getOrCreatePendingDevice(deviceName, scope, reach)
     } catch (error) {
       console.error('[runtime] Failed to persist pairing credential:', error)
       return pairingUnavailable('device_registry_unavailable', DEVICE_REGISTRY_UNAVAILABLE_GUIDANCE)
@@ -1805,7 +1815,33 @@ export class OrcaRuntimeRpcServer {
               },
               pairingUrl: offer.pairingUrl
             }
-          }
+          },
+          ...(device.pairingManagement
+            ? {
+                createManagedRuntimeOffer: async (params: { grantKey: string; name: string }) => {
+                  const offer = this.createPairingOffer({
+                    name: params.name,
+                    scope: 'runtime',
+                    managedRuntimeGrantKey: params.grantKey
+                  })
+                  if (!offer.available) {
+                    throw new Error(offer.guidance)
+                  }
+                  return { pairingUrl: offer.pairingUrl, deviceId: offer.deviceId }
+                },
+                revokeManagedRuntimeAccess: async (params: { retainGrantKeys: string[] }) => {
+                  const revoked =
+                    this.deviceRegistry?.revokeManagedRuntimeDevicesExcept(
+                      new Set(params.retainGrantKeys)
+                    ) ?? []
+                  for (const entry of revoked) {
+                    this.runtime.forgetClientNavigationState(entry.deviceId)
+                    this.mobileSocketWiring?.terminateDeviceConnections(entry.token)
+                  }
+                  return { revoked: revoked.length }
+                }
+              }
+            : {})
         }
       : undefined
     try {

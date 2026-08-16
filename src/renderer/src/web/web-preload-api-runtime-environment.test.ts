@@ -91,7 +91,7 @@ describe('web runtime environment identity', () => {
           updatedAt: 2,
           lastUsedAt: null,
           runtimeId: null,
-          source: 'ephemeral-vm',
+          source: 'manual',
           preferredEndpointId: 'ws-child-vm',
           endpoints: [
             {
@@ -111,7 +111,7 @@ describe('web runtime environment identity', () => {
 
     await expect(globals.window.api.runtimeEnvironments.list()).resolves.toMatchObject([
       { id: 'controller' },
-      { id: 'child-vm', source: 'ephemeral-vm' }
+      { id: 'child-vm', source: 'manual' }
     ])
     await globals.window.api.runtimeEnvironments.getStatus({ selector: 'controller' })
     await globals.window.api.runtimeEnvironments.getStatus({ selector: 'child-vm' })

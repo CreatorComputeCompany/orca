@@ -22,6 +22,47 @@ function dispatchPairing(
 }
 
 describe('pairing RPC methods', () => {
+  it('keeps managed runtime grants behind the pairing-management context', async () => {
+    const createManagedRuntimeOffer = vi.fn().mockResolvedValue({
+      pairingUrl: 'orca://pair?code=viewer',
+      deviceId: 'viewer-device'
+    })
+    const revokeManagedRuntimeAccess = vi.fn().mockResolvedValue({ revoked: 1 })
+    const pairing = {
+      getEndpoints: vi.fn(),
+      provisionRelay: vi.fn(),
+      createManagedRuntimeOffer,
+      revokeManagedRuntimeAccess
+    }
+
+    await expect(
+      dispatchPairing(
+        'pairing.createManagedRuntimeOffer',
+        { grantKey: 'steven', name: 'Steven access' },
+        pairing
+      )
+    ).resolves.toMatchObject({ ok: true })
+    await expect(
+      dispatchPairing(
+        'pairing.revokeManagedRuntimeAccess',
+        { retainGrantKeys: ['steven'] },
+        pairing
+      )
+    ).resolves.toMatchObject({ ok: true })
+    expect(createManagedRuntimeOffer).toHaveBeenCalledWith({
+      grantKey: 'steven',
+      name: 'Steven access'
+    })
+    expect(revokeManagedRuntimeAccess).toHaveBeenCalledWith({ retainGrantKeys: ['steven'] })
+
+    await expect(
+      dispatchPairing(
+        'pairing.createManagedRuntimeOffer',
+        { grantKey: 'steven', name: 'Steven access' },
+        { getEndpoints: vi.fn(), provisionRelay: vi.fn() }
+      )
+    ).resolves.toMatchObject({ ok: false })
+  })
   it('passes only phone-owned credential material to the server-bound provider', async () => {
     const provisionRelay = vi.fn().mockResolvedValue({
       v: 1,

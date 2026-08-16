@@ -16,7 +16,7 @@ export function EphemeralVmSharingMenuItem({
 }) {
   const [pending, setPending] = useState(false)
   const environment = useAppStore((state) =>
-    state.runtimeEnvironments.find((entry) => entry.id === worktree.runtimeOwnerEnvironmentId)
+    state.runtimeEnvironments?.find((entry) => entry.id === worktree.runtimeOwnerEnvironmentId)
   )
   const creator = worktree.creatorProvenance
   const canManage =

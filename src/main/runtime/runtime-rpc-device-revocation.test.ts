@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { OrcaRuntimeService } from './orca-runtime'
 import { OrcaRuntimeRpcServer } from './runtime-rpc'
 import { parsePairingCode } from '../../shared/pairing'
+import { sendRemoteRuntimeRequest } from '../../shared/remote-runtime-client'
 import { generateKeyPair } from './rpc/e2ee-crypto'
 import { waitFor } from './runtime-rpc-test-harness'
 import {
@@ -183,6 +184,74 @@ describe('OrcaRuntimeRpcServer', () => {
       )
 
       expect(server.getDeviceRegistry()?.getDevice(offer.deviceId)).toBeNull()
+    } finally {
+      await server.stop()
+    }
+  }, 15_000)
+
+  it('lets only the pairing manager mint and revoke member runtime grants', async () => {
+    const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-rpc-'))
+    const runtime = new OrcaRuntimeService()
+    const server = new OrcaRuntimeRpcServer({
+      runtime,
+      userDataPath,
+      enableWebSocket: true,
+      wsPort: 0
+    })
+
+    await server.start()
+
+    try {
+      const manager = server.createPairingOffer({
+        address: '127.0.0.1',
+        name: 'controller',
+        scope: 'runtime',
+        pairingManagement: 'exclusive'
+      })
+      expect(manager.available).toBe(true)
+      if (!manager.available) {
+        throw new Error('WebSocket pairing unavailable')
+      }
+      const managerPairing = parsePairingCode(manager.pairingUrl)!
+      const owner = await sendRemoteRuntimeRequest<{ pairingUrl: string; deviceId: string }>(
+        managerPairing,
+        'pairing.createManagedRuntimeOffer',
+        { grantKey: 'steven', name: 'Steven access' },
+        5_000
+      )
+      const viewer = await sendRemoteRuntimeRequest<{ pairingUrl: string; deviceId: string }>(
+        managerPairing,
+        'pairing.createManagedRuntimeOffer',
+        { grantKey: 'jake', name: 'Jake access' },
+        5_000
+      )
+      expect(owner.ok).toBe(true)
+      expect(viewer.ok).toBe(true)
+      if (!owner.ok || !viewer.ok) {
+        throw new Error('Managed runtime offer unavailable')
+      }
+      const viewerPairing = parsePairingCode(viewer.result.pairingUrl)!
+      const viewerSocket = await authenticateMobileWs(viewer.result.pairingUrl)
+
+      await expect(
+        sendRemoteRuntimeRequest(
+          viewerPairing,
+          'pairing.createManagedRuntimeOffer',
+          { grantKey: 'attacker', name: 'Attacker access' },
+          5_000
+        )
+      ).resolves.toMatchObject({ ok: false })
+      await expect(
+        sendRemoteRuntimeRequest(
+          managerPairing,
+          'pairing.revokeManagedRuntimeAccess',
+          { retainGrantKeys: ['steven'] },
+          5_000
+        )
+      ).resolves.toMatchObject({ ok: true, result: { revoked: 1 } })
+      await waitForWsClose(viewerSocket)
+      expect(server.getDeviceRegistry()?.getDevice(viewer.result.deviceId)).toBeNull()
+      expect(server.getDeviceRegistry()?.getDevice(owner.result.deviceId)).not.toBeNull()
     } finally {
       await server.stop()
     }

@@ -15,6 +15,17 @@ export function setEphemeralVmRuntimeSharing(args: {
   sharing: EphemeralVmWorkspaceSharing
   actor: WorkspaceCreatorProvenance
 }): EphemeralVmRuntimeRecord {
+  const runtime = assertEphemeralVmRuntimeSharingActor(args)
+  return updateEphemeralVmRuntimeStatus(args.userDataPath, runtime.id, {
+    sharing: args.sharing
+  })
+}
+
+export function assertEphemeralVmRuntimeSharingActor(args: {
+  userDataPath: string
+  runtimeEnvironmentId: string
+  actor: WorkspaceCreatorProvenance
+}): EphemeralVmRuntimeRecord {
   const runtime = listEphemeralVmRuntimes(args.userDataPath).find(
     (entry) => entry.runtimeEnvironmentId === args.runtimeEnvironmentId
   )
@@ -24,9 +35,7 @@ export function setEphemeralVmRuntimeSharing(args: {
   if (!sameCreator(args.userDataPath, runtime.creatorProvenance, args.actor)) {
     throw new Error('Only the workspace creator can change sharing.')
   }
-  return updateEphemeralVmRuntimeStatus(args.userDataPath, runtime.id, {
-    sharing: args.sharing
-  })
+  return runtime
 }
 
 function sameCreator(

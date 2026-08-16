@@ -11,6 +11,7 @@ import type { EphemeralVmRecipeResultWarning } from '../../../shared/ephemeral-v
 import { PROJECT_HOST_SETUP_RUNTIME_CAPABILITY } from '../../../shared/protocol-version'
 import { translate } from '@/i18n/i18n'
 import { assertRuntimeEnvironmentCapability } from '@/runtime/runtime-rpc-client'
+import type { PublicKnownRuntimeEnvironment } from '../../../shared/runtime-environments'
 
 export type PrepareEphemeralVmWorkspaceTargetArgs = {
   repoId: string
@@ -32,6 +33,7 @@ export type PrepareEphemeralVmWorkspaceTargetResult =
       runtimeId: string
       checkoutMode: 'orca-worktree' | 'provisioned-root'
       environmentId?: string
+      environment?: PublicKnownRuntimeEnvironment
       expectedRefHead?: string
       stderr: string
       warnings: EphemeralVmRecipeResultWarning[]
@@ -145,7 +147,11 @@ export async function prepareEphemeralVmWorkspaceTarget(
   } satisfies PrepareEphemeralVmWorkspaceTargetResult
 
   return provisioned.connectionType === 'orca-server'
-    ? { ...success, environmentId: provisioned.environment.id }
+    ? {
+        ...success,
+        environmentId: provisioned.environment.id,
+        environment: provisioned.environment
+      }
     : success
 }
 

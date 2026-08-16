@@ -24,6 +24,8 @@ import { addHostSectionRows } from '../host-section-rows'
 import { orderHostSectionOptions } from '../host-section-order'
 import { buildSidebarHostOptions } from '../sidebar-host-options'
 
+const EMPTY_RUNTIME_ENVIRONMENTS: AppState['runtimeEnvironments'] = []
+
 type SectionRowsArgs = {
   groupBy: WorktreeGroupBy
   projectOrderBy: ProjectOrderBy
@@ -76,7 +78,9 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
   const worktreesByRepo = useAppStore((s) => s.worktreesByRepo)
   const sshTargetLabels = useAppStore((s) => s.sshTargetLabels)
   const sshConnectionStates = useAppStore((s) => s.sshConnectionStates)
-  const runtimeEnvironments = useAppStore((s) => s.runtimeEnvironments)
+  const runtimeEnvironments = useAppStore(
+    (s) => s.runtimeEnvironments ?? EMPTY_RUNTIME_ENVIRONMENTS
+  )
   const runtimeStatusByEnvironmentId = useAppStore((s) => s.runtimeStatusByEnvironmentId)
   const workspaceHostOrder = useAppStore((s) => s.workspaceHostOrder)
   const setWorkspaceHostOrder = useAppStore((s) => s.setWorkspaceHostOrder)
