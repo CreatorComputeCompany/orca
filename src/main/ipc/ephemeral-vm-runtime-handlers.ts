@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Why: one cohesive IPC lifecycle boundary for provision, attach, suspend, resume, and cleanup. */
 import { app, ipcMain } from 'electron'
 import type { Store } from '../persistence'
 import {
@@ -31,6 +32,7 @@ import {
 } from '../ephemeral-vm-runtime-ssh'
 import { getRuntimeRecipeContext } from './ephemeral-vm-recipe-context'
 import { invalidateRuntimeEnvironmentTransport } from './runtime-environments'
+import { getRuntimeEnvironmentStatus } from './runtime-environment-transport-routing'
 import { attachEphemeralVmRuntimeToWorkspace } from '../ephemeral-vm-runtime-attachment'
 import { setEphemeralVmRuntimeSharing } from '../ephemeral-vm-runtime-sharing'
 
@@ -271,7 +273,18 @@ export async function resumeEphemeralVmWorkspace(
   if (!runtime?.repoId) {
     return null
   }
-  if (runtime.status !== 'suspended' && runtime.status !== 'resume_failed') {
+  if (runtime.status === 'running' && runtime.runtimeEnvironmentId) {
+    const status = await getRuntimeEnvironmentStatus(
+      userDataPath,
+      runtime.runtimeEnvironmentId,
+      5_000
+    )
+    if (status.ok) {
+      return runtime
+    }
+    // A provider VM can disappear without Orca observing a suspend event. Treat an unreachable
+    // "running" child as stale and run the recipe's idempotent resume hook to recover it.
+  } else if (runtime.status !== 'suspended' && runtime.status !== 'resume_failed') {
     return runtime
   }
   const recipeContext = getRuntimeRecipeContext(store, userDataPath, runtime.id)

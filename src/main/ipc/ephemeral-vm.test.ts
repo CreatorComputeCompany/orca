@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Why: shared end-to-end IPC fixture covers the complete ephemeral VM lifecycle contract. */
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,7 +15,8 @@ const {
   connectRuntimeOwnedSshTargetMock,
   disconnectRuntimeOwnedSshTargetMock,
   removeRuntimeOwnedSshTargetMock,
-  invalidateRuntimeEnvironmentTransportMock
+  invalidateRuntimeEnvironmentTransportMock,
+  getRuntimeEnvironmentStatusMock
 } = vi.hoisted(() => ({
   handleMock: vi.fn(),
   removeHandlerMock: vi.fn(),
@@ -22,7 +24,8 @@ const {
   connectRuntimeOwnedSshTargetMock: vi.fn(),
   disconnectRuntimeOwnedSshTargetMock: vi.fn(),
   removeRuntimeOwnedSshTargetMock: vi.fn(),
-  invalidateRuntimeEnvironmentTransportMock: vi.fn()
+  invalidateRuntimeEnvironmentTransportMock: vi.fn(),
+  getRuntimeEnvironmentStatusMock: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -43,6 +46,10 @@ vi.mock('../ephemeral-vm-runtime-ssh', () => ({
 
 vi.mock('./runtime-environments', () => ({
   invalidateRuntimeEnvironmentTransport: invalidateRuntimeEnvironmentTransportMock
+}))
+
+vi.mock('./runtime-environment-transport-routing', () => ({
+  getRuntimeEnvironmentStatus: getRuntimeEnvironmentStatusMock
 }))
 
 import { registerEphemeralVmHandlers } from './ephemeral-vm'
@@ -115,6 +122,13 @@ describe('registerEphemeralVmHandlers', () => {
     disconnectRuntimeOwnedSshTargetMock.mockReset()
     removeRuntimeOwnedSshTargetMock.mockReset()
     invalidateRuntimeEnvironmentTransportMock.mockReset()
+    getRuntimeEnvironmentStatusMock.mockReset()
+    getRuntimeEnvironmentStatusMock.mockResolvedValue({
+      id: 'status.get',
+      ok: true,
+      result: { runtimeId: 'runtime-1' },
+      _meta: { runtimeId: 'runtime-1' }
+    })
     connectRuntimeOwnedSshTargetMock.mockResolvedValue({
       targetId: 'runtime-ssh-orca-instance-1',
       target: {
@@ -706,6 +720,19 @@ describe('registerEphemeralVmHandlers', () => {
     expect(invalidateRuntimeEnvironmentTransportMock).toHaveBeenCalledWith(
       provisioned.environment.id
     )
+
+    rmSync(join(repoPath, 'resume-mode.txt'))
+    getRuntimeEnvironmentStatusMock.mockResolvedValueOnce({
+      id: 'status.get',
+      ok: false,
+      error: { code: 'runtime_unavailable', message: 'offline' },
+      _meta: { runtimeId: null }
+    })
+    const recovered = await handlers.get('ephemeralVm:resumeWorkspace')?.(null, {
+      workspaceId: 'workspace-1'
+    } as never)
+    expect(recovered).toEqual(expect.objectContaining({ status: 'running' }))
+    expect(readFileSync(join(repoPath, 'resume-mode.txt'), 'utf8')).toBe('resume')
   })
 
   it('returns a copyable cleanup command for a persisted runtime', async () => {
