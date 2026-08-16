@@ -1724,12 +1724,28 @@ async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList
     if (!offer) {
       continue
     }
+    const previousEnvironment = readAdditionalWebRuntimeEnvironments().find(
+      (environment) => environment.id === runtime.runtimeEnvironmentId
+    )
+    const discoveredEnvironment = createStoredWebRuntimeEnvironment({
+      name: runtime.workspaceName ? `${runtime.workspaceName} VM` : 'Workspace VM',
+      offer,
+      previousEnvironment
+    })
+    const preferredEndpointId =
+      previousEnvironment?.preferredEndpointId ?? `ws-${runtime.runtimeEnvironmentId}`
     saveAdditionalWebRuntimeEnvironment({
-      ...createStoredWebRuntimeEnvironment({
-        name: runtime.workspaceName ? `${runtime.workspaceName} VM` : 'Workspace VM',
-        offer
-      }),
+      ...discoveredEnvironment,
       id: runtime.runtimeEnvironmentId,
+      createdAt: previousEnvironment?.createdAt ?? discoveredEnvironment.createdAt,
+      updatedAt: previousEnvironment?.updatedAt ?? discoveredEnvironment.updatedAt,
+      lastUsedAt: previousEnvironment?.lastUsedAt ?? discoveredEnvironment.lastUsedAt,
+      runtimeId: previousEnvironment?.runtimeId ?? discoveredEnvironment.runtimeId,
+      preferredEndpointId,
+      endpoints: discoveredEnvironment.endpoints.map((endpoint, index) => ({
+        ...endpoint,
+        id: index === 0 ? preferredEndpointId : endpoint.id
+      })),
       source: 'ephemeral-vm',
       ...(requireActiveEnvironment().pairedDeviceId
         ? { workspaceVisibilityDeviceId: requireActiveEnvironment().pairedDeviceId }

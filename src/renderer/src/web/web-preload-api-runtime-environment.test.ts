@@ -222,14 +222,14 @@ describe('web runtime environment identity', () => {
     const { installWebPreloadApi } = await import('./web-preload-api')
     installWebPreloadApi()
 
-    await expect(globals.window.api.runtimeEnvironments.list()).resolves.toMatchObject([
-      { id: 'controller' },
-      {
-        id: 'shared-child-environment',
-        name: 'Shared task VM',
-        source: 'ephemeral-vm'
-      }
-    ])
+    const first = (await globals.window.api.runtimeEnvironments.list())[1]
+    const second = (await globals.window.api.runtimeEnvironments.list())[1]
+    expect(second).toMatchObject({
+      id: 'shared-child-environment',
+      createdAt: first?.createdAt,
+      preferredEndpointId: first?.preferredEndpointId,
+      endpoints: [{ id: first?.endpoints[0]?.id }]
+    })
   })
 
   it('refreshes controller VM discovery after another browser provisions a workspace', async () => {
