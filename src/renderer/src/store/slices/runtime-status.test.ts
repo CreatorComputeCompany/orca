@@ -152,6 +152,17 @@ describe('runtime-status slice', () => {
     expect(purgeStaleRuntimeHostState).toHaveBeenCalledWith(['env-a'])
   })
 
+  it('records explicit browser revocation tombstones and purges their runtime state', () => {
+    const store = createSliceStore()
+    const purgeStaleRuntimeHostState = vi.fn()
+    store.setState({ purgeStaleRuntimeHostState } as never)
+
+    store.getState().retireRuntimeEnvironmentIds(['revoked-child', 'revoked-child'])
+
+    expect(store.getState().removedRuntimeEnvironmentIds).toEqual(new Set(['revoked-child']))
+    expect(purgeStaleRuntimeHostState).toHaveBeenCalledWith(['revoked-child'])
+  })
+
   it('merges per environment id and produces a new map reference', () => {
     const store = createSliceStore()
     const before = store.getState().runtimeStatusByEnvironmentId

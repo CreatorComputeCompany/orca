@@ -69,6 +69,12 @@ describe('web runtime access pruning', () => {
     await expect(globals.window.api.runtimeEnvironments.list()).resolves.toMatchObject([
       { id: 'controller' }
     ])
+    await expect(
+      globals.window.api.runtimeEnvironments.consumeRetiredEnvironmentIds?.()
+    ).resolves.toEqual(['revoked-child'])
+    await expect(
+      globals.window.api.runtimeEnvironments.consumeRetiredEnvironmentIds?.()
+    ).resolves.toEqual([])
 
     expect(closed).toContain('wss://revoked-child.example')
     expect(

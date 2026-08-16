@@ -58,6 +58,8 @@ export type RuntimeApi = {
   }
   runtimeEnvironments: {
     list: () => Promise<PublicKnownRuntimeEnvironment[]>
+    /** Browser-only revocation tombstones collected while reconciling controller workspace VMs. */
+    consumeRetiredEnvironmentIds?: () => Promise<string[]>
     addFromPairingCode: (args: {
       name: string
       pairingCode: string

@@ -1560,6 +1560,11 @@ function createRuntimeEnvironmentsApi(): NonNullable<Partial<PreloadApi>['runtim
         ...readAdditionalWebRuntimeEnvironments().map(redactStoredWebRuntimeEnvironment)
       ]
     },
+    consumeRetiredEnvironmentIds: async () => {
+      const retired = [...retiredEphemeralVmEnvironmentIds]
+      retiredEphemeralVmEnvironmentIds.clear()
+      return retired
+    },
     addFromPairingCode: async ({ name, pairingCode }) => {
       const offer = parseWebPairingInput(pairingCode)
       if (!offer) {
@@ -1735,6 +1740,7 @@ type EphemeralVmRuntimeList = Awaited<
 
 const ephemeralVmCreatorByEnvironmentId = new Map<string, WorkspaceCreatorProvenance>()
 const ephemeralVmSharingByEnvironmentId = new Map<string, EphemeralVmWorkspaceSharing>()
+const retiredEphemeralVmEnvironmentIds = new Set<string>()
 
 async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList> {
   const runtimes = await callRuntimeResult<EphemeralVmRuntimeList>('ephemeralVm.listRuntimes')
@@ -1746,6 +1752,9 @@ async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList
       runtime.runtimeEnvironmentId ? [runtime.runtimeEnvironmentId] : []
     )
   )
+  for (const environmentId of accessibleEnvironmentIds) {
+    retiredEphemeralVmEnvironmentIds.delete(environmentId)
+  }
   for (const environment of readAdditionalWebRuntimeEnvironments()) {
     if (environment.source !== 'ephemeral-vm' || accessibleEnvironmentIds.has(environment.id)) {
       continue
@@ -1754,6 +1763,7 @@ async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList
     runtimeClients.delete(environment.id)
     manuallyDisconnectedEnvironmentIds.delete(environment.id)
     removeAdditionalWebRuntimeEnvironment(environment.id)
+    retiredEphemeralVmEnvironmentIds.add(environment.id)
   }
   invalidateRuntimeWorktreeCaches()
   ephemeralVmCreatorByEnvironmentId.clear()

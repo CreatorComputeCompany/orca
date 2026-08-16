@@ -67,6 +67,19 @@ function seedStale(store: ReturnType<typeof createTestStore>): void {
 }
 
 describe('setRuntimeEnvironments removal diff fires the stale-runtime purge', () => {
+  it('purges an explicitly retired browser environment absent from the initial catalog', () => {
+    const store = createTestStore()
+    seedStale(store)
+    store.setState({ runtimeEnvironments: [] })
+
+    store.getState().retireRuntimeEnvironmentIds(['env-a'])
+
+    const state = store.getState()
+    expect(state.worktreesByRepo.repoA).toEqual([])
+    expect(state.tabsByWorktree['repoA::/wt-a']).toBeUndefined()
+    expect(state.removedRuntimeEnvironmentIds).toContain('env-a')
+  })
+
   it('purges the removed env owned repo/rows/setup/tab', () => {
     const store = createTestStore()
     seedStale(store)
