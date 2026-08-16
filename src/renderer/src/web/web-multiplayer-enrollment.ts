@@ -14,7 +14,8 @@ export async function enrollWebMultiplayerIdentity(displayName: string): Promise
   if (!current) {
     throw new Error('Connect this browser to Orca first.')
   }
-  const client = new WebRuntimeClient(getPreferredWebPairingOffer(current))
+  const currentOffer = getPreferredWebPairingOffer(current)
+  const client = new WebRuntimeClient(currentOffer)
   try {
     const response = await client.call('multiplayer.identity.enroll', {
       memberKey: displayName,
@@ -24,9 +25,21 @@ export async function enrollWebMultiplayerIdentity(displayName: string): Promise
       throw new Error(response.error.message)
     }
     const result = response.result as MultiplayerIdentityEnrollResult
-    const offer = parseWebPairingInput(result.pairingUrl)
-    if (!offer) {
+    const issuedOffer = parseWebPairingInput(result.pairingUrl)
+    if (!issuedOffer) {
       throw new Error('Orca returned an invalid personal access credential.')
+    }
+    // The runtime may advertise a private/Tailscale address even though this browser reached it
+    // through a public reverse proxy. Credential rotation must not discard that proven route.
+    const offer = { ...issuedOffer, endpoint: currentOffer.endpoint }
+    const personalClient = new WebRuntimeClient(offer)
+    try {
+      const status = await personalClient.call('status.get', undefined, { timeoutMs: 15_000 })
+      if (!status.ok) {
+        throw new Error(status.error.message)
+      }
+    } finally {
+      personalClient.close()
     }
     const refreshed = createStoredWebRuntimeEnvironment({
       name: current.name,

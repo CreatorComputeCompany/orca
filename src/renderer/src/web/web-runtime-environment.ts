@@ -55,7 +55,7 @@ export function readStoredWebRuntimeEnvironment(): StoredWebRuntimeEnvironment |
       ...(pairedDeviceId ? { pairedDeviceId } : {}),
       ...(compatibleEnvironmentIds.length > 0 ? { compatibleEnvironmentIds } : {})
     }
-    return repairMultiplayerEnvironmentId(normalized)
+    return repairMultiplayerEnvironment(normalized)
   } catch {
     return null
   }
@@ -147,30 +147,46 @@ export function withWebMultiplayerIdentity(
   }
 }
 
-function repairMultiplayerEnvironmentId(
+function repairMultiplayerEnvironment(
   environment: StoredWebRuntimeEnvironment
 ): StoredWebRuntimeEnvironment {
   const inferredOriginalId = environment.compatibleEnvironmentIds?.at(-1)
   const originalId = environment.multiplayerOriginalEnvironmentId ?? inferredOriginalId
-  if (!environment.multiplayerMemberKey || !originalId || environment.id === originalId) {
+  if (!environment.multiplayerMemberKey) {
     return environment
   }
-  const preferredEndpointId = `ws-${originalId}`
+
+  const repairedId = originalId ?? environment.id
+  const preferredEndpointId = `ws-${repairedId}`
+  const sameOriginEndpoint = getBoxdSameOriginEndpoint()
   const repaired = {
     ...environment,
-    id: originalId,
-    multiplayerOriginalEnvironmentId: originalId,
+    id: repairedId,
+    ...(originalId ? { multiplayerOriginalEnvironmentId: originalId } : {}),
     preferredEndpointId,
     compatibleEnvironmentIds: environment.compatibleEnvironmentIds?.filter(
-      (environmentId) => environmentId !== originalId
+      (environmentId) => environmentId !== repairedId
     ),
     endpoints: environment.endpoints.map((endpoint, index) => ({
       ...endpoint,
-      id: index === 0 ? preferredEndpointId : endpoint.id
+      id: index === 0 ? preferredEndpointId : endpoint.id,
+      // Existing spike enrollments saved the runtime's private advertised endpoint. The web app
+      // and runtime are co-hosted behind Boxd, so the page origin is the known-reachable route.
+      ...(index === 0 && sameOriginEndpoint ? { endpoint: sameOriginEndpoint } : {})
     }))
   }
-  window.localStorage.setItem(ENVIRONMENT_STORAGE_KEY, JSON.stringify(repaired))
+  if (JSON.stringify(repaired) !== JSON.stringify(environment)) {
+    window.localStorage.setItem(ENVIRONMENT_STORAGE_KEY, JSON.stringify(repaired))
+  }
   return repaired
+}
+
+function getBoxdSameOriginEndpoint(): string | null {
+  if (!window.location.hostname.endsWith('.boxd.sh')) {
+    return null
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}`
 }
 
 function isStoredWebRuntimeEnvironment(value: unknown): value is StoredWebRuntimeEnvironment {
