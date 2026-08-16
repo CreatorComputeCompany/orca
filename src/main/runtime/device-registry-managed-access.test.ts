@@ -28,6 +28,20 @@ describe('managed runtime access registry', () => {
     expect(registry.validateToken(manager.token)).toMatchObject({ pairingManagement: true })
   })
 
+  it('keeps controller authority stable across workspace runtime restarts', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orca-managed-runtime-access-'))
+    roots.push(root)
+    const registry = new DeviceRegistry(root)
+    const manager = registry.replaceRuntimeDevicesWithPairingManager('Workspace controller')
+
+    const restartedRegistry = new DeviceRegistry(root)
+    const managerAfterRestart =
+      restartedRegistry.replaceRuntimeDevicesWithPairingManager('Workspace controller')
+
+    expect(managerAfterRestart.deviceId).toBe(manager.deviceId)
+    expect(managerAfterRestart.token).toBe(manager.token)
+  })
+
   it('reuses member grants and revokes every member except the owner', () => {
     const root = mkdtempSync(join(tmpdir(), 'orca-managed-runtime-access-'))
     roots.push(root)

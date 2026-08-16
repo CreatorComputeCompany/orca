@@ -75,6 +75,12 @@ export class DeviceRegistry {
     name: string,
     pairingReach: RuntimePairingReach = 'network'
   ): DeviceEntry {
+    const existing = this.devices.find(
+      (device) => device.scope === 'runtime' && device.pairingManagement === true
+    )
+    if (existing) {
+      return existing
+    }
     return this.createAndPersistDevice(
       this.devices.filter((device) => device.scope !== 'runtime'),
       name,
