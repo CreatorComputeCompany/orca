@@ -24,6 +24,7 @@ import { useOnboardingAndFeatureTips } from './app-shell/use-onboarding-and-feat
 import { usePersistedUIWriter } from './app-shell/use-persisted-ui-writer'
 import { useRuntimeGraphSync } from './app-shell/use-runtime-graph-sync'
 import { useWindowVisibilityEffects } from './app-shell/use-window-visibility-effects'
+import { useWebWorkspaceLink } from './app-shell/use-web-workspace-link'
 
 function App(): React.JSX.Element {
   const layout = useAppChromeLayout()
@@ -39,6 +40,7 @@ function App(): React.JSX.Element {
   useDocumentAppearance()
   useWindowVisibilityEffects()
   useGlobalKeybindings({ layout, floatingWorkspace })
+  useWebWorkspaceLink()
 
   const { cancelReturnFocusFrame } = floatingWorkspace
   const setAppRootNode = useCallback(
