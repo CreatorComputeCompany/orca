@@ -30,7 +30,7 @@ describe('pairing RPC methods', () => {
       currentVersion: 1,
       resumeExpiresAt: Date.now() + 60_000
     })
-    const pairing = { getEndpoints: vi.fn(), provisionRelay }
+    const pairing = { getEndpoints: vi.fn(), provisionRelay, createMobileOffer: vi.fn() }
 
     await expect(
       dispatchPairing(
@@ -46,7 +46,11 @@ describe('pairing RPC methods', () => {
   })
 
   it('rejects caller-selected identity and authorization metadata', async () => {
-    const pairing = { getEndpoints: vi.fn(), provisionRelay: vi.fn() }
+    const pairing = {
+      getEndpoints: vi.fn(),
+      provisionRelay: vi.fn(),
+      createMobileOffer: vi.fn()
+    }
 
     for (const injected of [
       { relayDeviceId: 'attacker-device' },
@@ -71,5 +75,39 @@ describe('pairing RPC methods', () => {
     ).resolves.toMatchObject({ ok: false, error: { code: 'invalid_argument' } })
     expect(pairing.provisionRelay).not.toHaveBeenCalled()
     expect(pairing.getEndpoints).not.toHaveBeenCalled()
+  })
+
+  it('mints mobile offers only from validated host-owned inputs', async () => {
+    const createMobileOffer = vi.fn().mockResolvedValue({ available: false })
+    const pairing = {
+      getEndpoints: vi.fn(),
+      provisionRelay: vi.fn(),
+      createMobileOffer
+    }
+
+    await expect(
+      dispatchPairing(
+        'pairing.createMobileOffer',
+        {
+          address: 'wss://orca.example.test',
+          connectionMode: 'local-only',
+          rotate: true
+        },
+        pairing
+      )
+    ).resolves.toMatchObject({ ok: true })
+    expect(createMobileOffer).toHaveBeenCalledWith({
+      address: 'wss://orca.example.test',
+      connectionMode: 'local-only',
+      rotate: true
+    })
+
+    await expect(
+      dispatchPairing(
+        'pairing.createMobileOffer',
+        { address: 'wss://orca.example.test', deviceId: 'attacker-device' },
+        pairing
+      )
+    ).resolves.toMatchObject({ ok: false, error: { code: 'invalid_argument' } })
   })
 })

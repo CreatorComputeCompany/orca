@@ -53,6 +53,7 @@ import {
   decodeTerminalStreamFrame,
   type TerminalStreamFrame
 } from '../../shared/terminal-stream-protocol'
+import { encodeMobilePairingQr } from './mobile-pairing-qr'
 
 const DEFAULT_WS_PORT = 6768
 
@@ -139,6 +140,15 @@ type MobileRelayPairingProvider = {
     context: MobilePairingConnectionContext,
     params: PairingProvisionRelayParams
   ): Promise<DeviceCredentialInstalled>
+}
+
+function requirePairingProvider(
+  provider: MobileRelayPairingProvider | null
+): MobileRelayPairingProvider {
+  if (!provider) {
+    throw new Error('pairing_context_unavailable')
+  }
+  return provider
 }
 
 export type MobilePairingConnectionContext = Readonly<{
@@ -1688,29 +1698,51 @@ export class OrcaRuntimeRpcServer {
 
     const connectionId = ws ? this.mobileSocketWiring?.getConnectionId(ws) : undefined
     const pairingProvider = this.mobileRelayPairingProvider
-    const pairingContext =
-      pairingProvider && authenticatedSocket
-        ? {
-            getEndpoints: (params: PairingGetEndpointsParams) =>
-              pairingProvider.getEndpoints(
-                {
-                  deviceId: authenticatedSocket.device.deviceId,
-                  connectionId: authenticatedSocket.connectionId,
-                  transport: authenticatedSocket.transport
-                },
-                params
-              ),
-            provisionRelay: (params: PairingProvisionRelayParams) =>
-              pairingProvider.provisionRelay(
-                {
-                  deviceId: authenticatedSocket.device.deviceId,
-                  connectionId: authenticatedSocket.connectionId,
-                  transport: authenticatedSocket.transport
-                },
-                params
-              )
+    const pairingContext = authenticatedSocket
+      ? {
+          getEndpoints: (params: PairingGetEndpointsParams) =>
+            requirePairingProvider(pairingProvider).getEndpoints(
+              {
+                deviceId: authenticatedSocket.device.deviceId,
+                connectionId: authenticatedSocket.connectionId,
+                transport: authenticatedSocket.transport
+              },
+              params
+            ),
+          provisionRelay: (params: PairingProvisionRelayParams) =>
+            requirePairingProvider(pairingProvider).provisionRelay(
+              {
+                deviceId: authenticatedSocket.device.deviceId,
+                connectionId: authenticatedSocket.connectionId,
+                transport: authenticatedSocket.transport
+              },
+              params
+            ),
+          createMobileOffer: async (params: {
+            address: string
+            connectionMode?: MobilePairingConnectionMode
+            rotate?: boolean
+          }) => {
+            const offer = await this.createMobilePairingOffer({
+              ...params,
+              name: `Mobile ${new Date().toLocaleDateString()}`
+            })
+            if (!offer.available) {
+              return offer
+            }
+            const qr = await encodeMobilePairingQr(offer.pairingUrl)
+            return {
+              available: true as const,
+              qrDataUrl: qr.ok ? qr.qrDataUrl : null,
+              ...(!qr.ok ? { qrError: qr.reason } : {}),
+              pairingUrl: offer.pairingUrl,
+              endpoint: offer.endpoint,
+              deviceId: offer.deviceId,
+              connectionMode: offer.connectionMode
+            }
           }
-        : undefined
+        }
+      : undefined
     try {
       await this.dispatcher.dispatchStreaming(request, replyForRequest, {
         // Why: the validated credential preserves existing federation ownership without trusting request fields.

@@ -3,8 +3,19 @@ import {
   PairingGetEndpointsParamsSchema,
   PairingProvisionRelayParamsSchema
 } from '../../../../shared/mobile-relay-credential-contract'
+import { MobilePairingOfferParamsSchema } from '../../../../shared/mobile-pairing-host-contract'
 
 export const PAIRING_METHODS: readonly RpcAnyMethod[] = [
+  defineMethod({
+    name: 'pairing.createMobileOffer',
+    params: MobilePairingOfferParamsSchema,
+    handler: async (params, ctx) => {
+      if (!ctx.pairing?.createMobileOffer) {
+        throw new Error('pairing_context_unavailable')
+      }
+      return await ctx.pairing.createMobileOffer(params)
+    }
+  }),
   defineMethod({
     name: 'pairing.getEndpoints',
     params: PairingGetEndpointsParamsSchema,

@@ -10,10 +10,15 @@ import type {
 } from '../../../shared/mobile-relay-credential-contract'
 import type { RuntimeCapability } from '../../../shared/protocol-version'
 import type { OrchestrationCompatibilityEvidence } from '../../../shared/orchestration-compatibility-evidence'
+import type {
+  MobilePairingOfferParams,
+  MobilePairingOfferResult
+} from '../../../shared/mobile-pairing-host-contract'
 
 export type PairingRpcContext = {
   getEndpoints(params: PairingGetEndpointsParams): Promise<PairingGetEndpointsResult>
   provisionRelay(params: PairingProvisionRelayParams): Promise<DeviceCredentialInstalled>
+  createMobileOffer?(params: MobilePairingOfferParams): Promise<MobilePairingOfferResult>
 }
 
 export type RpcEnvelopeMeta = {

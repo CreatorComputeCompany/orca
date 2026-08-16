@@ -107,6 +107,7 @@ import {
 import { normalizeWorktreeVisibilityDefaults } from '../../../shared/external-worktree-visibility'
 import type { RateLimitState } from '../../../shared/rate-limit-types'
 import type { RuntimeStatus, RuntimeSyncWindowGraph } from '../../../shared/runtime-types'
+import type { MobilePairingOfferResult } from '../../../shared/mobile-pairing-host-contract'
 import { getEphemeralVmRecipeResultPairingCode } from '../../../shared/ephemeral-vm-recipes'
 import type {
   EphemeralVmRuntimeRecord,
@@ -958,7 +959,27 @@ function createWebPreloadApi(): Partial<PreloadApi> {
     },
     mobile: {
       listNetworkInterfaces: () => Promise.resolve({ interfaces: [] }),
-      getPairingQR: () => Promise.resolve({ available: false }),
+      getPairingQR: async (args) => {
+        if (!activeEnvironment) {
+          return { available: false }
+        }
+        const runtimeEndpoint = getPreferredWebPairingOffer(activeEnvironment).endpoint
+        try {
+          return await callRuntimeResult<MobilePairingOfferResult>(
+            'pairing.createMobileOffer',
+            {
+              ...args,
+              address: args?.address ?? runtimeEndpoint
+            },
+            30_000
+          )
+        } catch {
+          return {
+            available: false,
+            guidance: 'Mobile pairing requires a newer Orca server.'
+          }
+        }
+      },
       getWindowsFirewallStatus: () => Promise.resolve({ supported: false }),
       repairWindowsFirewall: () => Promise.resolve({ ok: false, reason: 'unsupported' }),
       openWindowsNetworkSettings: () => Promise.resolve(false),
