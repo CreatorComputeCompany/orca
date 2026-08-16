@@ -106,7 +106,11 @@ import {
 } from '../../../shared/computer-awake-mode'
 import { normalizeWorktreeVisibilityDefaults } from '../../../shared/external-worktree-visibility'
 import type { RateLimitState } from '../../../shared/rate-limit-types'
-import type { RuntimeStatus, RuntimeSyncWindowGraph } from '../../../shared/runtime-types'
+import type {
+  RuntimeStatus,
+  RuntimeSyncWindowGraph,
+  RuntimeSyncWindowGraphResult
+} from '../../../shared/runtime-types'
 import type { MobilePairingOfferResult } from '../../../shared/mobile-pairing-host-contract'
 import { getEphemeralVmRecipeResultPairingCode } from '../../../shared/ephemeral-vm-recipes'
 import type {
@@ -1454,7 +1458,17 @@ function createNativeChatApi(): NativeChatApi {
 
 function createRuntimeApi(): NonNullable<Partial<PreloadApi>['runtime']> {
   return {
-    syncWindowGraph: async (_graph: RuntimeSyncWindowGraph) => getRemoteRuntimeStatus(),
+    syncWindowGraph: async (graph: RuntimeSyncWindowGraph) => {
+      try {
+        return await callRuntimeResult<RuntimeSyncWindowGraphResult>(
+          'runtime.syncWindowGraph',
+          graph,
+          15_000
+        )
+      } catch {
+        return getRemoteRuntimeStatus()
+      }
+    },
     getStatus: () => getRemoteRuntimeStatus(),
     call: ({ method, params }) => callRuntimeEnvelope(method, params),
     getTerminalFitOverrides: () => Promise.resolve([]),
