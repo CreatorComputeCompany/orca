@@ -30,6 +30,8 @@ export const EphemeralVmCleanupStatusSchema = z.enum([
 export type EphemeralVmCleanupStatus = z.infer<typeof EphemeralVmCleanupStatusSchema>
 
 export const EphemeralVmRuntimeConnectionModeSchema = z.enum(['orca-server', 'ssh'])
+export const EphemeralVmWorkspaceSharingSchema = z.enum(['private', 'shared'])
+export type EphemeralVmWorkspaceSharing = z.infer<typeof EphemeralVmWorkspaceSharingSchema>
 
 const WorkspaceCreatorProvenanceSchema = z.union([
   z.object({ kind: z.literal('host') }),
@@ -61,6 +63,7 @@ export const EphemeralVmRuntimeRecordSchema = z.object({
   workspaceId: z.string().min(1).optional(),
   workspaceName: z.string().min(1).optional(),
   creatorProvenance: WorkspaceCreatorProvenanceSchema.optional(),
+  sharing: EphemeralVmWorkspaceSharingSchema.optional(),
   connectionMode: EphemeralVmRuntimeConnectionModeSchema.optional(),
   runtimeEnvironmentId: z.string().min(1).optional(),
   sshTargetId: z.string().min(1).optional(),

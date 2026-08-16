@@ -121,6 +121,7 @@ export function updateEphemeralVmRuntimeStatus(
     cleanupLastError?: string | null
     workspaceId?: string
     workspaceName?: string
+    sharing?: EphemeralVmRuntimeRecord['sharing']
     connectionMode?: EphemeralVmRuntimeRecord['connectionMode'] | null
     runtimeEnvironmentId?: string
     sshTargetId?: string | null
@@ -150,6 +151,7 @@ export function updateEphemeralVmRuntimeStatus(
         : {}),
     ...(args.workspaceId ? { workspaceId: args.workspaceId } : {}),
     ...(args.workspaceName ? { workspaceName: args.workspaceName } : {}),
+    ...(args.sharing ? { sharing: args.sharing } : {}),
     // null explicitly clears the field (e.g. terminal cleanup); undefined leaves it unchanged.
     ...(args.connectionMode === null
       ? { connectionMode: undefined }

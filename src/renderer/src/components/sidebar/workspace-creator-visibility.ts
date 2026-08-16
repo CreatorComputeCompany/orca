@@ -30,6 +30,9 @@ export function isWorkspaceFromOtherDevice(
   worktree: Worktree,
   pairedDeviceIdsByEnvironment: ReadonlyMap<string, string>
 ): boolean {
+  if (worktree.ephemeralVmSharing === 'shared') {
+    return false
+  }
   const creator = normalizeWorkspaceCreatorProvenance(worktree.creatorProvenance)
   if (!creator) {
     return false

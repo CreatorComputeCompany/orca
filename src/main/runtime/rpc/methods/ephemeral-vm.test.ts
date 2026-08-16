@@ -41,6 +41,7 @@ describe('ephemeral VM serve RPC reads', () => {
       listRecipeCatalog: vi.fn().mockResolvedValue([]),
       doctor: vi.fn().mockResolvedValue({ ok: true, checks: [] }),
       listRuntimes: vi.fn().mockResolvedValue([]),
+      setSharing: vi.fn().mockResolvedValue({ id: 'runtime-1', sharing: 'shared' }),
       provision: vi.fn().mockResolvedValue({ ok: false, error: 'test', stdout: '', stderr: '' }),
       cancelProvision: vi.fn().mockResolvedValue({ cancelled: true }),
       attachWorkspace: vi.fn().mockResolvedValue({ id: 'runtime-1' }),
@@ -53,6 +54,10 @@ describe('ephemeral VM serve RPC reads', () => {
     await method('ephemeralVm.listRecipeCatalog').handler(undefined, context)
     await method('ephemeralVm.doctor').handler({ repoId: 'repo-1', recipeId: 'boxd' }, context)
     await method('ephemeralVm.listRuntimes').handler(undefined, context)
+    await method('ephemeralVm.setSharing').handler(
+      { runtimeEnvironmentId: 'environment-1', sharing: 'shared' },
+      context
+    )
     await method('ephemeralVm.provision').handler({ repoId: 'repo-1', recipeId: 'boxd' }, context)
     await method('ephemeralVm.cancelProvision').handler({ provisionId: 'create-1' }, context)
     await method('ephemeralVm.attachWorkspace').handler(
@@ -66,6 +71,11 @@ describe('ephemeral VM serve RPC reads', () => {
     expect(service.listRecipeCatalog).toHaveBeenCalledOnce()
     expect(service.doctor).toHaveBeenCalledWith({ repoId: 'repo-1', recipeId: 'boxd' })
     expect(service.listRuntimes).toHaveBeenCalledOnce()
+    expect(service.setSharing).toHaveBeenCalledWith({
+      runtimeEnvironmentId: 'environment-1',
+      sharing: 'shared',
+      actor: { kind: 'paired-device', deviceId: 'device-jake' }
+    })
     expect(service.provision).toHaveBeenCalledWith({
       repoId: 'repo-1',
       recipeId: 'boxd',

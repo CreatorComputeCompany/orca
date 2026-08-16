@@ -63,6 +63,7 @@ import {
   useWorkspaceLineageMenuActions
 } from './workspace-lineage-menu-actions'
 import { WorkspaceSleepMenuItems } from './WorkspaceSleepMenuItems'
+import { EphemeralVmSharingMenuItem } from './EphemeralVmSharingMenuItem'
 import { isEventTargetInsideCurrentTarget } from './worktree-card-dom-events'
 import { translate } from '@/i18n/i18n'
 import { parseWorkspaceKey, worktreeWorkspaceKey } from '../../../../shared/workspace-scope'
@@ -897,6 +898,7 @@ const WorktreeContextMenu = React.memo(function WorktreeContextMenu({
                 <Copy className="size-3.5" />
                 {translate('auto.components.sidebar.WorktreeContextMenu.3350101edb', 'Copy Path')}
               </DropdownMenuItem>
+              <EphemeralVmSharingMenuItem worktree={worktree} disabled={isDeleting} />
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={handleTogglePin} disabled={isDeleting}>
                 {worktree.isPinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}

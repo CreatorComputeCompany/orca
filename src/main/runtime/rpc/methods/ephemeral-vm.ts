@@ -1,6 +1,10 @@
 import { z } from 'zod'
 import type { EphemeralVmRecipeDoctorResult } from '../../../../shared/ephemeral-vm-recipes'
-import type { EphemeralVmRuntimeRecord } from '../../../../shared/ephemeral-vm-runtimes'
+import type {
+  EphemeralVmRuntimeRecord,
+  EphemeralVmWorkspaceSharing
+} from '../../../../shared/ephemeral-vm-runtimes'
+import { EphemeralVmWorkspaceSharingSchema } from '../../../../shared/ephemeral-vm-runtimes'
 import type {
   EphemeralVmRecipeCatalogEntry,
   EphemeralVmRecipeListResult
@@ -25,6 +29,11 @@ export type EphemeralVmRpcReadService = {
   }): Promise<EphemeralVmRuntimeRecord>
   cleanup(args: { runtimeId: string }): Promise<EphemeralVmRuntimeRecord>
   resumeWorkspace(args: { workspaceId: string }): Promise<EphemeralVmRuntimeRecord | null>
+  setSharing(args: {
+    runtimeEnvironmentId: string
+    sharing: EphemeralVmWorkspaceSharing
+    actor: ReturnType<typeof resolveRpcWorkspaceCreatorProvenance>
+  }): Promise<EphemeralVmRuntimeRecord>
 }
 
 let service: EphemeralVmRpcReadService | null = null
@@ -54,6 +63,10 @@ const CancelProvisionParams = z.object({ provisionId: z.string().min(1) })
 const RuntimeIdParams = z.object({ runtimeId: z.string().min(1) })
 const AttachWorkspaceParams = RuntimeIdParams.extend({ workspaceId: z.string().min(1) })
 const WorkspaceIdParams = z.object({ workspaceId: z.string().min(1) })
+const SetSharingParams = z.object({
+  runtimeEnvironmentId: z.string().min(1),
+  sharing: EphemeralVmWorkspaceSharingSchema
+})
 
 export const EPHEMERAL_VM_METHODS: readonly RpcMethod[] = [
   defineMethod({
@@ -75,6 +88,15 @@ export const EPHEMERAL_VM_METHODS: readonly RpcMethod[] = [
     name: 'ephemeralVm.listRuntimes',
     params: null,
     handler: () => requireService().listRuntimes()
+  }),
+  defineMethod({
+    name: 'ephemeralVm.setSharing',
+    params: SetSharingParams,
+    handler: (params, context) =>
+      requireService().setSharing({
+        ...params,
+        actor: resolveRpcWorkspaceCreatorProvenance(context)
+      })
   }),
   defineMethod({
     name: 'ephemeralVm.provision',

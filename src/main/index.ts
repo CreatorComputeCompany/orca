@@ -310,6 +310,7 @@ import {
 } from './ipc/ephemeral-vm-runtime-handlers'
 import { cleanupEphemeralVmRuntimeRecord } from './ephemeral-vm-runtime-cleanup-service'
 import { attachEphemeralVmRuntimeToWorkspace } from './ephemeral-vm-runtime-attachment'
+import { setEphemeralVmRuntimeSharing } from './ephemeral-vm-runtime-sharing'
 import {
   normalizePluginConsents,
   normalizePluginIdList
@@ -2771,6 +2772,8 @@ void app.whenReady().then(async () => {
     listRecipeCatalog: () => listEphemeralVmRecipeCatalog(store!, pluginService ?? undefined),
     doctor: (args) => doctorEphemeralVm(store!, pluginService ?? undefined, args),
     listRuntimes: async () => listEphemeralVmRuntimeRecords(app.getPath('userData')),
+    setSharing: async (args) =>
+      setEphemeralVmRuntimeSharing({ userDataPath: app.getPath('userData'), ...args }),
     provision: (args) =>
       provisionEphemeralVmForRpc(store!, pluginService ?? undefined, app.getPath('userData'), args),
     cancelProvision: async (args) => cancelEphemeralVmProvision(args),

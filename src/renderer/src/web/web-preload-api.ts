@@ -108,6 +108,10 @@ import { normalizeWorktreeVisibilityDefaults } from '../../../shared/external-wo
 import type { RateLimitState } from '../../../shared/rate-limit-types'
 import type { RuntimeStatus, RuntimeSyncWindowGraph } from '../../../shared/runtime-types'
 import { getEphemeralVmRecipeResultPairingCode } from '../../../shared/ephemeral-vm-recipes'
+import type {
+  EphemeralVmRuntimeRecord,
+  EphemeralVmWorkspaceSharing
+} from '../../../shared/ephemeral-vm-runtimes'
 import { assertFileMutationOwnershipCapability } from '../../../shared/file-mutation-ownership'
 import {
   findKeybindingConflicts,
@@ -1478,6 +1482,7 @@ function createEphemeralVmApi(): NonNullable<Partial<PreloadApi>['ephemeralVm']>
       if (result.runtime.creatorProvenance) {
         ephemeralVmCreatorByEnvironmentId.set(environment.id, result.runtime.creatorProvenance)
       }
+      ephemeralVmSharingByEnvironmentId.set(environment.id, result.runtime.sharing ?? 'private')
       saveAdditionalWebRuntimeEnvironment(environment)
       const { pairingCode: _pairingCode, ...publicResult } = result
       return {
@@ -1488,6 +1493,19 @@ function createEphemeralVmApi(): NonNullable<Partial<PreloadApi>['ephemeralVm']>
     cancelProvision: (args) => callRuntimeResult('ephemeralVm.cancelProvision', args),
     onProvisionEvent: () => noopUnsubscribe,
     listRuntimes: listAndStoreEphemeralVmRuntimes,
+    setSharing: async (args) => {
+      const runtime = await callRuntimeResult<EphemeralVmRuntimeRecord>(
+        'ephemeralVm.setSharing',
+        args
+      )
+      if (runtime.runtimeEnvironmentId) {
+        ephemeralVmSharingByEnvironmentId.set(
+          runtime.runtimeEnvironmentId,
+          runtime.sharing ?? 'private'
+        )
+      }
+      return runtime
+    },
     attachWorkspace: (args) => callRuntimeResult('ephemeralVm.attachWorkspace', args),
     suspendWorkspace: async () => unsupported(),
     resumeWorkspace: (args) => callRuntimeResult('ephemeralVm.resumeWorkspace', args),
@@ -1681,6 +1699,7 @@ type EphemeralVmRuntimeList = Awaited<
 >
 
 const ephemeralVmCreatorByEnvironmentId = new Map<string, WorkspaceCreatorProvenance>()
+const ephemeralVmSharingByEnvironmentId = new Map<string, EphemeralVmWorkspaceSharing>()
 
 async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList> {
   const runtimes = await callRuntimeResult<EphemeralVmRuntimeList>('ephemeralVm.listRuntimes')
@@ -1688,6 +1707,7 @@ async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList
     return []
   }
   ephemeralVmCreatorByEnvironmentId.clear()
+  ephemeralVmSharingByEnvironmentId.clear()
   for (const runtime of runtimes) {
     if (!runtime.runtimeEnvironmentId) {
       continue
@@ -1695,6 +1715,10 @@ async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList
     if (runtime.creatorProvenance) {
       ephemeralVmCreatorByEnvironmentId.set(runtime.runtimeEnvironmentId, runtime.creatorProvenance)
     }
+    ephemeralVmSharingByEnvironmentId.set(
+      runtime.runtimeEnvironmentId,
+      runtime.sharing ?? 'private'
+    )
     const pairingCode = getEphemeralVmRecipeResultPairingCode(runtime.recipeResult)
     const offer = pairingCode ? parseWebPairingInput(pairingCode) : null
     if (!offer) {
@@ -3713,10 +3737,12 @@ function withRuntimeWorktreeOwner<T extends Worktree>(worktree: T, hostId: Execu
   // The controller-level human identity must win for multiplayer filtering.
   const creatorProvenance =
     ephemeralVmCreatorByEnvironmentId.get(runtimeOwner.environmentId) ?? worktree.creatorProvenance
+  const ephemeralVmSharing = ephemeralVmSharingByEnvironmentId.get(runtimeOwner.environmentId)
   return {
     ...worktree,
     runtimeOwnerEnvironmentId: runtimeOwner.environmentId,
-    ...(creatorProvenance ? { creatorProvenance } : {})
+    ...(creatorProvenance ? { creatorProvenance } : {}),
+    ...(ephemeralVmSharing ? { ephemeralVmSharing } : {})
   }
 }
 

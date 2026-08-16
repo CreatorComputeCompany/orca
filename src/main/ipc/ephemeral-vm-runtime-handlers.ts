@@ -32,6 +32,7 @@ import {
 import { getRuntimeRecipeContext } from './ephemeral-vm-recipe-context'
 import { invalidateRuntimeEnvironmentTransport } from './runtime-environments'
 import { attachEphemeralVmRuntimeToWorkspace } from '../ephemeral-vm-runtime-attachment'
+import { setEphemeralVmRuntimeSharing } from '../ephemeral-vm-runtime-sharing'
 
 export type EphemeralVmCleanupCommandResult = {
   runtimeId: string
@@ -48,6 +49,7 @@ export function listEphemeralVmRuntimeRecords(userDataPath: string): EphemeralVm
 export function registerEphemeralVmRuntimeHandlers(store: Store): void {
   ipcMain.removeHandler('ephemeralVm:attachWorkspace')
   ipcMain.removeHandler('ephemeralVm:listRuntimes')
+  ipcMain.removeHandler('ephemeralVm:setSharing')
   ipcMain.removeHandler('ephemeralVm:cleanup')
   ipcMain.removeHandler('ephemeralVm:stopCleanup')
   ipcMain.removeHandler('ephemeralVm:suspendWorkspace')
@@ -57,6 +59,22 @@ export function registerEphemeralVmRuntimeHandlers(store: Store): void {
   ipcMain.handle('ephemeralVm:listRuntimes', (): EphemeralVmRuntimeRecord[] => {
     return listEphemeralVmRuntimeRecords(app.getPath('userData'))
   })
+
+  ipcMain.handle(
+    'ephemeralVm:setSharing',
+    (
+      _event,
+      args: {
+        runtimeEnvironmentId: string
+        sharing: NonNullable<EphemeralVmRuntimeRecord['sharing']>
+      }
+    ): EphemeralVmRuntimeRecord =>
+      setEphemeralVmRuntimeSharing({
+        userDataPath: app.getPath('userData'),
+        ...args,
+        actor: { kind: 'host' }
+      })
+  )
 
   ipcMain.handle(
     'ephemeralVm:attachWorkspace',

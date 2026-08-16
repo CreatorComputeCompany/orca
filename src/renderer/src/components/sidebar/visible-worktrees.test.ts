@@ -162,6 +162,26 @@ describe('computeVisibleWorktreeIds', () => {
     expect(result).toEqual([own.id, legacy.id])
   })
 
+  it('keeps shared VM workspaces visible across devices', () => {
+    const shared = {
+      ...makeWorktree('shared'),
+      runtimeOwnerEnvironmentId: 'env-1',
+      creatorProvenance: { kind: 'paired-device' as const, deviceId: 'device-b' },
+      ephemeralVmSharing: 'shared' as const
+    }
+
+    const result = computeVisibleWorktreeIds(
+      { repo1: [shared] },
+      [shared.id],
+      visibleOptions({
+        hideWorkspacesFromOtherDevices: true,
+        pairedDeviceIdsByEnvironment: new Map([['env-1', 'device-a']])
+      })
+    )
+
+    expect(result).toEqual([shared.id])
+  })
+
   it('fails open when an older host does not publish the requester device id', () => {
     const other = {
       ...makeWorktree('other'),
