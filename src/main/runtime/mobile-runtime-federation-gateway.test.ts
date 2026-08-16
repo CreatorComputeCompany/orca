@@ -175,6 +175,133 @@ describe('MobileRuntimeFederationGateway', () => {
     })
   })
 
+  it('fails closed when cached mobile routing loses workspace access', async () => {
+    let accessible = true
+    const call = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response({
+          worktrees: [summary(CHILD_ID, 'jake-private-proof')],
+          totalCount: 1,
+          truncated: false
+        })
+      )
+      .mockResolvedValueOnce(response({ terminals: [{ handle: 'terminal-jake' }] }))
+    const gateway = new MobileRuntimeFederationGateway('controller-runtime', {
+      listTargets: () => (accessible ? [{ environmentId: 'env-jake', workspaceId: CHILD_ID }] : []),
+      call,
+      subscribe: vi.fn()
+    })
+    const context = {
+      pairedDeviceId: 'steven-mobile',
+      sendBinary: vi.fn(),
+      registerBinaryStreamHandler: vi.fn(() => vi.fn())
+    }
+    await gateway.mergeWorktreeCatalog(
+      { worktrees: [], totalCount: 0, truncated: false },
+      { limit: 10 },
+      'steven-mobile'
+    )
+    await gateway.tryForward(
+      {
+        id: 'list',
+        authToken: 'unused',
+        method: 'terminal.list',
+        params: { worktree: `id:${CHILD_ID}` }
+      },
+      vi.fn(),
+      context
+    )
+
+    accessible = false
+    const replies: string[] = []
+    await expect(
+      gateway.tryForward(
+        {
+          id: 'send-after-unshare',
+          authToken: 'unused',
+          method: 'terminal.send',
+          params: { terminal: 'terminal-jake', text: 'blocked', enter: true }
+        },
+        (reply) => replies.push(reply),
+        context
+      )
+    ).resolves.toBe(true)
+
+    expect(call).toHaveBeenCalledTimes(2)
+    expect(JSON.parse(replies[0]!)).toMatchObject({
+      id: 'send-after-unshare',
+      ok: false,
+      error: { code: 'forbidden' }
+    })
+  })
+
+  it('closes active mobile subscriptions immediately when sharing is revoked', async () => {
+    const call = vi
+      .fn()
+      .mockResolvedValueOnce(
+        response({
+          worktrees: [summary(CHILD_ID, 'jake-private-proof')],
+          totalCount: 1,
+          truncated: false
+        })
+      )
+      .mockResolvedValueOnce(response({ terminals: [{ handle: 'terminal-jake' }] }))
+    const subscribe = vi.fn()
+    const gateway = new MobileRuntimeFederationGateway('controller-runtime', {
+      listTargets: () => [{ environmentId: 'env-jake', workspaceId: CHILD_ID }],
+      call,
+      subscribe
+    })
+    const context = {
+      connectionId: 'steven-connection',
+      pairedDeviceId: 'steven-mobile',
+      sendBinary: vi.fn(),
+      registerBinaryStreamHandler: vi.fn(() => vi.fn())
+    }
+    await gateway.mergeWorktreeCatalog(
+      { worktrees: [], totalCount: 0, truncated: false },
+      { limit: 10 },
+      'steven-mobile'
+    )
+    await gateway.tryForward(
+      {
+        id: 'list',
+        authToken: 'unused',
+        method: 'terminal.list',
+        params: { worktree: `id:${CHILD_ID}` }
+      },
+      vi.fn(),
+      context
+    )
+
+    const close = vi.fn()
+    subscribe.mockImplementation(async (_environmentId, _method, _params, callbacks) => ({
+      requestId: 'child-subscription',
+      close: () => {
+        close()
+        callbacks.onClose()
+      },
+      sendBinary: vi.fn()
+    }))
+    const pending = gateway.tryForward(
+      {
+        id: 'subscribe',
+        authToken: 'unused',
+        method: 'terminal.subscribe',
+        params: { terminal: 'terminal-jake' }
+      },
+      vi.fn(),
+      context
+    )
+    await vi.waitFor(() => expect(subscribe).toHaveBeenCalledOnce())
+
+    gateway.revokeEnvironmentAccess('env-jake', new Set(['jake-owner-mobile']))
+
+    await pending
+    expect(close).toHaveBeenCalledOnce()
+  })
+
   it('bridges terminal stream output and input until mobile unsubscribes', async () => {
     const call = vi
       .fn()

@@ -4,11 +4,6 @@ import type {
   RuntimeWorktreePsResult,
   RuntimeWorktreePsSummary
 } from '../../shared/runtime-types'
-import type { RemoteRuntimeSubscription } from '../../shared/remote-runtime-client'
-import {
-  encodeTerminalStreamFrame,
-  type TerminalStreamFrame
-} from '../../shared/terminal-stream-protocol'
 import type { RpcRequest } from './rpc/core'
 import { errorResponse, successResponse } from './rpc/errors'
 import { resolveWorktreeCatalogSnapshot } from './rpc/worktree-catalog-snapshot'
@@ -18,8 +13,6 @@ import {
 } from './mobile-runtime-federation-dependencies'
 import {
   asFederationRecord,
-  federatedResponseEndsStream,
-  federatedResponseStreamId,
   firstFederationString,
   isForwardedSubscription,
   isSubscriptionCleanup,
@@ -29,24 +22,21 @@ import {
   stripFederatedSelectorPrefix,
   visitFederatedResponseValues
 } from './mobile-runtime-federation-routing'
+import {
+  canAccessFederatedEnvironment,
+  MobileRuntimeFederationAccess
+} from './mobile-runtime-federation-access'
 import { MobileRuntimeFederationOwnerIndex } from './mobile-runtime-federation-owner-index'
 import { normalizeFederatedRuntimeResponse } from './mobile-runtime-federation-response'
-
-export type MobileRuntimeFederationContext = {
-  pairedDeviceId?: string
-  connectionId?: string
-  signal?: AbortSignal
-  sendBinary: (bytes: Uint8Array<ArrayBufferLike>) => boolean | void
-  registerBinaryStreamHandler: (
-    streamId: number,
-    handler: (frame: TerminalStreamFrame) => void
-  ) => () => void
-}
+import {
+  forwardMobileRuntimeSubscription,
+  type MobileRuntimeFederationContext
+} from './mobile-runtime-federation-subscription'
 
 export class MobileRuntimeFederationGateway {
   private readonly owners = new MobileRuntimeFederationOwnerIndex()
   private readonly childCatalogs = new Map<string, RuntimeWorktreePsSummary[]>()
-  private readonly subscriptions = new Map<string, RemoteRuntimeSubscription>()
+  private readonly access = new MobileRuntimeFederationAccess()
 
   constructor(
     private readonly runtimeId: string,
@@ -66,12 +56,21 @@ export class MobileRuntimeFederationGateway {
     pairedDeviceId?: string
   ): Promise<RuntimeWorktreePsConditionalResult> {
     const ownerKey = pairedDeviceId ?? 'host'
+    this.access.rememberOwner(ownerKey)
     const targets = this.dependencies.listTargets(pairedDeviceId)
-    const liveEnvironmentIds = new Set(
-      targets.map(({ environmentId }) => this.scopedKey(ownerKey, environmentId))
+    const liveEnvironmentIds = new Set(targets.map(({ environmentId }) => environmentId))
+    this.access.reconcileOwner(
+      ownerKey,
+      this.catalogEnvironmentIds(ownerKey),
+      liveEnvironmentIds,
+      (revokedOwnerKey, environmentId) =>
+        this.revokeOwnerEnvironmentState(revokedOwnerKey, environmentId)
     )
     for (const catalogKey of this.childCatalogs.keys()) {
-      if (catalogKey.startsWith(`${ownerKey}:`) && !liveEnvironmentIds.has(catalogKey)) {
+      if (
+        catalogKey.startsWith(`${ownerKey}:`) &&
+        !liveEnvironmentIds.has(catalogKey.slice(ownerKey.length + 1))
+      ) {
         this.childCatalogs.delete(catalogKey)
       }
     }
@@ -124,9 +123,28 @@ export class MobileRuntimeFederationGateway {
     context: MobileRuntimeFederationContext
   ): Promise<boolean> {
     const ownerKey = context.pairedDeviceId ?? 'host'
+    this.access.rememberOwner(ownerKey)
     const environmentId = this.resolveRequestOwner(request, ownerKey)
     if (!environmentId) {
       return false
+    }
+    if (
+      !canAccessFederatedEnvironment(environmentId, () =>
+        this.dependencies.listTargets(context.pairedDeviceId).map((target) => target.environmentId)
+      )
+    ) {
+      this.revokeOwnerEnvironmentState(ownerKey, environmentId)
+      reply(
+        JSON.stringify(
+          errorResponse(
+            request.id,
+            this.meta(),
+            'forbidden',
+            'This workspace is no longer shared with this mobile device.'
+          )
+        )
+      )
+      return true
     }
     if (isSubscriptionCleanup(request.method)) {
       this.closeSubscriptions(request, context.connectionId)
@@ -134,7 +152,16 @@ export class MobileRuntimeFederationGateway {
       return true
     }
     if (isForwardedSubscription(request.method)) {
-      await this.forwardSubscription(environmentId, request, reply, context)
+      await forwardMobileRuntimeSubscription({
+        access: this.access,
+        context,
+        dependencies: this.dependencies,
+        environmentId,
+        request,
+        reply,
+        runtimeId: this.runtimeId,
+        recordResponse: (response) => this.recordResourceOwners(environmentId, response, ownerKey)
+      })
       return true
     }
     try {
@@ -158,99 +185,6 @@ export class MobileRuntimeFederationGateway {
       )
     }
     return true
-  }
-
-  private async forwardSubscription(
-    environmentId: string,
-    request: RpcRequest,
-    reply: (response: string) => void,
-    context: MobileRuntimeFederationContext
-  ): Promise<void> {
-    const subscriptionKey = this.subscriptionKey(request, context.connectionId)
-    this.subscriptions.get(subscriptionKey)?.close()
-    let unregisterBinary = (): void => {}
-    let settled = false
-    let finish = (): void => {}
-    const closed = new Promise<void>((resolve) => {
-      finish = resolve
-    })
-    const close = (): void => {
-      if (settled) {
-        return
-      }
-      settled = true
-      unregisterBinary()
-      this.subscriptions.delete(subscriptionKey)
-      finish()
-    }
-    const onAbort = (): void => this.subscriptions.get(subscriptionKey)?.close()
-    context.signal?.addEventListener('abort', onAbort, { once: true })
-    try {
-      const subscription = await this.dependencies.subscribe(
-        environmentId,
-        request.method,
-        request.params ?? {},
-        {
-          onEvent: (event) => {
-            if (event.type === 'binary') {
-              context.sendBinary(event.bytes)
-              return
-            }
-            if (event.type === 'response') {
-              this.recordResourceOwners(
-                environmentId,
-                event.response,
-                context.pairedDeviceId ?? 'host'
-              )
-              const streamId = federatedResponseStreamId(event.response)
-              if (streamId !== null) {
-                unregisterBinary()
-                unregisterBinary = context.registerBinaryStreamHandler(streamId, (frame) => {
-                  this.subscriptions
-                    .get(subscriptionKey)
-                    ?.sendBinary(encodeTerminalStreamFrame(frame))
-                })
-              }
-              reply(
-                JSON.stringify(
-                  normalizeFederatedRuntimeResponse(request.id, event.response, this.runtimeId)
-                )
-              )
-              if (federatedResponseEndsStream(event.response)) {
-                this.subscriptions.get(subscriptionKey)?.close()
-              }
-              return
-            }
-            if (event.type === 'error') {
-              reply(
-                JSON.stringify(errorResponse(request.id, this.meta(), event.code, event.message))
-              )
-            }
-          },
-          onClose: close
-        }
-      )
-      if (settled || context.signal?.aborted) {
-        subscription.close()
-      } else {
-        this.subscriptions.set(subscriptionKey, subscription)
-      }
-      await closed
-    } catch (error) {
-      reply(
-        JSON.stringify(
-          errorResponse(
-            request.id,
-            this.meta(),
-            'runtime_unavailable',
-            error instanceof Error ? error.message : String(error)
-          )
-        )
-      )
-    } finally {
-      context.signal?.removeEventListener('abort', onAbort)
-      close()
-    }
   }
 
   private resolveRequestOwner(request: RpcRequest, ownerKey: string): string | null {
@@ -285,6 +219,30 @@ export class MobileRuntimeFederationGateway {
     return `${ownerKey}:${resource}`
   }
 
+  revokeEnvironmentAccess(environmentId: string, retainOwnerKeys: ReadonlySet<string>): void {
+    this.access.revokeEnvironment(
+      environmentId,
+      retainOwnerKeys,
+      (ownerKey, revokedEnvironmentId) =>
+        this.revokeOwnerEnvironmentState(ownerKey, revokedEnvironmentId)
+    )
+  }
+
+  private catalogEnvironmentIds(ownerKey: string): string[] {
+    const environmentIds: string[] = []
+    for (const catalogKey of this.childCatalogs.keys()) {
+      if (catalogKey.startsWith(`${ownerKey}:`)) {
+        environmentIds.push(catalogKey.slice(ownerKey.length + 1))
+      }
+    }
+    return environmentIds
+  }
+
+  private revokeOwnerEnvironmentState(ownerKey: string, environmentId: string): void {
+    this.childCatalogs.delete(this.scopedKey(ownerKey, environmentId))
+    this.owners.clearEnvironment(ownerKey, environmentId)
+  }
+
   private closeSubscriptions(request: RpcRequest, connectionId?: string): void {
     const params = asFederationRecord(request.params)
     const resource =
@@ -293,21 +251,7 @@ export class MobileRuntimeFederationGateway {
     if (!resource) {
       return
     }
-    const prefix = `${connectionId ?? 'unknown'}:`
-    for (const [key, subscription] of this.subscriptions) {
-      if (key.startsWith(prefix) && key.endsWith(`:${resource}`)) {
-        subscription.close()
-      }
-    }
-  }
-
-  private subscriptionKey(request: RpcRequest, connectionId?: string): string {
-    const params = asFederationRecord(request.params)
-    const resource =
-      firstFederationString(params, ['terminal']) ??
-      firstFederationString(params, ['worktree', 'worktreeId'])?.replace(/^id:/, '') ??
-      request.id
-    return `${connectionId ?? 'unknown'}:${request.method}:${resource}`
+    this.access.closeResource(connectionId, resource)
   }
 
   private meta(): { runtimeId: string } {

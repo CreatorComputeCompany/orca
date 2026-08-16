@@ -611,6 +611,13 @@ export class OrcaRuntimeRpcServer {
     return this.mobileSocketWiring
   }
 
+  revokeMobileRuntimeEnvironmentAccess(
+    environmentId: string,
+    retainDeviceIds: ReadonlySet<string>
+  ): void {
+    this.mobileRuntimeFederation.revokeEnvironmentAccess(environmentId, retainDeviceIds)
+  }
+
   getRelayRevokeOutbox(): RelayRevokeOutbox {
     return this.relayRevokeOutbox
   }

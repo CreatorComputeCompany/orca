@@ -11,6 +11,20 @@ export class MobileRuntimeFederationOwnerIndex {
     }
   }
 
+  clearEnvironment(deviceId: string, environmentId: string): void {
+    const prefix = `${deviceId}:`
+    for (const [key, ownerEnvironmentId] of this.worktrees) {
+      if (key.startsWith(prefix) && ownerEnvironmentId === environmentId) {
+        this.worktrees.delete(key)
+      }
+    }
+    for (const [key, ownerEnvironmentId] of this.terminals) {
+      if (key.startsWith(prefix) && ownerEnvironmentId === environmentId) {
+        this.terminals.delete(key)
+      }
+    }
+  }
+
   setWorktree(deviceId: string, worktreeId: string, environmentId: string): void {
     this.worktrees.set(this.key(deviceId, worktreeId), environmentId)
   }

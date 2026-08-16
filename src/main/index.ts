@@ -315,7 +315,10 @@ import {
   assertEphemeralVmRuntimeSharingActor,
   setEphemeralVmRuntimeSharing
 } from './ephemeral-vm-runtime-sharing'
-import { canDeviceAccessEphemeralVmRuntime } from './runtime/multiplayer-identity-store'
+import {
+  canDeviceAccessEphemeralVmRuntime,
+  findMultiplayerMemberByDevice
+} from './runtime/multiplayer-identity-store'
 import { assertEphemeralVmRuntimeAccess } from './ephemeral-vm-runtime-access'
 import {
   createViewerPairingCode,
@@ -2818,7 +2821,21 @@ void app.whenReady().then(async () => {
       if (args.sharing === 'private') {
         await revokeNonOwnerViewerAccess({ userDataPath: app.getPath('userData'), runtime })
       }
-      return setEphemeralVmRuntimeSharing({ userDataPath: app.getPath('userData'), ...args })
+      const updated = setEphemeralVmRuntimeSharing({
+        userDataPath: app.getPath('userData'),
+        ...args
+      })
+      if (args.sharing === 'private' && runtime.creatorProvenance?.kind === 'paired-device') {
+        const owner = findMultiplayerMemberByDevice(
+          app.getPath('userData'),
+          runtime.creatorProvenance.deviceId
+        )
+        runtimeRpc?.revokeMobileRuntimeEnvironmentAccess(
+          args.runtimeEnvironmentId,
+          new Set(owner?.deviceIds ?? [runtime.creatorProvenance.deviceId])
+        )
+      }
+      return updated
     },
     provision: async (args) => {
       const result = await provisionEphemeralVmForRpc(
