@@ -122,6 +122,12 @@ export class MobileSocketWiring {
     return this.connectionIds.size
   }
 
+  getConnectedDeviceIds(): string[] {
+    return [
+      ...new Set(Array.from(this.authenticatedSockets.values(), (socket) => socket.device.deviceId))
+    ]
+  }
+
   terminateDeviceConnections(deviceToken: string): number {
     let terminated = 0
     for (const transport of this.transports) {

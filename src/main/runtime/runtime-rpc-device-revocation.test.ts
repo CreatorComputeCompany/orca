@@ -235,6 +235,15 @@ describe('OrcaRuntimeRpcServer', () => {
 
       await expect(
         sendRemoteRuntimeRequest(
+          managerPairing,
+          'pairing.listManagedRuntimePresence',
+          undefined,
+          5_000
+        )
+      ).resolves.toMatchObject({ ok: true, result: { grantKeys: ['jake'] } })
+
+      await expect(
+        sendRemoteRuntimeRequest(
           viewerPairing,
           'pairing.createManagedRuntimeOffer',
           { grantKey: 'attacker', name: 'Attacker access' },
@@ -250,6 +259,14 @@ describe('OrcaRuntimeRpcServer', () => {
         )
       ).resolves.toMatchObject({ ok: true, result: { revoked: 1 } })
       await waitForWsClose(viewerSocket)
+      await expect(
+        sendRemoteRuntimeRequest(
+          managerPairing,
+          'pairing.listManagedRuntimePresence',
+          undefined,
+          5_000
+        )
+      ).resolves.toMatchObject({ ok: true, result: { grantKeys: [] } })
       expect(server.getDeviceRegistry()?.getDevice(viewer.result.deviceId)).toBeNull()
       expect(server.getDeviceRegistry()?.getDevice(owner.result.deviceId)).not.toBeNull()
     } finally {

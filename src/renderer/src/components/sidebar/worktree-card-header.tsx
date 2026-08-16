@@ -12,6 +12,7 @@ import { resolveRepoHeaderColor } from './project-header-color'
 import { formatSparseDirectoryPreview, shouldBeginWorktreeRename } from './worktree-card-model'
 import type { WorktreeCardPresentation } from './worktree-card-presentation'
 import { WorktreeCardSshHostControl } from './WorktreeCardSshHostControl'
+import { WorktreeLiveMembers } from './WorktreeLiveMembers'
 import { WorktreeTitleInlineRename } from './WorktreeTitleInlineRename'
 import type { WorktreeCardController } from './use-worktree-card-controller'
 
@@ -262,6 +263,7 @@ export function WorktreeCardHeader({
         )}
 
         {showTitleRowIndicators && titleRowIndicators}
+        <WorktreeLiveMembers worktree={worktree} />
       </div>
 
       {showHeaderActions && (

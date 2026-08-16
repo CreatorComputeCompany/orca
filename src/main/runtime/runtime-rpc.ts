@@ -1895,6 +1895,19 @@ export class OrcaRuntimeRpcServer {
             this.registerMultiplayerAccountForDevice(params, authenticatedSocket.device.deviceId),
           ...(device.pairingManagement
             ? {
+                listManagedRuntimePresence: async () => ({
+                  grantKeys: [
+                    ...new Set(
+                      (this.mobileSocketWiring?.getConnectedDeviceIds() ?? []).flatMap(
+                        (deviceId) => {
+                          const grantKey =
+                            this.deviceRegistry?.getDevice(deviceId)?.managedRuntimeGrantKey
+                          return grantKey ? [grantKey] : []
+                        }
+                      )
+                    )
+                  ]
+                }),
                 createManagedRuntimeOffer: async (params: { grantKey: string; name: string }) => {
                   const offer = this.createPairingOffer({
                     name: params.name,

@@ -23,3 +23,7 @@ export type ManagedRuntimeRevokeParams = z.infer<typeof ManagedRuntimeRevokePara
 export type ManagedRuntimeRevokeResult = {
   revoked: number
 }
+
+export type ManagedRuntimePresenceResult = {
+  grantKeys: string[]
+}

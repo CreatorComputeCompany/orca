@@ -68,6 +68,10 @@ export const EphemeralVmRuntimeRecordSchema = z.object({
     .string()
     .regex(/^[a-z0-9][a-z0-9-]{0,62}$/)
     .optional(),
+  /** Transient members with a live connection to this workspace VM. */
+  liveMembers: z
+    .array(z.object({ key: z.string().min(1), displayName: z.string().min(1) }))
+    .optional(),
   sharing: EphemeralVmWorkspaceSharingSchema.optional(),
   connectionMode: EphemeralVmRuntimeConnectionModeSchema.optional(),
   runtimeEnvironmentId: z.string().min(1).optional(),

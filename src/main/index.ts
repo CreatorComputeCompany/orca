@@ -326,6 +326,7 @@ import { migrateEphemeralVmRuntimeMemberOwnership } from './ephemeral-vm-runtime
 import { assertEphemeralVmRuntimeAccess } from './ephemeral-vm-runtime-access'
 import {
   createViewerPairingCode,
+  projectEphemeralVmLiveMembers,
   projectEphemeralVmViewerAccess,
   revokeNonOwnerViewerAccess
 } from './ephemeral-vm-viewer-access'
@@ -2799,11 +2800,20 @@ void app.whenReady().then(async () => {
       return await Promise.all(
         accessibleRuntimes.map(async (runtime) => {
           try {
-            return await projectEphemeralVmViewerAccess({
+            const projected = await projectEphemeralVmViewerAccess({
               userDataPath: app.getPath('userData'),
               runtime,
               actor
             })
+            try {
+              return await projectEphemeralVmLiveMembers({
+                userDataPath: app.getPath('userData'),
+                runtime: projected
+              })
+            } catch (error) {
+              console.warn(`[ephemeral-vm] Failed to read live members for ${runtime.id}:`, error)
+              return { ...projected, liveMembers: [] }
+            }
           } catch (error) {
             console.warn(
               `[ephemeral-vm] Failed to project current access for ${runtime.id}:`,

@@ -72,6 +72,8 @@ export type Worktree = {
   creatorProvenance?: WorkspaceCreatorProvenance
   /** Stable multiplayer account that owns the workspace across devices. */
   ownerMemberKey?: string
+  /** Members currently connected to this workspace VM. */
+  liveMembers?: { key: string; displayName: string }[]
   /** Team visibility projected from the controller-owned VM record. */
   ephemeralVmSharing?: EphemeralVmWorkspaceSharing
   /** Host-specific setup used to create/run this workspace. */

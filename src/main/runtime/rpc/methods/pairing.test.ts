@@ -28,13 +28,18 @@ describe('pairing RPC methods', () => {
       deviceId: 'viewer-device'
     })
     const revokeManagedRuntimeAccess = vi.fn().mockResolvedValue({ revoked: 1 })
+    const listManagedRuntimePresence = vi.fn().mockResolvedValue({ grantKeys: ['steven'] })
     const pairing = {
       getEndpoints: vi.fn(),
       provisionRelay: vi.fn(),
       createManagedRuntimeOffer,
-      revokeManagedRuntimeAccess
+      revokeManagedRuntimeAccess,
+      listManagedRuntimePresence
     }
 
+    await expect(
+      dispatchPairing('pairing.listManagedRuntimePresence', undefined, pairing)
+    ).resolves.toMatchObject({ ok: true, result: { grantKeys: ['steven'] } })
     await expect(
       dispatchPairing(
         'pairing.createManagedRuntimeOffer',
@@ -54,6 +59,7 @@ describe('pairing RPC methods', () => {
       name: 'Steven access'
     })
     expect(revokeManagedRuntimeAccess).toHaveBeenCalledWith({ retainGrantKeys: ['steven'] })
+    expect(listManagedRuntimePresence).toHaveBeenCalledOnce()
 
     await expect(
       dispatchPairing(

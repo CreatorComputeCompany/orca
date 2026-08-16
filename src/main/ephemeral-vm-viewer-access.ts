@@ -1,5 +1,6 @@
 import type {
   ManagedRuntimeOfferResult,
+  ManagedRuntimePresenceResult,
   ManagedRuntimeRevokeResult
 } from '../shared/managed-runtime-access-contract'
 import { sendRemoteRuntimeRequest } from '../shared/remote-runtime-client'
@@ -10,10 +11,12 @@ import type { EphemeralVmRuntimeRecord } from '../shared/ephemeral-vm-runtimes'
 import type { WorkspaceCreatorProvenance } from '../shared/worktree/types'
 import {
   findMultiplayerMemberByDevice,
+  findMultiplayerMemberByKey,
   resolveEphemeralVmRuntimeOwnerMemberKey
 } from './runtime/multiplayer-identity-store'
 
 const VIEWER_ACCESS_TIMEOUT_MS = 15_000
+const PRESENCE_TIMEOUT_MS = 3_000
 
 export async function projectEphemeralVmViewerAccess(args: {
   userDataPath: string
@@ -56,6 +59,29 @@ export async function createViewerPairingCode(args: {
     throw new Error(response.error.message)
   }
   return response.result.pairingUrl
+}
+
+export async function projectEphemeralVmLiveMembers(args: {
+  userDataPath: string
+  runtime: EphemeralVmRuntimeRecord
+}): Promise<EphemeralVmRuntimeRecord> {
+  if (!args.runtime.runtimeEnvironmentId || args.runtime.connectionMode === 'ssh') {
+    return args.runtime
+  }
+  const response = await sendRemoteRuntimeRequest<ManagedRuntimePresenceResult>(
+    getManagerPairing(args.userDataPath, args.runtime.runtimeEnvironmentId),
+    'pairing.listManagedRuntimePresence',
+    undefined,
+    PRESENCE_TIMEOUT_MS
+  )
+  if (!response.ok) {
+    throw new Error(response.error.message)
+  }
+  const liveMembers = response.result.grantKeys.flatMap((key) => {
+    const member = findMultiplayerMemberByKey(args.userDataPath, key)
+    return member ? [{ key: member.key, displayName: member.displayName }] : []
+  })
+  return { ...args.runtime, liveMembers }
 }
 
 export async function revokeNonOwnerViewerAccess(args: {

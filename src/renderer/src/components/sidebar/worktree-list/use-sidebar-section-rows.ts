@@ -23,6 +23,7 @@ import { getEmptyProjectPlaceholderRepoIds } from '../empty-project-placeholder-
 import { addHostSectionRows } from '../host-section-rows'
 import { orderHostSectionOptions } from '../host-section-order'
 import { buildSidebarHostOptions } from '../sidebar-host-options'
+import { useMultiplayerPresenceRefresh } from './use-multiplayer-presence-refresh'
 
 const EMPTY_RUNTIME_ENVIRONMENTS: AppState['runtimeEnvironments'] = []
 
@@ -167,6 +168,7 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
       ),
     [runtimeEnvironments]
   )
+  useMultiplayerPresenceRefresh(currentWorkspaceMemberKeys.size > 0)
 
   const rows: Row[] = useMemo(
     () =>

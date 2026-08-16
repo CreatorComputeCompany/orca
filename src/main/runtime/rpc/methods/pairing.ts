@@ -4,12 +4,23 @@ import {
   PairingProvisionRelayParamsSchema
 } from '../../../../shared/mobile-relay-credential-contract'
 import { MobilePairingOfferParamsSchema } from '../../../../shared/mobile-pairing-host-contract'
+import { z } from 'zod'
 import {
   ManagedRuntimeOfferParamsSchema,
   ManagedRuntimeRevokeParamsSchema
 } from '../../../../shared/managed-runtime-access-contract'
 
 export const PAIRING_METHODS: readonly RpcAnyMethod[] = [
+  defineMethod({
+    name: 'pairing.listManagedRuntimePresence',
+    params: z.object({}),
+    handler: async (_params, ctx) => {
+      if (!ctx.pairing?.listManagedRuntimePresence) {
+        throw new Error('pairing_management_unavailable')
+      }
+      return await ctx.pairing.listManagedRuntimePresence()
+    }
+  }),
   defineMethod({
     name: 'pairing.createManagedRuntimeOffer',
     params: ManagedRuntimeOfferParamsSchema,

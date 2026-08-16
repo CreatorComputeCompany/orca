@@ -14,6 +14,7 @@ const { sendRemoteRuntimeRequest } = vi.hoisted(() => ({
 vi.mock('../shared/remote-runtime-client', () => ({ sendRemoteRuntimeRequest }))
 
 import {
+  projectEphemeralVmLiveMembers,
   projectEphemeralVmViewerAccess,
   revokeNonOwnerViewerAccess
 } from './ephemeral-vm-viewer-access'
@@ -31,6 +32,30 @@ beforeEach(() => {
 })
 
 describe('ephemeral VM viewer access', () => {
+  it('projects connected grant keys as named live members', async () => {
+    const { userDataPath, runtime } = setupRuntime()
+    enrollMultiplayerDevice({
+      userDataPath,
+      memberKey: 'jake',
+      displayName: 'Jake',
+      deviceId: 'jake-controller-device'
+    })
+    sendRemoteRuntimeRequest.mockResolvedValue({
+      ok: true,
+      result: { grantKeys: ['jake', 'unknown'] }
+    })
+
+    await expect(projectEphemeralVmLiveMembers({ userDataPath, runtime })).resolves.toMatchObject({
+      liveMembers: [{ key: 'jake', displayName: 'Jake' }]
+    })
+    expect(sendRemoteRuntimeRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ deviceToken: 'manager-token' }),
+      'pairing.listManagedRuntimePresence',
+      undefined,
+      3_000
+    )
+  })
+
   it('projects a member-specific child credential instead of the manager credential', async () => {
     const { userDataPath, runtime } = setupRuntime()
     enrollMultiplayerDevice({

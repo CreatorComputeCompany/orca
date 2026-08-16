@@ -1515,6 +1515,7 @@ function createEphemeralVmApi(): NonNullable<Partial<PreloadApi>['ephemeralVm']>
           ? { workspaceOwnerMemberKey: result.runtime.ownerMemberKey }
           : {}),
         ...(viewerMemberKey ? { workspaceViewerMemberKey: viewerMemberKey } : {}),
+        ...(result.runtime.liveMembers ? { workspaceLiveMembers: result.runtime.liveMembers } : {}),
         ...(result.runtime.creatorProvenance?.kind === 'paired-device'
           ? { workspaceVisibilityDeviceId: result.runtime.creatorProvenance.deviceId }
           : {})
@@ -1826,6 +1827,7 @@ async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList
       source: 'ephemeral-vm',
       ...(runtime.ownerMemberKey ? { workspaceOwnerMemberKey: runtime.ownerMemberKey } : {}),
       ...(viewerMemberKey ? { workspaceViewerMemberKey: viewerMemberKey } : {}),
+      ...(runtime.liveMembers ? { workspaceLiveMembers: runtime.liveMembers } : {}),
       ...(runtime.creatorProvenance?.kind === 'paired-device'
         ? { workspaceVisibilityDeviceId: runtime.creatorProvenance.deviceId }
         : {})
@@ -3841,11 +3843,15 @@ function withRuntimeWorktreeOwner<T extends Worktree>(worktree: T, hostId: Execu
     ephemeralVmCreatorByEnvironmentId.get(runtimeOwner.environmentId) ?? worktree.creatorProvenance
   const ephemeralVmSharing = ephemeralVmSharingByEnvironmentId.get(runtimeOwner.environmentId)
   const ownerMemberKey = ephemeralVmOwnerMemberByEnvironmentId.get(runtimeOwner.environmentId)
+  const liveMembers = readAdditionalWebRuntimeEnvironments().find(
+    (environment) => environment.id === runtimeOwner.environmentId
+  )?.workspaceLiveMembers
   return {
     ...worktree,
     runtimeOwnerEnvironmentId: runtimeOwner.environmentId,
     ...(creatorProvenance ? { creatorProvenance } : {}),
     ...(ownerMemberKey ? { ownerMemberKey } : {}),
+    ...(liveMembers ? { liveMembers } : {}),
     ...(ephemeralVmSharing ? { ephemeralVmSharing } : {})
   }
 }

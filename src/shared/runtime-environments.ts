@@ -34,6 +34,9 @@ export const KnownRuntimeEnvironmentSchema = z.object({
   /** Stable account owner and the account viewing this child environment. */
   workspaceOwnerMemberKey: z.string().min(1).optional(),
   workspaceViewerMemberKey: z.string().min(1).optional(),
+  workspaceLiveMembers: z
+    .array(z.object({ key: z.string().min(1), displayName: z.string().min(1) }))
+    .optional(),
   lastUsedAt: z.number().finite().nullable(),
   runtimeId: z.string().min(1).nullable(),
   source: RuntimeEnvironmentSourceSchema.optional(),

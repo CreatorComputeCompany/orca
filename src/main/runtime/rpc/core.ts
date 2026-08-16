@@ -25,6 +25,7 @@ import type {
 import type {
   ManagedRuntimeOfferParams,
   ManagedRuntimeOfferResult,
+  ManagedRuntimePresenceResult,
   ManagedRuntimeRevokeParams,
   ManagedRuntimeRevokeResult
 } from '../../../shared/managed-runtime-access-contract'
@@ -41,6 +42,7 @@ export type PairingRpcContext = {
   revokeManagedRuntimeAccess?(
     params: ManagedRuntimeRevokeParams
   ): Promise<ManagedRuntimeRevokeResult>
+  listManagedRuntimePresence?(): Promise<ManagedRuntimePresenceResult>
 }
 
 export type RpcEnvelopeMeta = {
