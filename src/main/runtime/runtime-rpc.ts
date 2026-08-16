@@ -54,6 +54,8 @@ import {
   type TerminalStreamFrame
 } from '../../shared/terminal-stream-protocol'
 import { encodeMobilePairingQr } from './mobile-pairing-qr'
+import { MobileRuntimeFederationGateway } from './mobile-runtime-federation-gateway'
+import type { RuntimeWorktreePsResult } from '../../shared/runtime-types'
 
 const DEFAULT_WS_PORT = 6768
 
@@ -491,6 +493,7 @@ function injectDeviceScope(response: string, scope: DeviceScope): string {
 export class OrcaRuntimeRpcServer {
   private readonly runtime: OrcaRuntimeService
   private readonly dispatcher: RpcDispatcher
+  private readonly mobileRuntimeFederation: MobileRuntimeFederationGateway
   private readonly userDataPath: string
   private readonly pid: number
   private readonly platform: NodeJS.Platform
@@ -563,6 +566,10 @@ export class OrcaRuntimeRpcServer {
   }: OrcaRuntimeRpcServerOptions) {
     this.runtime = runtime
     this.dispatcher = new RpcDispatcher({ runtime })
+    this.mobileRuntimeFederation = MobileRuntimeFederationGateway.forUserDataPath(
+      runtime.getRuntimeId(),
+      userDataPath
+    )
     this.userDataPath = userDataPath
     this.pid = pid
     this.platform = platform
@@ -1744,6 +1751,51 @@ export class OrcaRuntimeRpcServer {
         }
       : undefined
     try {
+      if (device.scope === 'mobile' && request.method === 'worktree.ps') {
+        const rawParams =
+          typeof request.params === 'object' && request.params !== null
+            ? (request.params as { limit?: number; afterSnapshotId?: string | null })
+            : {}
+        const localResponse = await this.dispatcher.dispatch(
+          {
+            ...request,
+            params: { ...rawParams, afterSnapshotId: undefined }
+          },
+          {
+            signal: abortRegistration?.signal,
+            authenticatedCallerFingerprint: fingerprintAuthenticatedPairingCredential(token)
+          }
+        )
+        if (!localResponse.ok) {
+          replyForRequest(JSON.stringify(localResponse))
+          return
+        }
+        const result = await this.mobileRuntimeFederation.mergeWorktreeCatalog(
+          localResponse.result as RuntimeWorktreePsResult,
+          rawParams
+        )
+        replyForRequest(
+          JSON.stringify({
+            id: request.id,
+            ok: true,
+            result,
+            _meta: { runtimeId: this.runtime.getRuntimeId() }
+          })
+        )
+        return
+      }
+      if (
+        device.scope === 'mobile' &&
+        (await this.mobileRuntimeFederation.tryForward(request, replyForRequest, {
+          connectionId,
+          signal: abortRegistration?.signal,
+          sendBinary,
+          registerBinaryStreamHandler: (streamId, handler) =>
+            this.registerBinaryStreamHandler(connectionId, streamId, handler)
+        }))
+      ) {
+        return
+      }
       await this.dispatcher.dispatchStreaming(request, replyForRequest, {
         // Why: the validated credential preserves existing federation ownership without trusting request fields.
         authenticatedCallerFingerprint: fingerprintAuthenticatedPairingCredential(token),
