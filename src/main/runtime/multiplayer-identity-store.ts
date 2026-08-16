@@ -77,6 +77,13 @@ export function findMultiplayerMemberByDevice(
   )
 }
 
+export function findMultiplayerMemberByKey(
+  userDataPath: string,
+  memberKey: string
+): MultiplayerMember | null {
+  return readStore(userDataPath).members.find((member) => member.key === memberKey) ?? null
+}
+
 export function devicesBelongToSameMember(
   userDataPath: string,
   firstDeviceId: string,

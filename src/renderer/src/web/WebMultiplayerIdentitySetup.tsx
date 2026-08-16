@@ -3,12 +3,17 @@ import { Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { enrollWebMultiplayerIdentity } from './web-multiplayer-enrollment'
+import { registerWebMultiplayerAccount } from './web-multiplayer-enrollment'
+import { readStoredWebRuntimeEnvironment } from './web-runtime-environment'
 
 type Props = { onEnrolled: () => void }
 
 export default function WebMultiplayerIdentitySetup({ onEnrolled }: Props): React.JSX.Element {
-  const [displayName, setDisplayName] = useState('')
+  const existing = readStoredWebRuntimeEnvironment()
+  const [displayName, setDisplayName] = useState(existing?.multiplayerDisplayName ?? '')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -17,10 +22,26 @@ export default function WebMultiplayerIdentitySetup({ onEnrolled }: Props): Reac
       setError('Enter your name.')
       return
     }
+    if (!email.trim()) {
+      setError('Enter your email address.')
+      return
+    }
+    if (password.length < 12) {
+      setError('Use a password with at least 12 characters.')
+      return
+    }
+    if (password !== confirmPassword) {
+      setError('Passwords do not match.')
+      return
+    }
     setSubmitting(true)
     setError(null)
     try {
-      await enrollWebMultiplayerIdentity(displayName.trim())
+      await registerWebMultiplayerAccount({
+        displayName: displayName.trim(),
+        email: email.trim(),
+        password
+      })
       onEnrolled()
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -37,9 +58,9 @@ export default function WebMultiplayerIdentitySetup({ onEnrolled }: Props): Reac
             <Users size={18} aria-hidden />
           </div>
           <div>
-            <h1 className="text-base font-semibold leading-6">Who are you?</h1>
+            <h1 className="text-base font-semibold leading-6">Create your Orca account</h1>
             <p className="mt-1 text-sm leading-5 text-muted-foreground">
-              Use the same name on your other devices to see your private worktrees.
+              This account keeps your private workspaces tied to you across browsers.
             </p>
           </div>
         </div>
@@ -57,14 +78,54 @@ export default function WebMultiplayerIdentitySetup({ onEnrolled }: Props): Reac
             autoFocus
             autoComplete="name"
             placeholder="Jake"
+            disabled={Boolean(existing?.multiplayerDisplayName)}
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="multiplayer-email">Email</Label>
+          <Input
+            id="multiplayer-email"
+            type="email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            autoComplete="email"
+            placeholder="you@example.com"
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="multiplayer-password">Password</Label>
+          <Input
+            id="multiplayer-password"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            autoComplete="new-password"
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="multiplayer-password-confirm">Confirm password</Label>
+          <Input
+            id="multiplayer-password-confirm"
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                void enroll()
+              }
+            }}
+            autoComplete="new-password"
           />
         </div>
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
-        <Button onClick={() => void enroll()} disabled={submitting || !displayName.trim()}>
-          {submitting ? 'Setting up…' : 'Continue'}
+        <Button
+          onClick={() => void enroll()}
+          disabled={submitting || !displayName.trim() || !email.trim() || password.length < 12}
+        >
+          {submitting ? 'Creating account…' : 'Create account'}
         </Button>
         <p className="text-xs leading-4 text-muted-foreground">
-          Internal spike: names are trusted. Email and password can replace this step later.
+          Your password is stored as a salted hash and is never recoverable from the controller.
         </p>
       </div>
     </div>

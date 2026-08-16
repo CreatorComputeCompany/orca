@@ -55,10 +55,18 @@ import {
 } from '../../shared/terminal-stream-protocol'
 import { encodeMobilePairingQr } from './mobile-pairing-qr'
 import { MobileRuntimeFederationGateway } from './mobile-runtime-federation-gateway'
+import { MultiplayerAccountStore } from './multiplayer-account-store'
+import { createMultiplayerAuthHttpHandler } from './multiplayer-auth-http'
 import type { RuntimeWorktreePsResult } from '../../shared/runtime-types'
+import type {
+  MultiplayerAuthRegisterParams,
+  MultiplayerAuthResult
+} from '../../shared/multiplayer-auth-contract'
 import {
   enrollMultiplayerDevice,
-  findMultiplayerMemberByDevice
+  findMultiplayerMemberByDevice,
+  findMultiplayerMemberByKey,
+  type MultiplayerMember
 } from './multiplayer-identity-store'
 
 const DEFAULT_WS_PORT = 6768
@@ -498,6 +506,9 @@ export class OrcaRuntimeRpcServer {
   private readonly runtime: OrcaRuntimeService
   private readonly dispatcher: RpcDispatcher
   private readonly mobileRuntimeFederation: MobileRuntimeFederationGateway
+  private readonly multiplayerAccounts: MultiplayerAccountStore
+  private readonly multiplayerAuthHttpHandler: ReturnType<typeof createMultiplayerAuthHttpHandler>
+  private multiplayerRegistrationQueue: Promise<void> = Promise.resolve()
   private readonly userDataPath: string
   private readonly pid: number
   private readonly platform: NodeJS.Platform
@@ -575,6 +586,10 @@ export class OrcaRuntimeRpcServer {
       runtime.getRuntimeId(),
       userDataPath
     )
+    this.multiplayerAccounts = new MultiplayerAccountStore(userDataPath)
+    this.multiplayerAuthHttpHandler = createMultiplayerAuthHttpHandler((credentials) =>
+      this.issueMultiplayerLogin(credentials)
+    )
     this.userDataPath = userDataPath
     this.pid = pid
     this.platform = platform
@@ -616,6 +631,78 @@ export class OrcaRuntimeRpcServer {
     retainDeviceIds: ReadonlySet<string>
   ): void {
     this.mobileRuntimeFederation.revokeEnvironmentAccess(environmentId, retainDeviceIds)
+  }
+
+  private async issueMultiplayerLogin(credentials: {
+    email: string
+    password: string
+  }): Promise<MultiplayerAuthResult | null> {
+    const account = await this.multiplayerAccounts.authenticate(
+      credentials.email,
+      credentials.password
+    )
+    if (!account) {
+      return null
+    }
+    const member = findMultiplayerMemberByKey(this.userDataPath, account.memberKey)
+    return member ? this.issueMemberBrowserOffer(member, account.email) : null
+  }
+
+  private issueMemberBrowserOffer(member: MultiplayerMember, email: string): MultiplayerAuthResult {
+    const offer = this.createPairingOffer({
+      name: `${member.displayName} web`,
+      scope: 'runtime',
+      fresh: true
+    })
+    if (!offer.available) {
+      throw new Error(offer.guidance)
+    }
+    const enrolled = enrollMultiplayerDevice({
+      userDataPath: this.userDataPath,
+      memberKey: member.key,
+      displayName: member.displayName,
+      deviceId: offer.deviceId
+    })
+    return {
+      email,
+      member: {
+        key: enrolled.key,
+        displayName: enrolled.displayName,
+        deviceIds: enrolled.deviceIds
+      },
+      pairingUrl: offer.pairingUrl
+    }
+  }
+
+  private registerMultiplayerAccountForDevice(
+    params: MultiplayerAuthRegisterParams,
+    deviceId: string
+  ): Promise<MultiplayerAuthResult> {
+    const registration = this.multiplayerRegistrationQueue.then(async () => {
+      let member = findMultiplayerMemberByDevice(this.userDataPath, deviceId)
+      if (!member) {
+        if (this.multiplayerAccounts.hasAccounts()) {
+          throw new Error('Sign in with an existing account.')
+        }
+        member = enrollMultiplayerDevice({
+          userDataPath: this.userDataPath,
+          memberKey: params.displayName,
+          displayName: params.displayName,
+          deviceId
+        })
+      }
+      const account = await this.multiplayerAccounts.register({
+        email: params.email,
+        password: params.password,
+        member
+      })
+      return this.issueMemberBrowserOffer(member, account.email)
+    })
+    this.multiplayerRegistrationQueue = registration.then(
+      () => {},
+      () => {}
+    )
+    return registration
   }
 
   getRelayRevokeOutbox(): RelayRevokeOutbox {
@@ -1319,6 +1406,7 @@ export class OrcaRuntimeRpcServer {
       host: options.host,
       port: options.port,
       staticRoot: this.webClientRoot,
+      httpRequestHandler: this.multiplayerAuthHttpHandler,
       ...(options.fallbackPort !== undefined ? { fallbackPort: options.fallbackPort } : {}),
       ...(options.preferPinnedPort ? { preferPinnedPort: true } : {})
     })
@@ -1793,36 +1881,15 @@ export class OrcaRuntimeRpcServer {
               connectionMode: offer.connectionMode
             }
           },
-          enrollMultiplayerIdentity: async (params: { memberKey: string; displayName: string }) => {
-            const offer = this.createPairingOffer({
-              name: `${params.displayName.trim()} web`,
-              scope: 'runtime',
-              fresh: true
-            })
-            if (!offer.available) {
-              throw new Error(offer.guidance)
-            }
-            enrollMultiplayerDevice({
-              userDataPath: this.userDataPath,
-              memberKey: params.memberKey,
-              displayName: params.displayName,
-              deviceId: authenticatedSocket.device.deviceId
-            })
-            const member = enrollMultiplayerDevice({
-              userDataPath: this.userDataPath,
-              memberKey: params.memberKey,
-              displayName: params.displayName,
-              deviceId: offer.deviceId
-            })
-            return {
-              member: {
-                key: member.key,
-                displayName: member.displayName,
-                deviceIds: member.deviceIds
-              },
-              pairingUrl: offer.pairingUrl
-            }
+          enrollMultiplayerIdentity: async () => {
+            throw new Error('password_auth_required')
           },
+          registerMultiplayerAccount: async (params: {
+            email: string
+            password: string
+            displayName: string
+          }) =>
+            this.registerMultiplayerAccountForDevice(params, authenticatedSocket.device.deviceId),
           ...(device.pairingManagement
             ? {
                 createManagedRuntimeOffer: async (params: { grantKey: string; name: string }) => {

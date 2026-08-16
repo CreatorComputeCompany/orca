@@ -19,6 +19,10 @@ import type {
   MultiplayerIdentityEnrollResult
 } from '../../../shared/multiplayer-identity-contract'
 import type {
+  MultiplayerAuthRegisterParams,
+  MultiplayerAuthResult
+} from '../../../shared/multiplayer-auth-contract'
+import type {
   ManagedRuntimeOfferParams,
   ManagedRuntimeOfferResult,
   ManagedRuntimeRevokeParams,
@@ -32,6 +36,7 @@ export type PairingRpcContext = {
   enrollMultiplayerIdentity?(
     params: MultiplayerIdentityEnrollParams
   ): Promise<MultiplayerIdentityEnrollResult>
+  registerMultiplayerAccount?(params: MultiplayerAuthRegisterParams): Promise<MultiplayerAuthResult>
   createManagedRuntimeOffer?(params: ManagedRuntimeOfferParams): Promise<ManagedRuntimeOfferResult>
   revokeManagedRuntimeAccess?(
     params: ManagedRuntimeRevokeParams

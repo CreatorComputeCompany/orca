@@ -7,6 +7,7 @@ export type StoredWebRuntimeEnvironment = Omit<PublicKnownRuntimeEnvironment, 'e
   compatibleEnvironmentIds?: string[]
   multiplayerMemberKey?: string
   multiplayerDisplayName?: string
+  multiplayerAuthEmail?: string
   multiplayerOriginalEnvironmentId?: string
   endpoints: {
     id: string
@@ -136,12 +137,18 @@ export function createStoredWebRuntimeEnvironment(args: {
 
 export function withWebMultiplayerIdentity(
   environment: StoredWebRuntimeEnvironment,
-  identity: { memberKey: string; displayName: string; originalEnvironmentId: string }
+  identity: {
+    memberKey: string
+    displayName: string
+    originalEnvironmentId: string
+    email?: string
+  }
 ): StoredWebRuntimeEnvironment {
   return {
     ...environment,
     multiplayerMemberKey: identity.memberKey,
     multiplayerDisplayName: identity.displayName,
+    ...(identity.email ? { multiplayerAuthEmail: identity.email } : {}),
     multiplayerOriginalEnvironmentId: identity.originalEnvironmentId,
     updatedAt: Date.now()
   }
@@ -226,7 +233,11 @@ function getCompatibleEnvironmentIds(
 export function redactStoredWebRuntimeEnvironment(
   environment: StoredWebRuntimeEnvironment
 ): PublicKnownRuntimeEnvironment {
-  const { compatibleEnvironmentIds: _compatibleEnvironmentIds, ...publicEnvironment } = environment
+  const {
+    compatibleEnvironmentIds: _compatibleEnvironmentIds,
+    multiplayerAuthEmail: _multiplayerAuthEmail,
+    ...publicEnvironment
+  } = environment
   return {
     ...publicEnvironment,
     endpoints: environment.endpoints.map(
