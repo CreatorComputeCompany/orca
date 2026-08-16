@@ -27,6 +27,10 @@ export const KnownRuntimeEnvironmentSchema = z.object({
   updatedAt: z.number().finite(),
   pairingRevision: z.number().finite().optional(),
   pairedDeviceId: z.string().min(1).optional(),
+  /** The controller-side browser identity used to decide which workspaces belong
+   * to this client. Child VM transport credentials identify the controller, not
+   * the human browser that requested the VM. */
+  workspaceVisibilityDeviceId: z.string().min(1).optional(),
   lastUsedAt: z.number().finite().nullable(),
   runtimeId: z.string().min(1).nullable(),
   source: RuntimeEnvironmentSourceSchema.optional(),

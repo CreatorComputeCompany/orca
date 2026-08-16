@@ -110,6 +110,28 @@ describe('computeVisibleWorktreeIds', () => {
     expect(deviceIds.get('env-1')).toBe('authenticated-device')
   })
 
+  it('uses the controller browser identity for child VM workspace visibility', () => {
+    const deviceIds = getPairedDeviceIdsByEnvironment(
+      [
+        {
+          id: 'child-vm',
+          pairedDeviceId: 'controller-to-child-device',
+          workspaceVisibilityDeviceId: 'controller-device-jake'
+        } as never
+      ],
+      new Map([
+        [
+          'child-vm',
+          {
+            status: { pairedDeviceId: 'controller-to-child-device' } as never
+          }
+        ]
+      ])
+    )
+
+    expect(deviceIds.get('child-vm')).toBe('controller-device-jake')
+  })
+
   it('hides only known workspaces created by another device', () => {
     const own = {
       ...makeWorktree('own'),

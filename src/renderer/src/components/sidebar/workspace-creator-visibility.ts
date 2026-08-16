@@ -16,7 +16,9 @@ export function getPairedDeviceIdsByEnvironment(
   const result = new Map<string, string>()
   for (const environment of environments) {
     const deviceId =
-      statuses.get(environment.id)?.status?.pairedDeviceId ?? environment.pairedDeviceId
+      environment.workspaceVisibilityDeviceId ??
+      statuses.get(environment.id)?.status?.pairedDeviceId ??
+      environment.pairedDeviceId
     if (deviceId) {
       result.set(environment.id, deviceId)
     }
