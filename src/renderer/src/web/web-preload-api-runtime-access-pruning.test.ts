@@ -81,4 +81,71 @@ describe('web runtime access pruning', () => {
       JSON.parse(globals.storage.getItem('orca.web.runtimeEnvironments.additional.v1') ?? '[]')
     ).toEqual([])
   })
+
+  it('retains the last credential when authorized viewer projection is transiently unavailable', async () => {
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string): Promise<RuntimeRpcResponse<unknown>> {
+          return Promise.resolve({
+            id: method,
+            ok: true,
+            result:
+              method === 'ephemeralVm.listRuntimes'
+                ? [
+                    {
+                      id: 'runtime-record',
+                      runtimeEnvironmentId: 'retained-child',
+                      viewerAccessUnavailable: true,
+                      recipeResult: {
+                        schemaVersion: 1,
+                        pairingCode: 'orca://pair?unavailable=transient',
+                        projectRoot: '/workspace'
+                      }
+                    }
+                  ]
+                : {},
+            _meta: { runtimeId: 'runtime' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage, 'controller')
+    const retained = {
+      id: 'retained-child',
+      name: 'Jake VM',
+      createdAt: 2,
+      updatedAt: 2,
+      lastUsedAt: null,
+      runtimeId: 'child-runtime',
+      source: 'ephemeral-vm',
+      preferredEndpointId: 'ws-retained-child',
+      endpoints: [
+        {
+          id: 'ws-retained-child',
+          kind: 'websocket',
+          label: 'WebSocket',
+          endpoint: 'wss://retained-child.example',
+          deviceToken: 'retained-token',
+          publicKeyB64: 'retained-key'
+        }
+      ]
+    }
+    globals.storage.setItem(
+      'orca.web.runtimeEnvironments.additional.v1',
+      JSON.stringify([retained])
+    )
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    await expect(globals.window.api.runtimeEnvironments.list()).resolves.toMatchObject([
+      { id: 'controller' },
+      { id: 'retained-child', runtimeId: 'child-runtime' }
+    ])
+    expect(
+      JSON.parse(globals.storage.getItem('orca.web.runtimeEnvironments.additional.v1') ?? '[]')
+    ).toEqual([retained])
+  })
 })

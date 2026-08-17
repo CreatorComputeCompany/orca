@@ -1797,6 +1797,11 @@ async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList
       runtime.runtimeEnvironmentId,
       runtime.sharing ?? 'private'
     )
+    if (runtime.viewerAccessUnavailable) {
+      // Why: absence from the authorized list means revoke, while this marker means only the
+      // child credential refresh failed. Keep the last working member credential and retry later.
+      continue
+    }
     const pairingCode = getEphemeralVmRecipeResultPairingCode(runtime.recipeResult)
     const offer = pairingCode ? parseWebPairingInput(pairingCode) : null
     if (!offer) {

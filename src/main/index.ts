@@ -326,6 +326,7 @@ import { migrateEphemeralVmRuntimeMemberOwnership } from './ephemeral-vm-runtime
 import { assertEphemeralVmRuntimeAccess } from './ephemeral-vm-runtime-access'
 import {
   createViewerPairingCode,
+  preserveEphemeralVmViewerCatalogEntry,
   projectEphemeralVmLiveMembers,
   projectEphemeralVmViewerAccess,
   revokeNonOwnerViewerAccess
@@ -2819,10 +2820,10 @@ void app.whenReady().then(async () => {
               `[ephemeral-vm] Failed to project current access for ${runtime.id}:`,
               error
             )
-            return null
+            return preserveEphemeralVmViewerCatalogEntry(runtime)
           }
         })
-      ).then((projected) => projected.filter((runtime) => runtime !== null))
+      )
     },
     setSharing: async (args) => {
       const runtime = assertEphemeralVmRuntimeSharingActor({

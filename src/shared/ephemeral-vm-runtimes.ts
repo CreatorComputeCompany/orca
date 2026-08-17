@@ -72,6 +72,9 @@ export const EphemeralVmRuntimeRecordSchema = z.object({
   liveMembers: z
     .array(z.object({ key: z.string().min(1), displayName: z.string().min(1) }))
     .optional(),
+  /** The caller remains authorized, but the controller could not refresh its child credential.
+   * Clients must retain any previously issued credential and retry discovery later. */
+  viewerAccessUnavailable: z.boolean().optional(),
   sharing: EphemeralVmWorkspaceSharingSchema.optional(),
   connectionMode: EphemeralVmRuntimeConnectionModeSchema.optional(),
   runtimeEnvironmentId: z.string().min(1).optional(),

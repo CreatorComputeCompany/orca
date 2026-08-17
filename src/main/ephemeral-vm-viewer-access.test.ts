@@ -14,6 +14,7 @@ const { sendRemoteRuntimeRequest } = vi.hoisted(() => ({
 vi.mock('../shared/remote-runtime-client', () => ({ sendRemoteRuntimeRequest }))
 
 import {
+  preserveEphemeralVmViewerCatalogEntry,
   projectEphemeralVmLiveMembers,
   projectEphemeralVmViewerAccess,
   revokeNonOwnerViewerAccess
@@ -32,6 +33,20 @@ beforeEach(() => {
 })
 
 describe('ephemeral VM viewer access', () => {
+  it('preserves catalog identity without leaking manager access on projection failure', () => {
+    const { runtime } = setupRuntime()
+
+    const preserved = preserveEphemeralVmViewerCatalogEntry(runtime)
+
+    expect(preserved).toMatchObject({
+      id: runtime.id,
+      runtimeEnvironmentId: runtime.runtimeEnvironmentId,
+      viewerAccessUnavailable: true,
+      recipeResult: { pairingCode: 'orca://pair?unavailable=transient' }
+    })
+    expect(preserved.recipeResult).not.toMatchObject({ pairingCode: 'orca://pair?code=manager' })
+  })
+
   it('projects connected grant keys as named live members', async () => {
     const { userDataPath, runtime } = setupRuntime()
     enrollMultiplayerDevice({

@@ -16,6 +16,22 @@ import {
 } from './runtime/multiplayer-identity-store'
 
 const VIEWER_ACCESS_TIMEOUT_MS = 15_000
+const TRANSIENTLY_UNAVAILABLE_PAIRING_CODE = 'orca://pair?unavailable=transient'
+
+export function preserveEphemeralVmViewerCatalogEntry(
+  runtime: EphemeralVmRuntimeRecord
+): EphemeralVmRuntimeRecord {
+  return {
+    ...runtime,
+    viewerAccessUnavailable: true,
+    // Why: the stored runtime carries the controller's pairing authority. Preserve the catalog
+    // identity on a transient child failure, but never return that privileged credential.
+    recipeResult: withEphemeralVmRecipeResultPairingCode(
+      runtime.recipeResult,
+      TRANSIENTLY_UNAVAILABLE_PAIRING_CODE
+    )
+  }
+}
 const PRESENCE_TIMEOUT_MS = 3_000
 
 export async function projectEphemeralVmViewerAccess(args: {
