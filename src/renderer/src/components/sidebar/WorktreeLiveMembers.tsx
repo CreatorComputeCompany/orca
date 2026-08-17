@@ -17,16 +17,20 @@ export function WorktreeLiveMembers({
 }: {
   worktree: Worktree
 }): React.JSX.Element | null {
-  const environmentMembers = useAppStore(
-    (state) =>
-      state.runtimeEnvironments?.find(
-        (environment) => environment.id === worktree.runtimeOwnerEnvironmentId
-      )?.workspaceLiveMembers
+  const environment = useAppStore((state) =>
+    state.runtimeEnvironments?.find(
+      (environment) => environment.id === worktree.runtimeOwnerEnvironmentId
+    )
   )
+  const hiddenOwnerKey =
+    environment && environment.workspaceViewerMemberKey === environment.workspaceOwnerMemberKey
+      ? environment.workspaceViewerMemberKey
+      : undefined
   const members = resolveLiveMembersForWorktree(
-    environmentMembers,
+    environment?.workspaceLiveMembers,
     worktree.liveMembers,
-    worktree.id
+    worktree.id,
+    hiddenOwnerKey
   )
   if (members.length === 0) {
     return null

@@ -39,4 +39,19 @@ describe('worktree live members', () => {
       resolveLiveMembersForWorktree(undefined, [{ key: 'jake', displayName: 'Jake' }], 'worktree-a')
     ).toEqual([{ key: 'jake', displayName: 'Jake' }])
   })
+
+  it('hides the current owner while preserving visiting collaborators', () => {
+    const members = [
+      { key: 'steven', displayName: 'Steven', worktreeId: 'worktree-a' },
+      { key: 'jake', displayName: 'Jake', worktreeId: 'worktree-a' }
+    ]
+
+    expect(resolveLiveMembersForWorktree(members, undefined, 'worktree-a', 'steven')).toEqual([
+      { key: 'jake', displayName: 'Jake' }
+    ])
+    expect(resolveLiveMembersForWorktree(members, undefined, 'worktree-a')).toEqual([
+      { key: 'steven', displayName: 'Steven' },
+      { key: 'jake', displayName: 'Jake' }
+    ])
+  })
 })
