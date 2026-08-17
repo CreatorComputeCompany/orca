@@ -83,6 +83,43 @@ describe('applyWebSessionTabsSnapshot', () => {
     expect(applyWebSessionTabsSnapshots(state, [], ENV, NOW)).toBe(state)
   })
 
+  it('keeps child-VM terminals when another host publishes the same worktree empty', () => {
+    const childEnvironmentId = 'child-vm'
+    const childSnapshot = makeSnapshot([
+      {
+        type: 'terminal',
+        id: HOST_SURFACE_ID,
+        title: 'child shell',
+        parentTabId: 'host-tab-1',
+        leafId: LEAF_ID,
+        isActive: true,
+        status: 'ready',
+        terminal: 'child-terminal-1'
+      }
+    ])
+    const initial = makeState({ activeWorktreeId: WT })
+    const childPatch = applyWebSessionTabsSnapshot(
+      initial,
+      childSnapshot,
+      childEnvironmentId,
+      NOW
+    ) as Partial<WebSessionTabsSyncState>
+    const hydrated = { ...initial, ...childPatch } as WebSessionTabsSyncState
+
+    const controllerPatch = applyWebSessionTabsSnapshot(
+      hydrated,
+      makeSnapshot([], { snapshotVersion: 2 }),
+      'controller',
+      NOW + 1
+    ) as Partial<WebSessionTabsSyncState>
+    const reconciled = { ...hydrated, ...controllerPatch }
+
+    expect(reconciled.tabsByWorktree[WT]).toHaveLength(1)
+    expect(reconciled.tabsByWorktree[WT]?.[0]?.ptyId).toBe('remote:child-vm@@child-terminal-1')
+    expect(reconciled.unifiedTabsByWorktree[WT]).toHaveLength(1)
+    expect(reconciled.groupsByWorktree[WT]?.[0]?.tabOrder).toHaveLength(1)
+  })
+
   it('matches sequential reconciliation across duplicate-worktree mixed snapshots', () => {
     const secondWorktree = 'repo::/other-worktree'
     const snapshots: RuntimeMobileSessionTabsResult[] = [

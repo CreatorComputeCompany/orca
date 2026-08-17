@@ -919,8 +919,10 @@ function shouldReplaceTerminalTab(
     return true
   }
   if (isMirroredTerminalSurfaceId(tab.id)) {
-    // Why: host snapshots are authoritative for mirrored tabs; replace old mirrors even when the next surface still awaits a stream handle, else parity drifts.
-    return true
+    // Why: several runtime environments can publish the same projected worktree. A host is
+    // authoritative only for its own mirrored PTYs; otherwise an empty controller snapshot
+    // deletes a child-VM terminal and the child snapshot recreates it forever.
+    return isRuntimeTerminalTabForEnvironment(tab, environmentId)
   }
   if (tab.pendingActivationSpawn && tab.ptyId === null && nextRemotePtyIds.size > 0) {
     return true
