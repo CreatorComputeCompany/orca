@@ -185,6 +185,56 @@ describe('WebRuntimeClient', () => {
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
+  it('replays ordinary subscriptions after a transient transport interruption', () => {
+    const client = new WebRuntimeClient({
+      v: 2,
+      endpoint: 'ws://127.0.0.1:6768',
+      deviceToken: 'token',
+      publicKeyB64: Buffer.alloc(32).toString('base64')
+    })
+    const onClose = vi.fn()
+    const onTransportInterrupted = vi.fn()
+    const onTransportReplayed = vi.fn()
+    const internals = client as unknown as {
+      subscriptions: Map<
+        string,
+        {
+          id: string
+          method: string
+          params: unknown
+          needsReplay: boolean
+          callbacks: {
+            onClose: typeof onClose
+            onTransportInterrupted: typeof onTransportInterrupted
+            onTransportReplayed: typeof onTransportReplayed
+          }
+        }
+      >
+      handleInterruptedSubscriptions: () => void
+      replayInterruptedSubscriptions: () => void
+      sendEncrypted: (message: unknown) => boolean
+    }
+    internals.subscriptions.set('stream-1', {
+      id: 'stream-1',
+      method: 'session.tabs.subscribeAll',
+      params: {},
+      needsReplay: false,
+      callbacks: { onClose, onTransportInterrupted, onTransportReplayed }
+    })
+    vi.spyOn(internals, 'sendEncrypted').mockReturnValue(true)
+
+    internals.handleInterruptedSubscriptions()
+    internals.replayInterruptedSubscriptions()
+
+    expect(onClose).not.toHaveBeenCalled()
+    expect(onTransportInterrupted).toHaveBeenCalledTimes(1)
+    expect(onTransportReplayed).toHaveBeenCalledTimes(1)
+    expect(internals.sendEncrypted).toHaveBeenCalledWith(
+      expect.objectContaining({ method: 'session.tabs.subscribeAll' })
+    )
+    client.close({ notifySubscriptions: false })
+  })
+
   it('rejects pending connection waiters when the client closes', async () => {
     vi.useFakeTimers()
     const timerWindow = window as unknown as {

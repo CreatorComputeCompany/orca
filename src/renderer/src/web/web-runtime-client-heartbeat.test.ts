@@ -53,6 +53,7 @@ type HeartbeatInternals = {
   lastInboundFrameAt: number
   lastHeartbeatTickAt: number
   heartbeatProbeSentAt: number | null
+  lastApplicationHeartbeatAt: number
   startHeartbeat: () => void
   runHeartbeatTick: () => void
   now: () => number
@@ -85,6 +86,7 @@ function makeConnectedClient(): {
   internals.lastInboundFrameAt = nowMs
   internals.lastHeartbeatTickAt = nowMs
   internals.heartbeatProbeSentAt = null
+  internals.lastApplicationHeartbeatAt = nowMs
   return {
     client,
     internals,
@@ -224,15 +226,25 @@ describe('WebRuntimeClient liveness heartbeat', () => {
 
     setNow(11_000)
     runActiveHeartbeatTick()
+    expect(socket.send).not.toHaveBeenCalled()
     setNow(21_000)
     runActiveHeartbeatTick()
-    expect(socket.send).not.toHaveBeenCalled()
-
-    setNow(31_000)
-    runActiveHeartbeatTick()
     expect(socket.send).toHaveBeenCalledTimes(1)
-    expect(internals.heartbeatProbeSentAt).toBe(31_000)
+    expect(internals.heartbeatProbeSentAt).toBe(21_000)
     client.close()
+  })
+
+  it('sends an application keepalive while inbound subscription frames are flowing', () => {
+    const { internals, socket, setNow } = makeConnectedClient()
+    internals.startHeartbeat()
+
+    setNow(21_000)
+    internals.lastInboundFrameAt = 21_000
+    internals.lastHeartbeatTickAt = 11_000
+    internals.runHeartbeatTick()
+
+    expect(socket.send).toHaveBeenCalledTimes(1)
+    expect(internals.heartbeatProbeSentAt).toBe(21_000)
   })
 
   it('cleans up the heartbeat interval and visibility listener on close', () => {

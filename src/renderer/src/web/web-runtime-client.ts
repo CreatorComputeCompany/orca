@@ -74,6 +74,10 @@ const SHARED_CONNECTION_SUBSCRIPTION_METHODS = new Set(['files.watch'])
 const HEARTBEAT_INTERVAL_MS = 10_000
 const HEARTBEAT_IDLE_MS = 25_000
 const HEARTBEAT_PROBE_GRACE_MS = 20_000
+// Why: reverse proxies such as Boxd may not preserve WebSocket ping/pong control frames. An
+// encrypted RPC frame proves liveness at the application layer even while terminal frames keep
+// arriving and the socket never appears idle to the browser.
+const HEARTBEAT_APPLICATION_KEEPALIVE_MS = 20_000
 
 export class WebRuntimeClient {
   private ws: WebSocket | null = null
@@ -89,6 +93,7 @@ export class WebRuntimeClient {
   private lastInboundFrameAt = 0
   // Timestamp of an outstanding liveness probe (null = none); dead-close fires only on an unanswered sent probe.
   private heartbeatProbeSentAt: number | null = null
+  private lastApplicationHeartbeatAt = 0
   // Why: tracks last tick time to detect a suspended loop (frozen tab) so a long gap re-probes instead of closing.
   private lastHeartbeatTickAt = 0
   private readonly pending = new Map<string, PendingRequest>()
@@ -704,12 +709,7 @@ export class WebRuntimeClient {
   }
 
   private handleInterruptedSubscriptions(): void {
-    for (const [id, subscription] of Array.from(this.subscriptions)) {
-      if (!SHARED_CONNECTION_SUBSCRIPTION_METHODS.has(subscription.method)) {
-        this.subscriptions.delete(id)
-        subscription.callbacks.onClose?.()
-        continue
-      }
+    for (const subscription of Array.from(this.subscriptions.values())) {
       subscription.callbacks.onTransportInterrupted?.()
       if (this.subscriptions.get(subscription.id) === subscription) {
         subscription.needsReplay = true
@@ -790,6 +790,7 @@ export class WebRuntimeClient {
     this.lastInboundFrameAt = now
     this.lastHeartbeatTickAt = now
     this.heartbeatProbeSentAt = null
+    this.lastApplicationHeartbeatAt = now
     this.heartbeatCleanup = installWindowVisibilityInterval({
       run: () => this.runHeartbeatTick(),
       runOnVisible: () => this.rebaselineHeartbeat(),
@@ -803,7 +804,9 @@ export class WebRuntimeClient {
     // hid. But PRESERVE lastInboundFrameAt: if the socket went silent while hidden, keeping the real
     // last-heard time lets the next tick detect the staleness and probe promptly, instead of masking a
     // dead connection for another full idle window (#9883 review).
-    this.lastHeartbeatTickAt = this.now()
+    const now = this.now()
+    this.lastHeartbeatTickAt = now
+    this.lastApplicationHeartbeatAt = now
     this.heartbeatProbeSentAt = null
   }
 
@@ -821,6 +824,7 @@ export class WebRuntimeClient {
     if (sinceLastTick >= HEARTBEAT_INTERVAL_MS * 2) {
       this.lastInboundFrameAt = now
       this.heartbeatProbeSentAt = null
+      this.lastApplicationHeartbeatAt = now
     }
     // Why: don't probe while hidden — no visible staleness to detect and it wastes battery; next visible tick re-checks.
     if (!this.isDocumentVisible()) {
@@ -839,7 +843,11 @@ export class WebRuntimeClient {
       this.handleSocketClosed(ws)
       return
     }
-    if (this.heartbeatProbeSentAt === null && now - this.lastInboundFrameAt >= HEARTBEAT_IDLE_MS) {
+    if (
+      this.heartbeatProbeSentAt === null &&
+      (now - this.lastInboundFrameAt >= HEARTBEAT_IDLE_MS ||
+        now - this.lastApplicationHeartbeatAt >= HEARTBEAT_APPLICATION_KEEPALIVE_MS)
+    ) {
       // Why: fire-and-forget liveness probe; its id is intentionally unmatched so it registers no pending request/timeout.
       if (
         this.sendEncrypted({
@@ -849,6 +857,7 @@ export class WebRuntimeClient {
         })
       ) {
         this.heartbeatProbeSentAt = now
+        this.lastApplicationHeartbeatAt = now
       }
     }
   }
