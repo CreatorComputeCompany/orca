@@ -4387,8 +4387,16 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
         const trimmedNote = note.trim()
         // Why: agents needing post-ready paste/follow-up stay on the renderer path so prompt delivery isn't skipped.
         const promptLinkedWorkItem = agent === null ? null : submitLinkedWorkItem
-        const { prompt: quickPrompt, draftPrompt: quickDraftPrompt } =
-          resolveQuickCreateLinkedWorkItemPrompt(promptLinkedWorkItem, trimmedNote)
+        const linkedQuickPrompt = resolveQuickCreateLinkedWorkItemPrompt(
+          promptLinkedWorkItem,
+          trimmedNote
+        )
+        // Why: external launchers such as GSD seed the composer's agent prompt
+        // directly. Quick create previously ignored that field and started the
+        // selected agent at its empty placeholder instead of delivering the task.
+        const quickPrompt =
+          linkedQuickPrompt.prompt || (linkedQuickPrompt.draftPrompt ? '' : agentPrompt.trim())
+        const quickDraftPrompt = linkedQuickPrompt.draftPrompt
         const quickSessionOptions =
           agent === null
             ? undefined
@@ -4614,6 +4622,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     },
     [
       baseBranch,
+      agentPrompt,
       compareBaseRef,
       branchNameOverride,
       branchNameOverridePreservesNameEdits,
