@@ -13,6 +13,11 @@ export type GsdOrcaLaunchConsumeResult = {
   boardName: string
   listName: string
   cardUrl: string | null
+  repository: {
+    name: string
+    remoteUrl: string
+  }
+  agent: 'claude' | 'codex'
 }
 
 export const GsdOrcaLaunchLinkParamsSchema = z.object({

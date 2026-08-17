@@ -12,7 +12,11 @@ import NewWorkspaceComposerCard from '@/components/NewWorkspaceComposerCard'
 import AgentSettingsDialog from '@/components/agent/AgentSettingsDialog'
 import type { AddRepoDialogHostedController } from '@/components/sidebar/use-add-repo-hosted-controller'
 import { useComposerState } from '@/hooks/useComposerState'
-import { linkPendingGsdLaunch, pendingGsdLaunchToken } from '@/web/gsd-orca-launch'
+import {
+  linkPendingGsdLaunch,
+  pendingGsdLaunchToken,
+  shouldAutoCreateGsdWorkspace
+} from '@/web/gsd-orca-launch'
 import {
   pickQuickWorkspaceAgent,
   resolveQuickWorkspaceAgentSelection
@@ -40,6 +44,8 @@ type ComposerModalData = {
   prefilledPrompt?: string
   initialRepoId?: string
   initialEphemeralVmRecipeId?: string
+  initialAgent?: TuiAgent
+  autoCreate?: boolean
   initialProjectGroupId?: string
   linkedWorkItem?: LinkedWorkItemSummary | null
   initialGitHubWorkItem?: GitHubWorkItem | null
@@ -168,7 +174,7 @@ function QuickTabBody({
   // during render keeps the selection in sync with the detected set without
   // triggering an extra commit.
   const [quickAgentOverride, setQuickAgentOverride] = useState<TuiAgent | null | undefined>(
-    undefined
+    modalData.initialAgent
   )
   const preferredQuickAgent = useMemo<TuiAgent | null>(() => {
     const pref = settings?.defaultTuiAgent
@@ -196,6 +202,32 @@ function QuickTabBody({
   const handleCreate = useCallback(async (): Promise<void> => {
     await submitQuick(quickAgent)
   }, [quickAgent, submitQuick])
+  const autoCreateStartedRef = useRef(false)
+  useEffect(() => {
+    if (
+      !shouldAutoCreateGsdWorkspace({
+        autoCreate: modalData.autoCreate === true,
+        alreadyStarted: autoCreateStartedRef.current,
+        createDisabled,
+        initialAgent: modalData.initialAgent,
+        selectedAgent: quickAgent,
+        initialRecipeId: modalData.initialEphemeralVmRecipeId,
+        selectedRecipeId: cardProps.selectedEphemeralVmRecipeId
+      })
+    ) {
+      return
+    }
+    autoCreateStartedRef.current = true
+    void handleCreate()
+  }, [
+    cardProps.selectedEphemeralVmRecipeId,
+    createDisabled,
+    handleCreate,
+    modalData.autoCreate,
+    modalData.initialAgent,
+    modalData.initialEphemeralVmRecipeId,
+    quickAgent
+  ])
   // Why: Add Project layers over the composer as a nested dialog instead of
   // replacing it in the activeModal slot — closing the composer mid-flow (and
   // losing the typed name/prompt) was the old, abrupt behavior. Once opened it

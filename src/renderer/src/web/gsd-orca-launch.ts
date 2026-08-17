@@ -1,4 +1,7 @@
 import type { GsdOrcaLaunchConsumeResult } from '../../../shared/gsd-orca-launch-contract'
+import { toRuntimeExecutionHostId } from '../../../shared/execution-host'
+import { normalizeGitRemoteUrl } from '../../../shared/git-remote-identity'
+import type { Repo } from '../../../shared/repo-types'
 import type { Worktree } from '../../../shared/worktree/types'
 import { createWebWorkspaceLink } from '@/lib/web-workspace-link'
 import { WebRuntimeClient } from './web-runtime-client'
@@ -10,6 +13,32 @@ import {
 const PENDING_LAUNCH_KEY = 'orca.web.gsdLaunch.v1'
 const GSD_IDENTITY_LINK_REQUIRED_MESSAGE =
   'Link this Orca member to GSD before opening card worktrees.'
+
+export function resolveGsdControllerRepoId(args: {
+  repos: readonly Repo[]
+  controllerEnvironmentId: string
+  repositoryRemoteUrl: string
+}): string | null {
+  const controllerHostId = toRuntimeExecutionHostId(args.controllerEnvironmentId)
+  const targetKey = normalizeGitRemoteUrl(args.repositoryRemoteUrl)?.toLowerCase() ?? null
+  if (!targetKey) {
+    return null
+  }
+  const controllerRepos = args.repos.filter(
+    (repo) => repo.executionHostId === controllerHostId && !repo.connectionId
+  )
+  const match = controllerRepos.find((repo) => {
+    if (repo.gitRemoteIdentity?.canonicalKey.toLowerCase() === targetKey) {
+      return true
+    }
+    if (!repo.upstream) {
+      return false
+    }
+    const upstreamUrl = `https://${repo.upstream.host ?? 'github.com'}/${repo.upstream.owner}/${repo.upstream.repo}.git`
+    return normalizeGitRemoteUrl(upstreamUrl)?.toLowerCase() === targetKey
+  })
+  return match?.id ?? null
+}
 
 export function isGsdIdentityLinkRequired(error: unknown): boolean {
   return error instanceof Error && error.message === GSD_IDENTITY_LINK_REQUIRED_MESSAGE
@@ -23,6 +52,24 @@ export function shouldConsumePendingGsdLaunch(args: {
 }): boolean {
   return (
     args.hasMultiplayerAccount && args.hasPendingLaunch && args.appHydrated && !args.alreadyStarted
+  )
+}
+
+export function shouldAutoCreateGsdWorkspace(args: {
+  autoCreate: boolean
+  alreadyStarted: boolean
+  createDisabled: boolean
+  initialAgent?: string
+  selectedAgent: string | null
+  initialRecipeId?: string
+  selectedRecipeId: string | null
+}): boolean {
+  return (
+    args.autoCreate &&
+    !args.alreadyStarted &&
+    !args.createDisabled &&
+    (!args.initialAgent || args.selectedAgent === args.initialAgent) &&
+    (!args.initialRecipeId || args.selectedRecipeId === args.initialRecipeId)
   )
 }
 

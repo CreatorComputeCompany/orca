@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { isGsdIdentityLinkRequired, shouldConsumePendingGsdLaunch } from './gsd-orca-launch'
+import {
+  isGsdIdentityLinkRequired,
+  resolveGsdControllerRepoId,
+  shouldAutoCreateGsdWorkspace,
+  shouldConsumePendingGsdLaunch
+} from './gsd-orca-launch'
+import type { Repo } from '../../../shared/repo-types'
 
 describe('GSD Orca launch errors', () => {
   it('recognizes the one-time account-link requirement', () => {
@@ -29,5 +35,87 @@ describe('GSD Orca launch errors', () => {
         alreadyStarted: false
       })
     ).toBe(true)
+  })
+})
+
+describe('GSD controller repository resolution', () => {
+  const repo = (overrides: Partial<Repo> & Pick<Repo, 'id'>): Repo => ({
+    path: `/workspace/${overrides.id}`,
+    displayName: overrides.id,
+    badgeColor: '#000000',
+    addedAt: 1,
+    ...overrides
+  })
+
+  it('matches the requested remote only against controller-owned repos', () => {
+    expect(
+      resolveGsdControllerRepoId({
+        repos: [
+          repo({
+            id: 'child-emma',
+            executionHostId: 'runtime:child',
+            gitRemoteIdentity: {
+              canonicalKey: 'github.com/creatorcomputecompany/emma',
+              remoteName: 'origin',
+              remoteUrl: 'git@github.com:CreatorComputeCompany/emma.git'
+            }
+          }),
+          repo({
+            id: 'controller-emma',
+            executionHostId: 'runtime:controller',
+            gitRemoteIdentity: {
+              canonicalKey: 'github.com/creatorcomputecompany/emma',
+              remoteName: 'origin',
+              remoteUrl: 'https://github.com/CreatorComputeCompany/emma.git'
+            }
+          })
+        ],
+        controllerEnvironmentId: 'controller',
+        repositoryRemoteUrl: 'git@github.com:CreatorComputeCompany/emma.git'
+      })
+    ).toBe('controller-emma')
+  })
+
+  it('fails closed instead of falling back to an unrelated controller repo', () => {
+    expect(
+      resolveGsdControllerRepoId({
+        repos: [repo({ id: 'controller-other', executionHostId: 'runtime:controller' })],
+        controllerEnvironmentId: 'controller',
+        repositoryRemoteUrl: 'https://github.com/CreatorComputeCompany/emma.git'
+      })
+    ).toBeNull()
+  })
+})
+
+describe('GSD automatic workspace creation', () => {
+  it('waits for the requested agent and Boxd recipe before submitting', () => {
+    const base = {
+      autoCreate: true,
+      alreadyStarted: false,
+      createDisabled: false,
+      initialAgent: 'codex' as const,
+      initialRecipeId: 'boxd-fork'
+    }
+    expect(
+      shouldAutoCreateGsdWorkspace({
+        ...base,
+        selectedAgent: 'codex',
+        selectedRecipeId: null
+      })
+    ).toBe(false)
+    expect(
+      shouldAutoCreateGsdWorkspace({
+        ...base,
+        selectedAgent: 'codex',
+        selectedRecipeId: 'boxd-fork'
+      })
+    ).toBe(true)
+    expect(
+      shouldAutoCreateGsdWorkspace({
+        ...base,
+        selectedAgent: 'claude',
+        selectedRecipeId: 'boxd-fork'
+      })
+    ).toBe(false)
   })
 })

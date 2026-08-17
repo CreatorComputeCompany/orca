@@ -33,6 +33,7 @@ import {
   captureGsdLaunchFromLocation,
   consumePendingGsdLaunch,
   isGsdIdentityLinkRequired,
+  resolveGsdControllerRepoId,
   shouldConsumePendingGsdLaunch
 } from './gsd-orca-launch'
 const App = lazy(() => import('../App'))
@@ -115,9 +116,24 @@ function WebRoot(): React.JSX.Element {
         if (!launch) {
           return
         }
-        useAppStore.getState().openModal('new-workspace-composer', {
+        const state = useAppStore.getState()
+        const controllerEnvironment = readStoredWebRuntimeEnvironment()
+        const controllerRepoId = controllerEnvironment
+          ? resolveGsdControllerRepoId({
+              repos: state.repos,
+              controllerEnvironmentId: controllerEnvironment.id,
+              repositoryRemoteUrl: launch.repository.remoteUrl
+            })
+          : null
+        if (!controllerRepoId) {
+          throw new Error('Orca could not find this project on the workspace controller.')
+        }
+        state.openModal('new-workspace-composer', {
           prefilledName: launch.title,
+          initialRepoId: controllerRepoId,
           initialEphemeralVmRecipeId: 'boxd-fork',
+          initialAgent: launch.agent,
+          autoCreate: true,
           prefilledPrompt: [
             launch.description?.trim(),
             launch.cardUrl ? `GSD card: ${launch.cardUrl}` : null
