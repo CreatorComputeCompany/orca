@@ -1810,6 +1810,31 @@ async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList
       offer,
       previousEnvironment
     })
+    const previousEndpoint =
+      previousEnvironment?.endpoints.find(
+        (endpoint) => endpoint.id === previousEnvironment.preferredEndpointId
+      ) ?? previousEnvironment?.endpoints[0]
+    const pairingChanged = Boolean(
+      previousEnvironment &&
+      (!previousEndpoint ||
+        previousEndpoint.endpoint !== offer.endpoint ||
+        previousEndpoint.deviceToken !== offer.deviceToken ||
+        previousEndpoint.publicKeyB64 !== offer.publicKeyB64 ||
+        previousEnvironment.pairedDeviceId !== offer.pairedDeviceId)
+    )
+    if (pairingChanged) {
+      // Why: a sharing grant can replace an old controller/other-member token under the same
+      // environment id. The client cache is keyed by id, so saving the new offer alone leaves the
+      // revoked socket alive and the workspace opens as a black pane until a full page reload.
+      runtimeClients.get(runtime.runtimeEnvironmentId)?.close()
+      runtimeClients.delete(runtime.runtimeEnvironmentId)
+      manuallyDisconnectedEnvironmentIds.delete(runtime.runtimeEnvironmentId)
+    }
+    const previousPairingRevision =
+      previousEnvironment?.pairingRevision ?? previousEnvironment?.createdAt ?? 0
+    const pairingRevision = pairingChanged
+      ? Math.max(Date.now(), previousPairingRevision + 1)
+      : previousPairingRevision || discoveredEnvironment.createdAt
     const preferredEndpointId =
       previousEnvironment?.preferredEndpointId ?? `ws-${runtime.runtimeEnvironmentId}`
     saveAdditionalWebRuntimeEnvironment({
@@ -1819,6 +1844,7 @@ async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList
       updatedAt: previousEnvironment?.updatedAt ?? discoveredEnvironment.updatedAt,
       lastUsedAt: previousEnvironment?.lastUsedAt ?? discoveredEnvironment.lastUsedAt,
       runtimeId: previousEnvironment?.runtimeId ?? discoveredEnvironment.runtimeId,
+      pairingRevision,
       preferredEndpointId,
       endpoints: discoveredEnvironment.endpoints.map((endpoint, index) => ({
         ...endpoint,
