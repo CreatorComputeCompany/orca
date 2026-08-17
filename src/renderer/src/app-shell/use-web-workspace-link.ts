@@ -144,13 +144,16 @@ export function useWebWorkspaceLink(): void {
     if (!targetEnvironmentId || handledRef.current) {
       return
     }
+    // Why: persisted rows can render before the authoritative runtime/worktree refresh. Activating
+    // one during that window is immediately overwritten by hydration, leaving the URL resolved but
+    // the workspace blank. Wait for the same startup barrier used by the unavailable fallback.
+    if (!startupWorktreeRefreshCompleted) {
+      return
+    }
     const worktree = findWorktreeForWebWorkspaceReference(worktrees, targetEnvironmentId)
     if (worktree) {
       handledRef.current = true
       void openLinkedWorktree(worktree, targetEnvironmentId, targetSessionReference)
-      return
-    }
-    if (!startupWorktreeRefreshCompleted) {
       return
     }
     if (resolvingRef.current) {

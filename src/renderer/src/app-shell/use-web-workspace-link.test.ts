@@ -81,6 +81,7 @@ describe('useWebWorkspaceLink', () => {
   })
 
   it('opens an accessible running workspace as soon as its worktree is available', async () => {
+    mocks.state.startupWorktreeRefreshCompleted = true
     mocks.worktrees = [{ id: 'worktree-1', runtimeOwnerEnvironmentId: 'runtime-123' } as Worktree]
 
     renderHook(() => useWebWorkspaceLink())
@@ -97,6 +98,7 @@ describe('useWebWorkspaceLink', () => {
   })
 
   it('opens the exact synchronized terminal session when the URL names one', async () => {
+    mocks.state.startupWorktreeRefreshCompleted = true
     window.history.replaceState(
       null,
       '',
@@ -119,6 +121,17 @@ describe('useWebWorkspaceLink', () => {
       expect(mocks.state.setActiveTab).toHaveBeenCalledWith('web-terminal-host-tab-456')
     )
     expect(mocks.toastSuccess).toHaveBeenCalledWith('Opened Codex session')
+  })
+
+  it('does not activate a persisted workspace row before startup refresh completes', async () => {
+    mocks.worktrees = [
+      { id: 'stale-worktree', runtimeOwnerEnvironmentId: 'runtime-123' } as Worktree
+    ]
+
+    renderHook(() => useWebWorkspaceLink())
+
+    await new Promise((resolve) => window.setTimeout(resolve, 0))
+    expect(mocks.activateWorktreeFromSidebar).not.toHaveBeenCalled()
   })
 
   it('wakes and refreshes an accessible sleeping workspace before opening it', async () => {
