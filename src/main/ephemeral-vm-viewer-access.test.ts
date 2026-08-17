@@ -59,14 +59,29 @@ describe('ephemeral VM viewer access', () => {
       ok: true,
       result: {
         members: [
-          { grantKey: 'jake', worktreeId: 'wt-jake' },
+          {
+            grantKey: 'jake',
+            worktreeId: 'wt-jake',
+            activeTabId: 'terminal-2',
+            activeTabTitle: 'Terminal 2',
+            activeTabType: 'terminal'
+          },
           { grantKey: 'unknown', worktreeId: 'wt-unknown' }
         ]
       }
     })
 
     await expect(projectEphemeralVmLiveMembers({ userDataPath, runtime })).resolves.toMatchObject({
-      liveMembers: [{ key: 'jake', displayName: 'Jake', worktreeId: 'wt-jake' }]
+      liveMembers: [
+        {
+          key: 'jake',
+          displayName: 'Jake',
+          worktreeId: 'wt-jake',
+          activeTabId: 'terminal-2',
+          activeTabTitle: 'Terminal 2',
+          activeTabType: 'terminal'
+        }
+      ]
     })
     expect(sendRemoteRuntimeRequest).toHaveBeenCalledWith(
       expect.objectContaining({ deviceToken: 'manager-token' }),

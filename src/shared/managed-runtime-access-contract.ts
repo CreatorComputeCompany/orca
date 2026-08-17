@@ -25,5 +25,11 @@ export type ManagedRuntimeRevokeResult = {
 }
 
 export type ManagedRuntimePresenceResult = {
-  members: { grantKey: string; worktreeId: string }[]
+  members: {
+    grantKey: string
+    worktreeId: string
+    activeTabId?: string
+    activeTabTitle?: string
+    activeTabType?: 'terminal' | 'markdown' | 'file' | 'browser'
+  }[]
 }

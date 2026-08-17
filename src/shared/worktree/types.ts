@@ -73,7 +73,13 @@ export type Worktree = {
   /** Stable multiplayer account that owns the workspace across devices. */
   ownerMemberKey?: string
   /** Members currently viewing this worktree. */
-  liveMembers?: { key: string; displayName: string }[]
+  liveMembers?: {
+    key: string
+    displayName: string
+    activeTabId?: string
+    activeTabTitle?: string
+    activeTabType?: 'terminal' | 'markdown' | 'file' | 'browser'
+  }[]
   /** Team visibility projected from the controller-owned VM record. */
   ephemeralVmSharing?: EphemeralVmWorkspaceSharing
   /** Host-specific setup used to create/run this workspace. */

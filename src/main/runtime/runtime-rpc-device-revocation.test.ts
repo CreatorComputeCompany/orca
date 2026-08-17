@@ -233,6 +233,26 @@ describe('OrcaRuntimeRpcServer', () => {
       const viewerPairing = parsePairingCode(viewer.result.pairingUrl)!
       const viewerSocket = await authenticateMobileWs(viewer.result.pairingUrl)
       runtime.registerActiveWorktreePresence('test:jake:wt-1', viewer.result.deviceId, 'wt-1')
+      vi.spyOn(runtime, 'listMobileSessionTabs').mockResolvedValue({
+        worktree: 'wt-1',
+        publicationEpoch: 'presence',
+        snapshotVersion: 1,
+        activeGroupId: 'group-1',
+        activeTabId: 'terminal-2',
+        activeTabType: 'terminal',
+        tabs: [
+          {
+            type: 'terminal',
+            id: 'terminal-2',
+            title: 'Terminal 2',
+            parentTabId: 'terminal-2',
+            leafId: 'terminal-2',
+            status: 'ready',
+            terminal: 'term_2',
+            isActive: true
+          }
+        ]
+      })
 
       await expect(
         sendRemoteRuntimeRequest(
@@ -243,7 +263,17 @@ describe('OrcaRuntimeRpcServer', () => {
         )
       ).resolves.toMatchObject({
         ok: true,
-        result: { members: [{ grantKey: 'jake', worktreeId: 'wt-1' }] }
+        result: {
+          members: [
+            {
+              grantKey: 'jake',
+              worktreeId: 'wt-1',
+              activeTabId: 'terminal-2',
+              activeTabTitle: 'Terminal 2',
+              activeTabType: 'terminal'
+            }
+          ]
+        }
       })
 
       await expect(

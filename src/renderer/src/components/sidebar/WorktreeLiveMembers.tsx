@@ -1,6 +1,7 @@
 import React from 'react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { resolveLiveMembersForWorktree } from '@/lib/worktree-live-members'
+import { followLiveMemberTarget } from '@/lib/worktree-live-member-navigation'
 import { useAppStore } from '@/store'
 import type { Worktree } from '../../../../shared/worktree/types'
 
@@ -34,33 +35,51 @@ export function WorktreeLiveMembers({
   const visible = members.slice(0, 3)
   const names = members.map((member) => member.displayName).join(', ')
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          className="ml-auto inline-flex shrink-0 items-center pl-1"
-          aria-label={`${names} live in this workspace`}
-          data-worktree-live-members=""
-        >
-          {visible.map((member, index) => (
+    <span
+      className="ml-auto inline-flex shrink-0 items-center pl-1"
+      aria-label={`${names} live in this workspace`}
+      data-worktree-live-members=""
+    >
+      {visible.map((member, index) => (
+        <Tooltip key={member.key}>
+          <TooltipTrigger asChild>
             <span
-              key={member.key}
-              className={`relative inline-flex size-5 items-center justify-center rounded-full border-2 border-background text-[9px] font-bold uppercase shadow-sm ${index > 0 ? '-ml-1.5' : ''} ${avatarColor(member.key)}`}
+              role="button"
+              tabIndex={0}
+              className={`relative inline-flex size-5 cursor-pointer items-center justify-center rounded-full border-2 border-background text-[9px] font-bold uppercase shadow-sm ${index > 0 ? '-ml-1.5' : ''} ${avatarColor(member.key)}`}
+              aria-label={`Follow ${member.displayName}`}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                void followLiveMemberTarget(worktree, member)
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') {
+                  return
+                }
+                event.preventDefault()
+                event.stopPropagation()
+                void followLiveMemberTarget(worktree, member)
+              }}
             >
               {member.displayName.slice(0, 1)}
               <span className="absolute -right-0.5 -bottom-0.5 size-1.5 rounded-full border border-background bg-emerald-400" />
             </span>
-          ))}
-          {members.length > visible.length ? (
-            <span className="-ml-1.5 inline-flex size-5 items-center justify-center rounded-full border-2 border-background bg-muted text-[8px] font-semibold text-muted-foreground">
-              +{members.length - visible.length}
-            </span>
-          ) : null}
+          </TooltipTrigger>
+          <TooltipContent side="right" sideOffset={8}>
+            {member.activeTabTitle
+              ? `${member.displayName} · ${member.activeTabTitle} · click to follow`
+              : `${member.displayName} · click to follow`}
+          </TooltipContent>
+        </Tooltip>
+      ))}
+      {members.length > visible.length ? (
+        <span className="-ml-1.5 inline-flex size-5 items-center justify-center rounded-full border-2 border-background bg-muted text-[8px] font-semibold text-muted-foreground">
+          +{members.length - visible.length}
         </span>
-      </TooltipTrigger>
-      <TooltipContent side="right" sideOffset={8}>
-        {members.length === 1 ? `${names} is live here` : `${names} are live here`}
-      </TooltipContent>
-    </Tooltip>
+      ) : null}
+    </span>
   )
 }
 

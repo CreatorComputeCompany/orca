@@ -1899,7 +1899,16 @@ export class OrcaRuntimeRpcServer {
                   const connectedDeviceIds = new Set(
                     this.mobileSocketWiring?.getConnectedDeviceIds() ?? []
                   )
-                  const unique = new Map<string, { grantKey: string; worktreeId: string }>()
+                  const unique = new Map<
+                    string,
+                    {
+                      grantKey: string
+                      worktreeId: string
+                      activeTabId?: string
+                      activeTabTitle?: string
+                      activeTabType?: 'terminal' | 'markdown' | 'file' | 'browser'
+                    }
+                  >()
                   for (const presence of this.runtime.listActiveWorktreePresence()) {
                     if (!connectedDeviceIds.has(presence.deviceId)) {
                       continue
@@ -1908,9 +1917,22 @@ export class OrcaRuntimeRpcServer {
                       presence.deviceId
                     )?.managedRuntimeGrantKey
                     if (grantKey) {
+                      const activeTab = await this.runtime
+                        .listMobileSessionTabs(presence.worktreeId, presence.deviceId)
+                        .then((snapshot) =>
+                          snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId)
+                        )
+                        .catch(() => undefined)
                       unique.set(`${grantKey}\0${presence.worktreeId}`, {
                         grantKey,
-                        worktreeId: presence.worktreeId
+                        worktreeId: presence.worktreeId,
+                        ...(activeTab
+                          ? {
+                              activeTabId: activeTab.id,
+                              activeTabTitle: activeTab.title,
+                              activeTabType: activeTab.type
+                            }
+                          : {})
                       })
                     }
                   }

@@ -74,7 +74,10 @@ export const EphemeralVmRuntimeRecordSchema = z.object({
       z.object({
         key: z.string().min(1),
         displayName: z.string().min(1),
-        worktreeId: z.string().min(1)
+        worktreeId: z.string().min(1),
+        activeTabId: z.string().min(1).optional(),
+        activeTabTitle: z.string().min(1).optional(),
+        activeTabType: z.enum(['terminal', 'markdown', 'file', 'browser']).optional()
       })
     )
     .optional(),

@@ -2,11 +2,17 @@ type RuntimeLiveMember = {
   key: string
   displayName: string
   worktreeId: string
+  activeTabId?: string
+  activeTabTitle?: string
+  activeTabType?: 'terminal' | 'markdown' | 'file' | 'browser'
 }
 
 type WorktreeLiveMember = {
   key: string
   displayName: string
+  activeTabId?: string
+  activeTabTitle?: string
+  activeTabType?: 'terminal' | 'markdown' | 'file' | 'browser'
 }
 
 export function selectLiveMembersForWorktree(
@@ -15,7 +21,7 @@ export function selectLiveMembersForWorktree(
 ): WorktreeLiveMember[] {
   return (members ?? [])
     .filter((member) => member.worktreeId === worktreeId)
-    .map(({ key, displayName }) => ({ key, displayName }))
+    .map(({ worktreeId: _worktreeId, ...member }) => member)
 }
 
 export function resolveLiveMembersForWorktree(
