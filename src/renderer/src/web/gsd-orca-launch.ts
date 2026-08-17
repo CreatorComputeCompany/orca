@@ -15,6 +15,17 @@ export function isGsdIdentityLinkRequired(error: unknown): boolean {
   return error instanceof Error && error.message === GSD_IDENTITY_LINK_REQUIRED_MESSAGE
 }
 
+export function shouldConsumePendingGsdLaunch(args: {
+  hasMultiplayerAccount: boolean
+  hasPendingLaunch: boolean
+  appHydrated: boolean
+  alreadyStarted: boolean
+}): boolean {
+  return (
+    args.hasMultiplayerAccount && args.hasPendingLaunch && args.appHydrated && !args.alreadyStarted
+  )
+}
+
 export function captureGsdLaunchFromLocation(location: Location): boolean {
   const token = new URLSearchParams(location.hash.replace(/^#/, '')).get('launch')?.trim()
   if (!token) {

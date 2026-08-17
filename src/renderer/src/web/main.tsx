@@ -32,7 +32,8 @@ import { Button } from '@/components/ui/button'
 import {
   captureGsdLaunchFromLocation,
   consumePendingGsdLaunch,
-  isGsdIdentityLinkRequired
+  isGsdIdentityLinkRequired,
+  shouldConsumePendingGsdLaunch
 } from './gsd-orca-launch'
 const App = lazy(() => import('../App'))
 
@@ -77,6 +78,7 @@ function WebRoot(): React.JSX.Element {
   )
   const [showAccessLink, setShowAccessLink] = useState(false)
   const [showAccountLogin, setShowAccountLogin] = useState(false)
+  const appHydrated = useAppStore((state) => state.hydrationSucceeded)
   const gsdLaunchStarted = useRef(false)
 
   useEffect(() => {
@@ -97,7 +99,14 @@ function WebRoot(): React.JSX.Element {
   }, [initialSsoResult])
 
   useEffect(() => {
-    if (!hasMultiplayerAccount || !hasPendingGsdLaunch || gsdLaunchStarted.current) {
+    if (
+      !shouldConsumePendingGsdLaunch({
+        hasMultiplayerAccount,
+        hasPendingLaunch: hasPendingGsdLaunch,
+        appHydrated,
+        alreadyStarted: gsdLaunchStarted.current
+      })
+    ) {
       return
     }
     gsdLaunchStarted.current = true
@@ -125,7 +134,7 @@ function WebRoot(): React.JSX.Element {
         setSsoError(error instanceof Error ? error.message : String(error))
         setSsoState('failed')
       })
-  }, [hasMultiplayerAccount, hasPendingGsdLaunch])
+  }, [appHydrated, hasMultiplayerAccount, hasPendingGsdLaunch])
 
   if (ssoState === 'installing') {
     return <div className="min-h-dvh bg-background" />
