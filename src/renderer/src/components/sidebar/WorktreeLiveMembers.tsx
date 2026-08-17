@@ -1,6 +1,6 @@
 import React from 'react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { selectLiveMembersForWorktree } from '@/lib/worktree-live-members'
+import { resolveLiveMembersForWorktree } from '@/lib/worktree-live-members'
 import { useAppStore } from '@/store'
 import type { Worktree } from '../../../../shared/worktree/types'
 
@@ -23,8 +23,11 @@ export function WorktreeLiveMembers({
         (environment) => environment.id === worktree.runtimeOwnerEnvironmentId
       )?.workspaceLiveMembers
   )
-  const members =
-    worktree.liveMembers ?? selectLiveMembersForWorktree(environmentMembers, worktree.id)
+  const members = resolveLiveMembersForWorktree(
+    environmentMembers,
+    worktree.liveMembers,
+    worktree.id
+  )
   if (members.length === 0) {
     return null
   }
