@@ -70,6 +70,10 @@ const CONNECT_TIMEOUT_MS = 12_000
 const HANDSHAKE_TIMEOUT_MS = 10_000
 const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000, 15_000]
 const SHARED_CONNECTION_SUBSCRIPTION_METHODS = new Set(['files.watch'])
+const SHARED_CONTROL_SUBSCRIPTION_METHODS = new Set([
+  'session.tabs.subscribe',
+  'session.tabs.subscribeAll'
+])
 // Why: browser WebSockets hide pings/pongs, so a half-open socket stays OPEN with no onclose/onerror — poll liveness in-app.
 const HEARTBEAT_INTERVAL_MS = 10_000
 const HEARTBEAT_IDLE_MS = 25_000
@@ -78,6 +82,26 @@ const HEARTBEAT_PROBE_GRACE_MS = 20_000
 // encrypted RPC frame proves liveness at the application layer even while terminal frames keep
 // arriving and the socket never appears idle to the browser.
 const HEARTBEAT_APPLICATION_KEEPALIVE_MS = 20_000
+
+function buildSharedControlSubscriptionTeardown(
+  method: string,
+  params: unknown,
+  subscriptionId: string
+): { method: string; params: unknown } | null {
+  if (method === 'session.tabs.subscribe') {
+    return {
+      method: 'session.tabs.unsubscribe',
+      params:
+        typeof params === 'object' && params !== null
+          ? { ...params, subscriptionId }
+          : { subscriptionId }
+    }
+  }
+  if (method === 'session.tabs.subscribeAll') {
+    return { method: 'session.tabs.unsubscribeAll', params: { subscriptionId } }
+  }
+  return null
+}
 
 export class WebRuntimeClient {
   private ws: WebSocket | null = null
@@ -139,6 +163,14 @@ export class WebRuntimeClient {
     if (SHARED_CONNECTION_SUBSCRIPTION_METHODS.has(method)) {
       // Why: sharing the main socket for file watches avoids exhausting the server's WebSocket connection cap.
       return this.subscribeSharedFileWatch(params, callbacks, options)
+    }
+    if (SHARED_CONTROL_SUBSCRIPTION_METHODS.has(method)) {
+      // Why: every mirrored environment owns both an inventory and active-worktree subscription.
+      // Dedicated sockets multiply that fanout across multiplayer browsers and exhaust reverse
+      // proxy connection budgets, making unrelated workspaces disappear together. These streams
+      // are JSON-only, so safely multiplex them on the environment's existing control socket while
+      // binary terminal/screencast streams retain their dedicated routing socket.
+      return this.subscribeOnCurrentConnection(method, params, callbacks, options)
     }
     const client = new WebRuntimeClient(this.pairing)
     this.childClients.add(client)
@@ -342,7 +374,9 @@ export class WebRuntimeClient {
       unsubscribe: () => {
         this.subscriptions.delete(subscription.id)
         // Tell the server to reap its keyed cleanup before the socket closes; best-effort (a closed socket already reaps).
-        const teardown = options?.buildUnsubscribe?.(params)
+        const teardown =
+          options?.buildUnsubscribe?.(params) ??
+          buildSharedControlSubscriptionTeardown(method, params, subscription.id)
         if (teardown) {
           this.sendEncrypted({
             id: this.nextId(),
