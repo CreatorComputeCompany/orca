@@ -202,6 +202,7 @@ export const MAX_CLIPBOARD_IMAGE_PIXELS = CLIPBOARD_IMAGE_MAX_PIXELS
 export const CLIPBOARD_IMAGE_UPLOAD_CHUNK_BASE64_CHARS = 512 * 1024
 export const CLIPBOARD_IMAGE_SINGLE_FRAME_FALLBACK_BASE64_CHARS = 256 * 1024
 const CLIPBOARD_IMAGE_SAVE_TIMEOUT_MS = 30_000
+const EPHEMERAL_VM_PROVISION_TIMEOUT_MS = 10 * 60_000
 
 let activeEnvironment: StoredWebRuntimeEnvironment | null = readStoredWebRuntimeEnvironment()
 let worktreeVisibilityDefaultsRuntimeEnvironmentId: string | null = null
@@ -1499,7 +1500,8 @@ function createEphemeralVmApi(): NonNullable<Partial<PreloadApi>['ephemeralVm']>
       >
       const result = await callRuntimeResult<ProvisionResult & { pairingCode?: string }>(
         'ephemeralVm.provision',
-        args
+        args,
+        EPHEMERAL_VM_PROVISION_TIMEOUT_MS
       )
       if (!result.ok || result.connectionType !== 'orca-server') {
         return result
