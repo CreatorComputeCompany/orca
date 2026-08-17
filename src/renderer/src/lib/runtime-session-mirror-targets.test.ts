@@ -61,6 +61,31 @@ describe('getReachableRuntimeSessionMirrorTargets', () => {
     ).toEqual([])
   })
 
+  it('subscribes to controller-authorized workspace VMs before status hydration settles', () => {
+    expect(
+      getReachableRuntimeSessionMirrorTargets({
+        settings: { activeRuntimeEnvironmentId: null },
+        runtimeEnvironments: [
+          {
+            id: 'workspace-vm',
+            createdAt: 300,
+            pairingRevision: 301,
+            runtimeId: null,
+            source: 'ephemeral-vm'
+          }
+        ],
+        runtimeStatusByEnvironmentId: new Map()
+      })
+    ).toEqual([
+      {
+        environmentId: 'workspace-vm',
+        runtimeId: 'ephemeral:workspace-vm',
+        connectionGeneration: 0,
+        pairingRevision: 301
+      }
+    ])
+  })
+
   it('uses creation time for environments paired before pairing revisions existed', () => {
     expect(
       getReachableRuntimeSessionMirrorTargets({
