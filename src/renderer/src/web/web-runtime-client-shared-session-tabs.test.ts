@@ -35,14 +35,22 @@ describe('web runtime shared session-tab subscriptions', () => {
 
   it.each([
     {
+      method: 'runtime.clientEvents.subscribe',
+      params: null,
+      unsubscribeMethod: 'runtime.clientEvents.unsubscribe',
+      remoteSubscriptionId: 'runtime-client-events-connection-1'
+    },
+    {
       method: 'session.tabs.subscribe',
       params: { worktree: 'id:wt-1' },
-      unsubscribeMethod: 'session.tabs.unsubscribe'
+      unsubscribeMethod: 'session.tabs.unsubscribe',
+      remoteSubscriptionId: null
     },
     {
       method: 'session.tabs.subscribeAll',
       params: {},
-      unsubscribeMethod: 'session.tabs.unsubscribeAll'
+      unsubscribeMethod: 'session.tabs.unsubscribeAll',
+      remoteSubscriptionId: null
     }
   ])('multiplexes $method on the control socket and cleans it up explicitly', async (args) => {
     const client = new WebRuntimeClient({
@@ -66,11 +74,21 @@ describe('web runtime shared session-tab subscriptions', () => {
 
     expect(internals.childClients.size).toBe(0)
     expect(subscribeFrame?.id).toBeTruthy()
+    if (args.remoteSubscriptionId) {
+      const subscriptions = (
+        client as unknown as {
+          subscriptions: Map<string, { remoteSubscriptionId?: string }>
+        }
+      ).subscriptions
+      subscriptions.get(subscribeFrame!.id!)!.remoteSubscriptionId = args.remoteSubscriptionId
+    }
     subscription.unsubscribe()
     expect(sent).toContainEqual(
       expect.objectContaining({
         method: args.unsubscribeMethod,
-        params: expect.objectContaining({ subscriptionId: subscribeFrame?.id })
+        params: expect.objectContaining({
+          subscriptionId: args.remoteSubscriptionId ?? subscribeFrame?.id
+        })
       })
     )
     client.close({ notifySubscriptions: false })

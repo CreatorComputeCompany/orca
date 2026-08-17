@@ -52,6 +52,7 @@ type RuntimeSubscription = {
   params: unknown
   callbacks: SubscriptionCallbacks
   needsReplay: boolean
+  remoteSubscriptionId?: string
 }
 
 export type WebRuntimeSubscriptionHandle = {
@@ -71,6 +72,7 @@ const HANDSHAKE_TIMEOUT_MS = 10_000
 const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000, 15_000]
 const SHARED_CONNECTION_SUBSCRIPTION_METHODS = new Set(['files.watch'])
 const SHARED_CONTROL_SUBSCRIPTION_METHODS = new Set([
+  'runtime.clientEvents.subscribe',
   'session.tabs.subscribe',
   'session.tabs.subscribeAll'
 ])
@@ -86,8 +88,15 @@ const HEARTBEAT_APPLICATION_KEEPALIVE_MS = 20_000
 function buildSharedControlSubscriptionTeardown(
   method: string,
   params: unknown,
-  subscriptionId: string
+  subscriptionId: string,
+  remoteSubscriptionId?: string
 ): { method: string; params: unknown } | null {
+  if (method === 'runtime.clientEvents.subscribe' && remoteSubscriptionId) {
+    return {
+      method: 'runtime.clientEvents.unsubscribe',
+      params: { subscriptionId: remoteSubscriptionId }
+    }
+  }
   if (method === 'session.tabs.subscribe') {
     return {
       method: 'session.tabs.unsubscribe',
@@ -279,7 +288,7 @@ export class WebRuntimeClient {
       ...callbacks,
       onResponse: (response) => {
         transportInterrupted = false
-        const nextSubscriptionId = getFileWatchSubscriptionId(response)
+        const nextSubscriptionId = getResponseSubscriptionId(response)
         if (nextSubscriptionId) {
           remoteSubscriptionId = nextSubscriptionId
           if (stopped) {
@@ -376,7 +385,12 @@ export class WebRuntimeClient {
         // Tell the server to reap its keyed cleanup before the socket closes; best-effort (a closed socket already reaps).
         const teardown =
           options?.buildUnsubscribe?.(params) ??
-          buildSharedControlSubscriptionTeardown(method, params, subscription.id)
+          buildSharedControlSubscriptionTeardown(
+            method,
+            params,
+            subscription.id,
+            subscription.remoteSubscriptionId
+          )
         if (teardown) {
           this.sendEncrypted({
             id: this.nextId(),
@@ -590,6 +604,10 @@ export class WebRuntimeClient {
     const subscription = this.subscriptions.get(response.id)
     if (subscription) {
       const subscriptionResponse = response as RuntimeRpcResponse<unknown>
+      const remoteSubscriptionId = getResponseSubscriptionId(subscriptionResponse)
+      if (remoteSubscriptionId) {
+        subscription.remoteSubscriptionId = remoteSubscriptionId
+      }
       // Why: setup failures must be evicted before callbacks so reconnect cannot replay them.
       if (subscriptionResponse.ok === false) {
         this.subscriptions.delete(response.id)
@@ -759,6 +777,7 @@ export class WebRuntimeClient {
       this.subscriptions.delete(subscription.id)
       subscription.id = this.nextId()
       subscription.needsReplay = false
+      subscription.remoteSubscriptionId = undefined
       this.subscriptions.set(subscription.id, subscription)
       if (
         this.sendEncrypted({
@@ -910,7 +929,7 @@ function isRuntimeFailureResponse(
   )
 }
 
-function getFileWatchSubscriptionId(response: RuntimeRpcResponse<unknown>): string | null {
+function getResponseSubscriptionId(response: RuntimeRpcResponse<unknown>): string | null {
   if (!response.ok) {
     return null
   }
