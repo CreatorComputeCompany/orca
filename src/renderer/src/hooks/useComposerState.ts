@@ -936,8 +936,9 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   // Why: key on repo id, not the repo object — updateRepo replaces it by reference and would re-run this effect, wiping the user's chosen recipe.
   const selectedRecipeRepoId = selectedRepo?.id ?? null
   const selectedRecipeRepoConnectionId = selectedRepo?.connectionId ?? null
-  // Why: gate recipe probing on the experimental toggle, since discovery can surface setup errors for a hidden feature.
-  const ephemeralVmsEnabled = settings?.experimentalEphemeralVms === true
+  // Why: the hosted web app provisions isolated workspace VMs as its primary execution model and
+  // cannot rely on a desktop-local experimental preference surviving account sign-in.
+  const ephemeralVmsEnabled = isWebClientLocation() || settings?.experimentalEphemeralVms === true
   const {
     recipes: ephemeralVmRecipes,
     selectedRecipeId: selectedEphemeralVmRecipeId,

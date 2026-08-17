@@ -865,13 +865,15 @@ describe('useComposerState host-context boundaries', () => {
     expect(section).toContain('if (!selected)')
   })
 
-  it('gates per-workspace environment recipe discovery behind the experimental setting', () => {
+  it('enables environment recipes for web clients and opted-in desktop clients', () => {
     const recipeLoadSection = sourceBetween(
       HOOK_SOURCE,
       'const ephemeralVmsEnabled',
       'const selectedRepoConnectionId'
     )
-    expect(recipeLoadSection).toContain('settings?.experimentalEphemeralVms === true')
+    expect(recipeLoadSection).toContain(
+      'isWebClientLocation() || settings?.experimentalEphemeralVms === true'
+    )
     expect(recipeLoadSection).toContain('useEphemeralVmRecipeOptions')
     expect(recipeLoadSection).toContain('enabled: ephemeralVmsEnabled')
     expect(RECIPE_OPTIONS_SOURCE).toContain('args.enabled &&')
