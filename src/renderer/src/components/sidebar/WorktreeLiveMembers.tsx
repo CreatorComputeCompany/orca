@@ -22,15 +22,11 @@ export function WorktreeLiveMembers({
       (environment) => environment.id === worktree.runtimeOwnerEnvironmentId
     )
   )
-  const hiddenOwnerKey =
-    environment && environment.workspaceViewerMemberKey === environment.workspaceOwnerMemberKey
-      ? environment.workspaceViewerMemberKey
-      : undefined
   const members = resolveLiveMembersForWorktree(
     environment?.workspaceLiveMembers,
     worktree.liveMembers,
     worktree.id,
-    hiddenOwnerKey
+    environment?.workspaceViewerMemberKey
   )
   if (members.length === 0) {
     return null

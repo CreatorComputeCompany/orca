@@ -40,7 +40,7 @@ describe('worktree live members', () => {
     ).toEqual([{ key: 'jake', displayName: 'Jake' }])
   })
 
-  it('hides the current owner while preserving visiting collaborators', () => {
+  it('hides the current viewer while preserving other collaborators', () => {
     const members = [
       { key: 'steven', displayName: 'Steven', worktreeId: 'worktree-a' },
       { key: 'jake', displayName: 'Jake', worktreeId: 'worktree-a' }
