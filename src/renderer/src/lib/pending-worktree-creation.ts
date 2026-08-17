@@ -13,6 +13,7 @@ import type {
 import type { AgentStartupPlan } from '@/lib/tui-agent-startup'
 import type { AgentStartedTelemetry } from '@/lib/worktree-activation'
 import type { TaskSourceContext, WorkspaceRunContext } from '../../../shared/task-source-context'
+import type { GsdOrcaLaunchAttachment } from '../../../shared/gsd-orca-launch-contract'
 
 /** Two-phase status reported by the main process while a worktree is created.
  *  `preparing` covers renderer-side preflight before `createWorktree` starts;
@@ -58,6 +59,12 @@ export type WorktreeCreationRequest = {
     recipeId: string
     projectId: string
     checkoutMode?: 'orca-worktree' | 'provisioned-root'
+  }
+  /** One-time GSD launch context. Attachments are written after worktree creation
+   *  and before agent startup, then the resulting workspace is linked back. */
+  gsdLaunch?: {
+    token: string
+    attachments: GsdOrcaLaunchAttachment[]
   }
   /** Captured from the repo/run owner at submit time so Retry keeps the same
    *  local-vs-runtime progress behavior even if the focused runtime changes. */

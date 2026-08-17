@@ -1,6 +1,5 @@
 import { toast } from 'sonner'
 import { useAppStore } from '@/store'
-import { TUI_AGENT_CONFIG } from '../../../shared/tui-agent-config'
 import {
   activateAndRevealWorktree,
   ensureWorktreeHasInitialTerminal,
@@ -32,6 +31,9 @@ import {
   getInitialWorktreeCreationPhase,
   getWorktreeCreationIndeterminate
 } from '@/lib/worktree-creation-flow-startup'
+import { linkPendingGsdLaunch } from '@/web/gsd-orca-launch'
+import { prepareGsdLaunchWorktree } from '@/lib/gsd-worktree-creation'
+import { preflightWorktreeAgentTrust } from '@/lib/worktree-creation-agent-trust'
 
 type ContinueBackgroundWorktreeCreationOptions = {
   revealCreationSurface?: boolean
@@ -66,33 +68,6 @@ function revealPendingCreation(
   // router), so force it active so the panel is what fills the content area.
   store.setActiveView('terminal')
   store.setSidebarOpen(true)
-}
-
-async function preflightAgentTrust(
-  request: WorktreeCreationRequest,
-  path: string,
-  connectionId?: string | null
-): Promise<void> {
-  // Why: trust-gated agents (cursor-agent, copilot) consume the bracketed paste
-  // as menu input on first launch. Pre-write the trust artifact before any
-  // terminal spawns. Best-effort — the worktree already exists, so a failure
-  // here must not strand it.
-  if (!request.agent || !window.api.agentTrust?.markTrusted) {
-    return
-  }
-  const preflight = TUI_AGENT_CONFIG[request.agent].preflightTrust
-  if (!preflight) {
-    return
-  }
-  try {
-    await window.api.agentTrust.markTrusted({
-      preset: preflight,
-      workspacePath: path,
-      ...(connectionId ? { connectionId } : {})
-    })
-  } catch {
-    // Best-effort: continue with launch.
-  }
 }
 
 async function executeWorktreeCreation(
@@ -186,6 +161,20 @@ async function executeWorktreeCreation(
   }
   await attachEphemeralVmRuntimeToWorkspace(preparedRequest, worktree.id)
 
+  if (preparedRequest.gsdLaunch?.attachments.length) {
+    const gsdPreparationError = await prepareGsdLaunchWorktree(preparedRequest, worktree.id)
+    if (gsdPreparationError) {
+      useAppStore.getState().updatePendingWorktreeCreation(creationId, {
+        status: 'error',
+        error: gsdPreparationError
+      })
+      if (!isPendingCreationSurfaceVisible(creationId)) {
+        toast.error(gsdPreparationError)
+      }
+      return
+    }
+  }
+
   const backendSpawned = result.startupTerminal?.spawned === true
   if (preparedRequest.startupPlan && !backendSpawned && !preparedRequest.startupPlan.launchToken) {
     // Why: delayed delivery must target the exact pane spawned from this queued
@@ -197,7 +186,7 @@ async function executeWorktreeCreation(
   if (worktree.path) {
     const repoConnectionId =
       useAppStore.getState().repos.find((repo) => repo.id === worktree.repoId)?.connectionId ?? null
-    await preflightAgentTrust(preparedRequest, worktree.path, repoConnectionId)
+    await preflightWorktreeAgentTrust(preparedRequest, worktree.path, repoConnectionId)
   }
 
   // `createWorktree` already inserted the real worktree row. Leaving for an app
@@ -256,6 +245,11 @@ async function executeWorktreeCreation(
       worktreeId: worktree.id,
       primaryTabId,
       startup: preparedRequest.startupPlan
+    })
+  }
+  if (preparedRequest.gsdLaunch) {
+    void linkPendingGsdLaunch(worktree, preparedRequest.gsdLaunch.token).catch((error) => {
+      console.error('[gsd-launch] Failed to link created workspace:', error)
     })
   }
   if (shouldActivateOnCompletion && !preparedRequest.suppressTerminalFocusOnCompletion) {

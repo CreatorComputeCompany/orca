@@ -1,4 +1,7 @@
-import type { GsdOrcaLaunchConsumeResult } from '../../../shared/gsd-orca-launch-contract'
+import type {
+  GsdOrcaLaunchAttachment,
+  GsdOrcaLaunchConsumeResult
+} from '../../../shared/gsd-orca-launch-contract'
 import { toRuntimeExecutionHostId } from '../../../shared/execution-host'
 import { normalizeGitRemoteUrl } from '../../../shared/git-remote-identity'
 import type { Repo } from '../../../shared/repo-types'
@@ -13,6 +16,19 @@ import {
 const PENDING_LAUNCH_KEY = 'orca.web.gsdLaunch.v1'
 const GSD_IDENTITY_LINK_REQUIRED_MESSAGE =
   'Link this Orca member to GSD before opening card worktrees.'
+const GSD_ATTACHMENT_CHUNK_BASE64_LENGTH = 512 * 1024
+const GSD_ATTACHMENT_DIRECTORY = '.gsd/attachments'
+
+export function getGsdAttachmentRelativePath(attachment: GsdOrcaLaunchAttachment): string {
+  const safePublicId = attachment.publicId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)
+  const safeFilename = attachment.filename
+    .normalize('NFKC')
+    .replace(/[/\\\0]/g, '_')
+    .replace(/^[._-]+/, '')
+    .trim()
+    .slice(0, 160)
+  return `${GSD_ATTACHMENT_DIRECTORY}/${safePublicId}-${safeFilename || 'attachment'}`
+}
 
 export function resolveGsdControllerRepoId(args: {
   repos: readonly Repo[]
@@ -46,15 +62,61 @@ export function buildGsdLaunchPrompt(launch: GsdOrcaLaunchConsumeResult): string
     .replace(/<[^>]*>/g, '')
     .replace(/&(?:nbsp|#160);/gi, '')
     .trim()
+  const attachmentList = launch.attachments.length
+    ? [
+        'Attachments copied into this worktree:',
+        ...launch.attachments.map(
+          (attachment) =>
+            `- \`${getGsdAttachmentRelativePath(attachment)}\` (${attachment.contentType}, ${attachment.size} bytes)`
+        )
+      ].join('\n')
+    : null
   return [
     `# ${launch.title}`,
     visibleDescription ? description : null,
     launch.cardUrl ? `GSD card: ${launch.cardUrl}` : `GSD card: ${launch.cardPublicId}`,
     `Board: ${launch.boardName}`,
-    `List: ${launch.listName}`
+    `List: ${launch.listName}`,
+    attachmentList
   ]
     .filter(Boolean)
     .join('\n\n')
+}
+
+export async function materializeGsdLaunchAttachments(args: {
+  environmentId: string
+  worktreeId: string
+  attachments: readonly GsdOrcaLaunchAttachment[]
+}): Promise<void> {
+  for (const attachment of args.attachments) {
+    const relativePath = getGsdAttachmentRelativePath(attachment)
+    const chunks = Math.max(
+      1,
+      Math.ceil(attachment.contentBase64.length / GSD_ATTACHMENT_CHUNK_BASE64_LENGTH)
+    )
+    for (let index = 0; index < chunks; index += 1) {
+      const contentBase64 = attachment.contentBase64.slice(
+        index * GSD_ATTACHMENT_CHUNK_BASE64_LENGTH,
+        (index + 1) * GSD_ATTACHMENT_CHUNK_BASE64_LENGTH
+      )
+      const response = await window.api.runtimeEnvironments.call({
+        selector: args.environmentId,
+        method: 'files.writeBase64Chunk',
+        params: {
+          worktree: args.worktreeId,
+          relativePath,
+          contentBase64,
+          append: index > 0
+        },
+        timeoutMs: 30_000
+      })
+      if (!response.ok) {
+        throw new Error(
+          `Could not copy GSD attachment ${attachment.filename}: ${response.error.message}`
+        )
+      }
+    }
+  }
 }
 
 export function isGsdIdentityLinkRequired(error: unknown): boolean {
@@ -110,8 +172,11 @@ export async function consumePendingGsdLaunch(): Promise<GsdOrcaLaunchConsumeRes
   })
 }
 
-export async function linkPendingGsdLaunch(worktree: Worktree): Promise<void> {
-  const token = sessionStorage.getItem(PENDING_LAUNCH_KEY)
+export async function linkPendingGsdLaunch(
+  worktree: Worktree,
+  launchToken = sessionStorage.getItem(PENDING_LAUNCH_KEY)
+): Promise<void> {
+  const token = launchToken
   const runtimeEnvironmentId = worktree.runtimeOwnerEnvironmentId
   if (!token || !runtimeEnvironmentId) {
     return
@@ -122,7 +187,9 @@ export async function linkPendingGsdLaunch(worktree: Worktree): Promise<void> {
     worktreeId: worktree.id,
     url: createWebWorkspaceLink(window.location, runtimeEnvironmentId)
   })
-  sessionStorage.removeItem(PENDING_LAUNCH_KEY)
+  if (sessionStorage.getItem(PENDING_LAUNCH_KEY) === token) {
+    sessionStorage.removeItem(PENDING_LAUNCH_KEY)
+  }
 }
 
 export function pendingGsdLaunchToken(): string | null {

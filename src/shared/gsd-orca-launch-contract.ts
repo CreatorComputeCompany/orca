@@ -18,6 +18,15 @@ export type GsdOrcaLaunchConsumeResult = {
     remoteUrl: string
   }
   agent: 'claude' | 'codex'
+  attachments: GsdOrcaLaunchAttachment[]
+}
+
+export type GsdOrcaLaunchAttachment = {
+  publicId: string
+  filename: string
+  contentType: string
+  size: number
+  contentBase64: string
 }
 
 export const GsdOrcaLaunchLinkParamsSchema = z.object({

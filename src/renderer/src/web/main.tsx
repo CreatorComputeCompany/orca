@@ -34,6 +34,7 @@ import {
   captureGsdLaunchFromLocation,
   consumePendingGsdLaunch,
   isGsdIdentityLinkRequired,
+  pendingGsdLaunchToken,
   resolveGsdControllerRepoId,
   shouldConsumePendingGsdLaunch
 } from './gsd-orca-launch'
@@ -136,6 +137,10 @@ function WebRoot(): React.JSX.Element {
           initialAgent: launch.agent,
           autoCreate: true,
           prefilledPrompt: buildGsdLaunchPrompt(launch),
+          gsdLaunch: {
+            token: pendingGsdLaunchToken()!,
+            attachments: launch.attachments
+          },
           telemetrySource: 'unknown'
         })
       })

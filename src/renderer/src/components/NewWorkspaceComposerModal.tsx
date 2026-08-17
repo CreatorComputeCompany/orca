@@ -12,11 +12,7 @@ import NewWorkspaceComposerCard from '@/components/NewWorkspaceComposerCard'
 import AgentSettingsDialog from '@/components/agent/AgentSettingsDialog'
 import type { AddRepoDialogHostedController } from '@/components/sidebar/use-add-repo-hosted-controller'
 import { useComposerState } from '@/hooks/useComposerState'
-import {
-  linkPendingGsdLaunch,
-  pendingGsdLaunchToken,
-  shouldAutoCreateGsdWorkspace
-} from '@/web/gsd-orca-launch'
+import { shouldAutoCreateGsdWorkspace } from '@/web/gsd-orca-launch'
 import {
   pickQuickWorkspaceAgent,
   resolveQuickWorkspaceAgentSelection
@@ -29,6 +25,7 @@ import type { TuiAgent } from '../../../shared/tui-agent'
 import type { WorkspaceSource as WorkspaceCreateTelemetrySource } from '../../../shared/workspace-source'
 import type { WorkspaceStatus } from '../../../shared/worktree/types'
 import type { TaskSourceContext } from '../../../shared/task-source-context'
+import type { GsdOrcaLaunchAttachment } from '../../../shared/gsd-orca-launch-contract'
 import { translate } from '@/i18n/i18n'
 import { getWorkspaceComposerInitialFocusTarget } from '@/lib/workspace-composer-initial-focus'
 import { getFolderWorkspacePrimaryActionLabel } from '@/components/sidebar/folder-workspace-composer-helpers'
@@ -46,6 +43,7 @@ type ComposerModalData = {
   initialEphemeralVmRecipeId?: string
   initialAgent?: TuiAgent
   autoCreate?: boolean
+  gsdLaunch?: { token: string; attachments: GsdOrcaLaunchAttachment[] }
   initialProjectGroupId?: string
   linkedWorkItem?: LinkedWorkItemSummary | null
   initialGitHubWorkItem?: GitHubWorkItem | null
@@ -146,15 +144,11 @@ function QuickTabBody({
     initialEphemeralVmRecipeId: modalData.initialEphemeralVmRecipeId,
     initialProjectGroupId: modalData.initialProjectGroupId,
     initialWorkspaceStatus: modalData.initialWorkspaceStatus,
+    initialGsdLaunch: modalData.gsdLaunch,
     ...(modalData.initialBaseBranch ? { initialBaseBranch: modalData.initialBaseBranch } : {}),
     persistDraft: false,
-    onCreated: (worktree) => {
+    onCreated: () => {
       onClose()
-      if (worktree && pendingGsdLaunchToken()) {
-        void linkPendingGsdLaunch(worktree).catch((error) => {
-          console.error('[gsd-launch] Failed to link created workspace:', error)
-        })
-      }
     },
     isSubmissionCancelled,
     ...(modalData.telemetrySource ? { telemetrySource: modalData.telemetrySource } : {}),

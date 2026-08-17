@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   buildGsdLaunchPrompt,
   isGsdIdentityLinkRequired,
+  materializeGsdLaunchAttachments,
   resolveGsdControllerRepoId,
   shouldAutoCreateGsdWorkspace,
   shouldConsumePendingGsdLaunch
@@ -50,7 +51,8 @@ describe('GSD agent prompt', () => {
     listName: 'Backlog',
     cardUrl: 'https://gsd.example.com/cards/card-1',
     repository: { name: 'emma', remoteUrl: 'https://github.com/example/emma.git' },
-    agent: 'codex'
+    agent: 'codex',
+    attachments: []
   }
 
   it('includes task context while dropping an empty rich-text description', () => {
@@ -68,6 +70,57 @@ describe('GSD agent prompt', () => {
     expect(
       buildGsdLaunchPrompt({ ...launch, description: '<p>Preserve the head route.</p>' })
     ).toContain('<p>Preserve the head route.</p>')
+  })
+
+  it('lists the local paths of copied card attachments', () => {
+    expect(
+      buildGsdLaunchPrompt({
+        ...launch,
+        attachments: [
+          {
+            publicId: 'file-1',
+            filename: '../routing notes.md',
+            contentType: 'text/markdown',
+            size: 42,
+            contentBase64: 'aGVsbG8='
+          }
+        ]
+      })
+    ).toContain('`.gsd/attachments/file-1-routing notes.md` (text/markdown, 42 bytes)')
+  })
+})
+
+describe('GSD attachment materialization', () => {
+  it('writes the attachment to the child VM selected for the new worktree', async () => {
+    const call = vi.fn().mockResolvedValue({ ok: true, result: { ok: true } })
+    vi.stubGlobal('window', { api: { runtimeEnvironments: { call } } })
+
+    await materializeGsdLaunchAttachments({
+      environmentId: 'child-vm',
+      worktreeId: 'worktree-1',
+      attachments: [
+        {
+          publicId: 'file-1',
+          filename: 'routing.md',
+          contentType: 'text/markdown',
+          size: 5,
+          contentBase64: 'aGVsbG8='
+        }
+      ]
+    })
+
+    expect(call).toHaveBeenCalledWith({
+      selector: 'child-vm',
+      method: 'files.writeBase64Chunk',
+      params: {
+        worktree: 'worktree-1',
+        relativePath: '.gsd/attachments/file-1-routing.md',
+        contentBase64: 'aGVsbG8=',
+        append: false
+      },
+      timeoutMs: 30_000
+    })
+    vi.unstubAllGlobals()
   })
 })
 
