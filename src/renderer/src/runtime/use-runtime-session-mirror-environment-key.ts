@@ -11,6 +11,7 @@ export type RuntimeSessionMirrorTargetInputs = Pick<
   | 'detectedWorktreesByRepo'
   | 'projectGroups'
   | 'restoredRuntimeHostIdByWorkspaceSessionKey'
+  | 'activeWorkspaceExecutionHostId'
   | 'runtimeEnvironments'
   | 'runtimeStatusByEnvironmentId'
 > & {
@@ -22,6 +23,7 @@ export function selectRuntimeSessionMirrorTargetInputs(
 ): RuntimeSessionMirrorTargetInputs {
   return {
     activeRuntimeEnvironmentId: state.settings?.activeRuntimeEnvironmentId ?? null,
+    activeWorkspaceExecutionHostId: state.activeWorkspaceExecutionHostId,
     repos: state.repos,
     worktreesByRepo: state.worktreesByRepo,
     detectedWorktreesByRepo: state.detectedWorktreesByRepo,
@@ -42,6 +44,7 @@ export function buildRuntimeSessionMirrorEnvironmentKey(
     detectedWorktreesByRepo: inputs.detectedWorktreesByRepo,
     projectGroups: inputs.projectGroups,
     restoredRuntimeHostIdByWorkspaceSessionKey: inputs.restoredRuntimeHostIdByWorkspaceSessionKey,
+    activeWorkspaceExecutionHostId: inputs.activeWorkspaceExecutionHostId,
     runtimeEnvironments: inputs.runtimeEnvironments,
     runtimeStatusByEnvironmentId: inputs.runtimeStatusByEnvironmentId
   })
@@ -57,6 +60,7 @@ export function useRuntimeSessionMirrorEnvironmentKey(): string {
   const inputs = useAppStore(useShallow(selectRuntimeSessionMirrorTargetInputs))
   const {
     activeRuntimeEnvironmentId,
+    activeWorkspaceExecutionHostId,
     repos,
     worktreesByRepo,
     detectedWorktreesByRepo,
@@ -69,6 +73,7 @@ export function useRuntimeSessionMirrorEnvironmentKey(): string {
     () =>
       buildRuntimeSessionMirrorEnvironmentKey({
         activeRuntimeEnvironmentId,
+        activeWorkspaceExecutionHostId,
         repos,
         worktreesByRepo,
         detectedWorktreesByRepo,
@@ -79,6 +84,7 @@ export function useRuntimeSessionMirrorEnvironmentKey(): string {
       }),
     [
       activeRuntimeEnvironmentId,
+      activeWorkspaceExecutionHostId,
       repos,
       worktreesByRepo,
       detectedWorktreesByRepo,
