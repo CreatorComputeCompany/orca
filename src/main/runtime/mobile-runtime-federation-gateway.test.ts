@@ -69,6 +69,34 @@ function makeGateway(call = vi.fn()) {
 }
 
 describe('MobileRuntimeFederationGateway', () => {
+  it('routes a newly attached worktree before the next mobile catalog refresh', async () => {
+    const call = vi.fn().mockResolvedValue(response({ activated: true }))
+    const { gateway } = makeGateway(call)
+    const replies: string[] = []
+
+    await expect(
+      gateway.tryForward(
+        {
+          id: 'activate-new',
+          authToken: 'unused',
+          method: 'worktree.activate',
+          params: { worktree: `id:${CHILD_ID}` }
+        },
+        (reply) => replies.push(reply),
+        {
+          pairedDeviceId: 'jake-phone',
+          sendBinary: vi.fn(),
+          registerBinaryStreamHandler: vi.fn(() => vi.fn())
+        }
+      )
+    ).resolves.toBe(true)
+
+    expect(call).toHaveBeenCalledWith('env-jake', 'worktree.activate', {
+      worktree: `id:${CHILD_ID}`
+    })
+    expect(JSON.parse(replies[0]!)).toMatchObject({ ok: true, result: { activated: true } })
+  })
+
   it('publishes only the workspace attached to each child runtime', async () => {
     const call = vi.fn().mockResolvedValue(
       response({

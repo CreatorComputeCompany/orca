@@ -195,6 +195,14 @@ export class MobileRuntimeFederationGateway {
       if (owner) {
         return owner
       }
+      const workspaceId = stripFederatedSelectorPrefix(worktree)
+      const target = this.dependencies
+        .listTargets(ownerKey === 'host' ? undefined : ownerKey)
+        .find((candidate) => candidate.workspaceId === workspaceId)
+      if (target) {
+        this.owners.setWorktree(ownerKey, workspaceId, target.environmentId)
+        return target.environmentId
+      }
     }
     const terminal = firstFederationString(params, ['terminal', 'expectedTerminal'])
     return terminal ? this.owners.resolveTerminal(ownerKey, terminal) : null

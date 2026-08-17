@@ -55,6 +55,10 @@ export function setEphemeralVmRpcReadService(next: EphemeralVmRpcReadService | n
   service = next
 }
 
+export function getEphemeralVmRpcReadService(): EphemeralVmRpcReadService | null {
+  return service
+}
+
 function requireService(): EphemeralVmRpcReadService {
   if (!service) {
     throw new Error('Ephemeral VM service is not available on this runtime')
