@@ -874,6 +874,10 @@ describe('useComposerState host-context boundaries', () => {
     expect(recipeLoadSection).toContain(
       'isWebClientLocation() || settings?.experimentalEphemeralVms === true'
     )
+    expect(HOOK_SOURCE).toContain("environment.source !== 'ephemeral-vm'")
+    expect(recipeLoadSection).toContain(
+      'controllerExecutionHostId: webControllerRuntimeEnvironmentId'
+    )
     expect(recipeLoadSection).toContain('useEphemeralVmRecipeOptions')
     expect(recipeLoadSection).toContain('enabled: ephemeralVmsEnabled')
     expect(RECIPE_OPTIONS_SOURCE).toContain('args.enabled &&')

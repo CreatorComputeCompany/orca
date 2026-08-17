@@ -117,6 +117,7 @@ function WebRoot(): React.JSX.Element {
         }
         useAppStore.getState().openModal('new-workspace-composer', {
           prefilledName: launch.title,
+          initialEphemeralVmRecipeId: 'boxd-fork',
           prefilledPrompt: [
             launch.description?.trim(),
             launch.cardUrl ? `GSD card: ${launch.cardUrl}` : null

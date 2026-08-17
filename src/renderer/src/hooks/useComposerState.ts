@@ -936,6 +936,11 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   // Why: key on repo id, not the repo object — updateRepo replaces it by reference and would re-run this effect, wiping the user's chosen recipe.
   const selectedRecipeRepoId = selectedRepo?.id ?? null
   const selectedRecipeRepoConnectionId = selectedRepo?.connectionId ?? null
+  const webControllerRuntimeEnvironmentId = isWebClientLocation()
+    ? (runtimeEnvironments.find((environment) => environment.source !== 'ephemeral-vm')?.id ??
+      runtimeEnvironments[0]?.id ??
+      null)
+    : null
   // Why: the hosted web app provisions isolated workspace VMs as its primary execution model and
   // cannot rely on a desktop-local experimental preference surviving account sign-in.
   const ephemeralVmsEnabled = isWebClientLocation() || settings?.experimentalEphemeralVms === true
@@ -950,10 +955,9 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     repoIsGit: selectedRepoIsGit,
     repoConnectionId: selectedRecipeRepoConnectionId,
     repoExecutionHostId: selectedRepo ? getRepoExecutionHostId(selectedRepo) : null,
-    controllerExecutionHostId:
-      isWebClientLocation() && runtimeEnvironments[0]
-        ? toRuntimeExecutionHostId(runtimeEnvironments[0].id)
-        : null,
+    controllerExecutionHostId: webControllerRuntimeEnvironmentId
+      ? toRuntimeExecutionHostId(webControllerRuntimeEnvironmentId)
+      : null,
     projectGroupTarget: isProjectGroupTarget,
     initialRecipeId: initialEphemeralVmRecipeId
   })
