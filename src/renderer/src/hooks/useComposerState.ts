@@ -958,6 +958,10 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     controllerExecutionHostId: webControllerRuntimeEnvironmentId
       ? toRuntimeExecutionHostId(webControllerRuntimeEnvironmentId)
       : null,
+    // Why: the web preload always routes recipe discovery through the active controller. Its
+    // catalog remains authoritative even when browser hydration gives the repo a different
+    // runtime host id than the controller environment record.
+    controllerRouted: isWebClientLocation(),
     projectGroupTarget: isProjectGroupTarget,
     initialRecipeId: initialEphemeralVmRecipeId
   })
