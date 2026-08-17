@@ -54,6 +54,19 @@ export async function prepareRequestForCreate(
       provisionId: creationId,
       setupExistingFolder: store.setupProjectExistingFolder
     })
+  } catch (error) {
+    if (!useAppStore.getState().pendingWorktreeCreations[creationId]) {
+      return null
+    }
+    const message = error instanceof Error ? error.message : String(error)
+    useAppStore.getState().updatePendingWorktreeCreation(creationId, {
+      status: 'error',
+      error: message
+    })
+    if (useAppStore.getState().activePendingCreationId !== creationId) {
+      toast.error(message)
+    }
+    return null
   } finally {
     unsubscribeProvisionEvents?.()
   }

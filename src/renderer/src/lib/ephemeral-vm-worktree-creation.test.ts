@@ -131,3 +131,31 @@ it('carries the captured provisioned-root ref identity into adoption', async () 
     ephemeralVmExpectedRefHead: 'abc123'
   })
 })
+
+it('turns a rejected VM handoff into a visible creation error', async () => {
+  prepareTargetMock.mockRejectedValue(new Error('Timed out while connecting to the workspace VM.'))
+
+  const prepared = await prepareRequestForCreate('creation-1', {
+    repoId: 'repo-1',
+    name: 'feature',
+    setupDecision: 'inherit',
+    agent: null,
+    pendingFirstAgentMessageRename: false,
+    note: '',
+    startupPlan: null,
+    quickPrompt: '',
+    quickTelemetry: null,
+    ephemeralVmRecipe: {
+      sourceRepoId: 'repo-1',
+      recipeId: 'boxd',
+      projectId: 'github:creatorcomputecompany/emma',
+      checkoutMode: 'orca-worktree'
+    }
+  })
+
+  expect(prepared).toBeNull()
+  expect(store.updatePendingWorktreeCreation).toHaveBeenCalledWith('creation-1', {
+    status: 'error',
+    error: 'Timed out while connecting to the workspace VM.'
+  })
+})
