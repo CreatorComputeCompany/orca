@@ -331,6 +331,8 @@ import {
   projectEphemeralVmViewerAccess,
   revokeNonOwnerViewerAccess
 } from './ephemeral-vm-viewer-access'
+import { EphemeralVmRuntimeCatalogPublisher } from './ephemeral-vm-runtime-catalog-publisher'
+import type { WorkspaceCreatorProvenance } from '../shared/worktree/types'
 import {
   normalizePluginConsents,
   normalizePluginIdList
@@ -2786,45 +2788,47 @@ void app.whenReady().then(async () => {
       applyPluginEnablement({ store: store!, pluginService: pluginService!, pluginKey, enabled })
   })
   migrateEphemeralVmRuntimeMemberOwnership(app.getPath('userData'))
+  const listEphemeralVmRuntimesForActor = async (actor: WorkspaceCreatorProvenance) => {
+    const runtimes = listEphemeralVmRuntimeRecords(app.getPath('userData'))
+    const accessibleRuntimes =
+      actor.kind === 'host'
+        ? runtimes
+        : runtimes.filter((runtime) =>
+            canDeviceAccessEphemeralVmRuntime(app.getPath('userData'), actor.deviceId, runtime)
+          )
+    return await Promise.all(
+      accessibleRuntimes.map(async (runtime) => {
+        try {
+          const projected = await projectEphemeralVmViewerAccess({
+            userDataPath: app.getPath('userData'),
+            runtime,
+            actor
+          })
+          try {
+            return await projectEphemeralVmLiveMembers({
+              userDataPath: app.getPath('userData'),
+              runtime: projected
+            })
+          } catch (error) {
+            console.warn(`[ephemeral-vm] Failed to read live members for ${runtime.id}:`, error)
+            return { ...projected, liveMembers: [] }
+          }
+        } catch (error) {
+          console.warn(`[ephemeral-vm] Failed to project current access for ${runtime.id}:`, error)
+          return preserveEphemeralVmViewerCatalogEntry(runtime)
+        }
+      })
+    )
+  }
+  const ephemeralVmCatalogPublisher = new EphemeralVmRuntimeCatalogPublisher(
+    listEphemeralVmRuntimesForActor
+  )
   setEphemeralVmRpcReadService({
     listRecipes: (args) => listEphemeralVmRecipes(store!, pluginService ?? undefined, args),
     listRecipeCatalog: () => listEphemeralVmRecipeCatalog(store!, pluginService ?? undefined),
     doctor: (args) => doctorEphemeralVm(store!, pluginService ?? undefined, args),
-    listRuntimes: async (actor) => {
-      const runtimes = listEphemeralVmRuntimeRecords(app.getPath('userData'))
-      const accessibleRuntimes =
-        actor.kind === 'host'
-          ? runtimes
-          : runtimes.filter((runtime) =>
-              canDeviceAccessEphemeralVmRuntime(app.getPath('userData'), actor.deviceId, runtime)
-            )
-      return await Promise.all(
-        accessibleRuntimes.map(async (runtime) => {
-          try {
-            const projected = await projectEphemeralVmViewerAccess({
-              userDataPath: app.getPath('userData'),
-              runtime,
-              actor
-            })
-            try {
-              return await projectEphemeralVmLiveMembers({
-                userDataPath: app.getPath('userData'),
-                runtime: projected
-              })
-            } catch (error) {
-              console.warn(`[ephemeral-vm] Failed to read live members for ${runtime.id}:`, error)
-              return { ...projected, liveMembers: [] }
-            }
-          } catch (error) {
-            console.warn(
-              `[ephemeral-vm] Failed to project current access for ${runtime.id}:`,
-              error
-            )
-            return preserveEphemeralVmViewerCatalogEntry(runtime)
-          }
-        })
-      )
-    },
+    listRuntimes: listEphemeralVmRuntimesForActor,
+    subscribeRuntimes: (actor, emit) => ephemeralVmCatalogPublisher.subscribe(actor, emit),
     setSharing: async (args) => {
       const runtime = assertEphemeralVmRuntimeSharingActor({
         userDataPath: app.getPath('userData'),
@@ -2851,6 +2855,7 @@ void app.whenReady().then(async () => {
           new Set(owner?.deviceIds ?? [])
         )
       }
+      ephemeralVmCatalogPublisher.notifyChanged()
       return updated
     },
     provision: async (args) => {
@@ -2865,6 +2870,9 @@ void app.whenReady().then(async () => {
         app.getPath('userData'),
         { ...args, ...(ownerMemberKey ? { ownerMemberKey } : {}) }
       )
+      if (result.ok) {
+        ephemeralVmCatalogPublisher.notifyChanged()
+      }
       if (
         !result.ok ||
         result.connectionType !== 'orca-server' ||
@@ -2896,27 +2904,33 @@ void app.whenReady().then(async () => {
         actor: args.actor,
         runtimeId: args.runtimeId
       })
-      return attachEphemeralVmRuntimeToWorkspace({
+      const runtime = attachEphemeralVmRuntimeToWorkspace({
         userDataPath: app.getPath('userData'),
         runtimeId: args.runtimeId,
         workspaceId: args.workspaceId
       })
+      ephemeralVmCatalogPublisher.notifyChanged()
+      return runtime
     },
-    cleanup: (args) => {
+    cleanup: async (args) => {
       assertEphemeralVmRuntimeAccess({
         userDataPath: app.getPath('userData'),
         actor: args.actor,
         runtimeId: args.runtimeId
       })
-      return cleanupEphemeralVmRuntimeRecord(store!, app.getPath('userData'), args)
+      const runtime = await cleanupEphemeralVmRuntimeRecord(store!, app.getPath('userData'), args)
+      ephemeralVmCatalogPublisher.notifyChanged()
+      return runtime
     },
-    resumeWorkspace: (args) => {
+    resumeWorkspace: async (args) => {
       assertEphemeralVmRuntimeAccess({
         userDataPath: app.getPath('userData'),
         actor: args.actor,
         workspaceId: args.workspaceId
       })
-      return resumeEphemeralVmWorkspace(store!, app.getPath('userData'), args)
+      const runtime = await resumeEphemeralVmWorkspace(store!, app.getPath('userData'), args)
+      ephemeralVmCatalogPublisher.notifyChanged()
+      return runtime
     }
   })
   // Lazy kernel: initialize() only discovers manifests — no worker forks, no

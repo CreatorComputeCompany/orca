@@ -8,7 +8,7 @@ import {
 
 function method(name: string): RpcMethod {
   const found = EPHEMERAL_VM_METHODS.find((entry) => entry.name === name)
-  if (!found) {
+  if (!found || 'stream' in found) {
     throw new Error(`missing ${name}`)
   }
   return found

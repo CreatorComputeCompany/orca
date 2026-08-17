@@ -240,6 +240,9 @@ export function redactStoredWebRuntimeEnvironment(
   } = environment
   return {
     ...publicEnvironment,
+    ...(environment.multiplayerMemberKey
+      ? { workspaceViewerMemberKey: environment.multiplayerMemberKey }
+      : {}),
     endpoints: environment.endpoints.map(
       ({ deviceToken: _token, publicKeyB64: _key, ...rest }) => ({
         ...rest

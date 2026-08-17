@@ -35,6 +35,12 @@ describe('web runtime shared session-tab subscriptions', () => {
 
   it.each([
     {
+      method: 'ephemeralVm.subscribeRuntimes',
+      params: null,
+      unsubscribeMethod: 'ephemeralVm.unsubscribeRuntimes',
+      remoteSubscriptionId: null
+    },
+    {
       method: 'runtime.clientEvents.subscribe',
       params: null,
       unsubscribeMethod: 'runtime.clientEvents.unsubscribe',

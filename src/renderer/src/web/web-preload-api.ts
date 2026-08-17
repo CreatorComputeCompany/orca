@@ -7,6 +7,7 @@ import type {
   NativeChatAppendedMessages
 } from '../../../preload/api-types'
 import type { RuntimeRpcResponse } from '../../../shared/runtime-rpc-envelope'
+import type { PublicKnownRuntimeEnvironment } from '../../../shared/runtime-environments'
 import { parseHostAccessLink } from '../../../shared/remote-pairing-address'
 import { verifyRemotePairingRuntimeStatus } from '../../../shared/remote-pairing-verification'
 import type { AiVaultDeleteSessionArgs } from '../../../shared/ai-vault-session-deletion'
@@ -1538,6 +1539,82 @@ function createEphemeralVmApi(): NonNullable<Partial<PreloadApi>['ephemeralVm']>
     cancelProvision: (args) => callRuntimeResult('ephemeralVm.cancelProvision', args),
     onProvisionEvent: () => noopUnsubscribe,
     listRuntimes: listAndStoreEphemeralVmRuntimes,
+    onRuntimesChanged: (callback) => {
+      let stopped = false
+      let unsubscribe = noopUnsubscribe
+      let fallbackInterval: number | null = null
+      const refreshFallback = (): void => {
+        void listAndStoreEphemeralVmRuntimes()
+          .then(() => {
+            if (!stopped) {
+              callback(readPublicWebRuntimeEnvironments())
+            }
+          })
+          .catch(() => undefined)
+      }
+      const startFallback = (): void => {
+        if (stopped || fallbackInterval !== null) {
+          return
+        }
+        refreshFallback()
+        fallbackInterval = window.setInterval(refreshFallback, 5_000)
+      }
+      const client = getClientForEnvironment(requireActiveEnvironment())
+      void client
+        .subscribe(
+          'ephemeralVm.subscribeRuntimes',
+          undefined,
+          {
+            onResponse: (response) => {
+              if (stopped) {
+                return
+              }
+              if (!response.ok) {
+                startFallback()
+                return
+              }
+              const event = response.result as {
+                type?: unknown
+                runtimes?: unknown
+              }
+              if (
+                (event.type !== 'snapshot' && event.type !== 'updated') ||
+                !Array.isArray(event.runtimes)
+              ) {
+                return
+              }
+              reconcileEphemeralVmRuntimes(event.runtimes as EphemeralVmRuntimeList)
+              callback(readPublicWebRuntimeEnvironments())
+            },
+            onError: (error) => {
+              if (!stopped) {
+                console.warn('[web] Multiplayer catalog stream interrupted:', error)
+              }
+            }
+          },
+          { timeoutMs: 15_000 }
+        )
+        .then((handle) => {
+          if (stopped) {
+            handle.unsubscribe()
+            return
+          }
+          unsubscribe = handle.unsubscribe
+        })
+        .catch((error) => {
+          if (!stopped) {
+            console.warn('[web] Multiplayer catalog stream unavailable:', error)
+            startFallback()
+          }
+        })
+      return () => {
+        stopped = true
+        unsubscribe()
+        if (fallbackInterval !== null) {
+          window.clearInterval(fallbackInterval)
+        }
+      }
+    },
     setSharing: async (args) => {
       const runtime = await callRuntimeResult<EphemeralVmRuntimeRecord>(
         'ephemeralVm.setSharing',
@@ -1564,11 +1641,7 @@ function createRuntimeEnvironmentsApi(): NonNullable<Partial<PreloadApi>['runtim
   return {
     list: async () => {
       await hydrateEphemeralVmEnvironments()
-      const environment = requireActiveEnvironmentOrNull()
-      return [
-        ...(environment ? [redactStoredWebRuntimeEnvironment(environment)] : []),
-        ...readAdditionalWebRuntimeEnvironments().map(redactStoredWebRuntimeEnvironment)
-      ]
+      return readPublicWebRuntimeEnvironments()
     },
     consumeRetiredEnvironmentIds: async () => {
       const retired = [...retiredEphemeralVmEnvironmentIds]
@@ -1755,6 +1828,10 @@ const retiredEphemeralVmEnvironmentIds = new Set<string>()
 
 async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList> {
   const runtimes = await callRuntimeResult<EphemeralVmRuntimeList>('ephemeralVm.listRuntimes')
+  return reconcileEphemeralVmRuntimes(runtimes)
+}
+
+function reconcileEphemeralVmRuntimes(runtimes: EphemeralVmRuntimeList): EphemeralVmRuntimeList {
   if (!Array.isArray(runtimes)) {
     return []
   }
@@ -1866,6 +1943,14 @@ async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList
     })
   }
   return runtimes
+}
+
+function readPublicWebRuntimeEnvironments(): PublicKnownRuntimeEnvironment[] {
+  const environment = requireActiveEnvironmentOrNull()
+  return [
+    ...(environment ? [redactStoredWebRuntimeEnvironment(environment)] : []),
+    ...readAdditionalWebRuntimeEnvironments().map(redactStoredWebRuntimeEnvironment)
+  ]
 }
 
 async function hydrateEphemeralVmEnvironments(): Promise<void> {

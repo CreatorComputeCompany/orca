@@ -72,6 +72,7 @@ const HANDSHAKE_TIMEOUT_MS = 10_000
 const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000, 15_000]
 const SHARED_CONNECTION_SUBSCRIPTION_METHODS = new Set(['files.watch'])
 const SHARED_CONTROL_SUBSCRIPTION_METHODS = new Set([
+  'ephemeralVm.subscribeRuntimes',
   'runtime.clientEvents.subscribe',
   'session.tabs.subscribe',
   'session.tabs.subscribeAll'
@@ -96,6 +97,9 @@ function buildSharedControlSubscriptionTeardown(
       method: 'runtime.clientEvents.unsubscribe',
       params: { subscriptionId: remoteSubscriptionId }
     }
+  }
+  if (method === 'ephemeralVm.subscribeRuntimes') {
+    return { method: 'ephemeralVm.unsubscribeRuntimes', params: { subscriptionId } }
   }
   if (method === 'session.tabs.subscribe') {
     return {

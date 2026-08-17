@@ -13,7 +13,7 @@ import type {
   EphemeralVmProvisionArgs,
   EphemeralVmProvisionRpcResult
 } from '../../../ephemeral-vm-controller-service'
-import { defineMethod, type RpcMethod } from '../core'
+import { defineMethod, defineStreamingMethod, type RpcAnyMethod } from '../core'
 import { resolveRpcWorkspaceCreatorProvenance } from '../workspace-creator-context'
 
 export type EphemeralVmRpcReadService = {
@@ -23,6 +23,10 @@ export type EphemeralVmRpcReadService = {
   listRuntimes(
     actor: ReturnType<typeof resolveRpcWorkspaceCreatorProvenance>
   ): Promise<EphemeralVmRuntimeRecord[]>
+  subscribeRuntimes(
+    actor: ReturnType<typeof resolveRpcWorkspaceCreatorProvenance>,
+    emit: (event: { type: 'snapshot' | 'updated'; runtimes: EphemeralVmRuntimeRecord[] }) => void
+  ): Promise<() => void>
   provision(args: EphemeralVmProvisionArgs): Promise<EphemeralVmProvisionRpcResult>
   cancelProvision(args: { provisionId: string }): Promise<{ cancelled: boolean }>
   attachWorkspace(args: {
@@ -77,11 +81,40 @@ const SetSharingParams = z.object({
   sharing: EphemeralVmWorkspaceSharingSchema
 })
 
-export const EPHEMERAL_VM_METHODS: readonly RpcMethod[] = [
+export const EPHEMERAL_VM_METHODS: readonly RpcAnyMethod[] = [
   defineMethod({
     name: 'ephemeralVm.listRecipes',
     params: RepoIdParams,
     handler: (params) => requireService().listRecipes(params)
+  }),
+  defineStreamingMethod({
+    name: 'ephemeralVm.subscribeRuntimes',
+    params: null,
+    handler: async (_params, context, emit) => {
+      const cleanupPrefix = `ephemeral-vm:runtimes:${context.connectionId ?? 'local'}`
+      const subscriptionId = context.requestId
+        ? `${cleanupPrefix}:${context.requestId}`
+        : cleanupPrefix
+      const unsubscribe = await requireService().subscribeRuntimes(
+        resolveRpcWorkspaceCreatorProvenance(context),
+        emit
+      )
+      context.runtime.registerSubscriptionCleanup(subscriptionId, unsubscribe, context.connectionId)
+    }
+  }),
+  defineMethod({
+    name: 'ephemeralVm.unsubscribeRuntimes',
+    params: z.object({ subscriptionId: z.string().min(1).optional() }).nullish(),
+    handler: async (params, context) => {
+      const cleanupPrefix = `ephemeral-vm:runtimes:${context.connectionId ?? 'local'}`
+      if (params?.subscriptionId) {
+        context.runtime.cleanupSubscription(`${cleanupPrefix}:${params.subscriptionId}`)
+      } else {
+        context.runtime.cleanupSubscriptionsByPrefix(`${cleanupPrefix}:`)
+        context.runtime.cleanupSubscription(cleanupPrefix)
+      }
+      return { unsubscribed: true }
+    }
   }),
   defineMethod({
     name: 'ephemeralVm.listRecipeCatalog',
