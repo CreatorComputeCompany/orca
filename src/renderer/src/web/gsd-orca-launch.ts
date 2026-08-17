@@ -106,7 +106,8 @@ export async function materializeGsdLaunchAttachments(args: {
           worktree: args.worktreeId,
           relativePath,
           contentBase64,
-          append: index > 0
+          append: index > 0,
+          expectedExecutionHostId: 'local'
         },
         timeoutMs: 30_000
       })

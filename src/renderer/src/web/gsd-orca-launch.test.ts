@@ -116,7 +116,8 @@ describe('GSD attachment materialization', () => {
         worktree: 'worktree-1',
         relativePath: '.gsd/attachments/file-1-routing.md',
         contentBase64: 'aGVsbG8=',
-        append: false
+        append: false,
+        expectedExecutionHostId: 'local'
       },
       timeoutMs: 30_000
     })
