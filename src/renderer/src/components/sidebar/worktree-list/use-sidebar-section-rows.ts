@@ -168,7 +168,12 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
       ),
     [runtimeEnvironments]
   )
-  useMultiplayerPresenceRefresh(currentWorkspaceMemberKeys.size > 0)
+  // Why: a newly paired member can have no workspace environments yet. The live catalog must
+  // already be listening when their phone creates the first one, otherwise the browser cannot
+  // discover it without a page refresh. Desktop builds do not expose this web subscription.
+  useMultiplayerPresenceRefresh(
+    Boolean(window.api?.ephemeralVm?.onRuntimesChanged) || currentWorkspaceMemberKeys.size > 0
+  )
 
   const rows: Row[] = useMemo(
     () =>

@@ -14,12 +14,35 @@ describe('web live runtime catalog', () => {
     vi.doUnmock('./web-runtime-client')
   })
 
-  it('updates changed environments in place and retains them across stream errors', async () => {
+  it('updates in place and falls back to background reconciliation after stream errors', async () => {
     let onResponse: ((response: RuntimeRpcResponse<unknown>) => void) | undefined
     let onError: ((error: Error) => void) | undefined
     const close = vi.fn()
     vi.doMock('./web-runtime-client', () => ({
       WebRuntimeClient: class {
+        call(method: string): Promise<RuntimeRpcResponse<unknown>> {
+          return Promise.resolve({
+            id: method,
+            ok: true,
+            result:
+              method === 'ephemeralVm.listRuntimes'
+                ? [
+                    {
+                      id: 'runtime-2',
+                      runtimeEnvironmentId: 'child-2',
+                      workspaceName: 'Created from phone',
+                      recipeResult: {
+                        schemaVersion: 1,
+                        pairingCode: encodePairingCode({ endpoint: 'wss://child-2.example' }),
+                        projectRoot: '/workspace'
+                      }
+                    }
+                  ]
+                : {},
+            _meta: { runtimeId: 'controller-runtime' }
+          })
+        }
+
         subscribe(
           _method: string,
           _params: unknown,
@@ -39,6 +62,8 @@ describe('web live runtime catalog', () => {
       }
     }))
     const globals = installBrowserGlobals('Linux')
+    globals.window.setInterval = setInterval as unknown as typeof window.setInterval
+    globals.window.clearInterval = clearInterval as unknown as typeof window.clearInterval
     writeStoredRuntimeEnvironment(globals.storage, 'controller')
     const { installWebPreloadApi } = await import('./web-preload-api')
     installWebPreloadApi()
@@ -79,8 +104,13 @@ describe('web live runtime catalog', () => {
 
     onError?.(new Error('reconnecting'))
 
-    expect(published).toHaveLength(1)
-    expect(globals.storage.getItem('orca.web.runtimeEnvironments.additional.v1')).toBe(
+    await vi.waitFor(() =>
+      expect(published.at(-1)).toMatchObject([
+        { id: 'controller' },
+        { id: 'child-2', name: 'Created from phone VM' }
+      ])
+    )
+    expect(globals.storage.getItem('orca.web.runtimeEnvironments.additional.v1')).not.toBe(
       storedBeforeError
     )
     expect(close).not.toHaveBeenCalled()

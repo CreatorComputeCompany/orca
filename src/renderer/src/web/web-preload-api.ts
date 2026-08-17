@@ -1589,6 +1589,7 @@ function createEphemeralVmApi(): NonNullable<Partial<PreloadApi>['ephemeralVm']>
             onError: (error) => {
               if (!stopped) {
                 console.warn('[web] Multiplayer catalog stream interrupted:', error)
+                startFallback()
               }
             }
           },
