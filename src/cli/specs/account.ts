@@ -9,11 +9,12 @@ export const ACCOUNT_COMMAND_SPECS: CommandSpec[] = [
   {
     path: ['account', 'add'],
     summary: 'Add a managed Claude or Codex account by signing in on this Orca host',
-    usage: 'orca account add [--agent claude|codex] [--json]',
-    allowedFlags: [...GLOBAL_FLAGS, 'agent'],
+    usage: 'orca account add [--agent claude|codex] [--source-home PATH] [--json]',
+    allowedFlags: [...GLOBAL_FLAGS, 'agent', 'source-home'],
     notes: [
       'Runs the agent login (`claude login` / `codex login`) in this terminal, then registers the account with the local Orca runtime.',
       'Codex uses device authorization so the browser can complete sign-in from a different machine.',
+      'For automation on the Orca host, --agent codex --source-home PATH imports an already authenticated CODEX_HOME without opening a browser.',
       'Sign in with the account you want to add (e.g. use a private/incognito browser window for a second account).',
       '--agent defaults to claude. Requires the Orca runtime to be running on this machine.'
     ],

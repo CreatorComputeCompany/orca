@@ -159,6 +159,28 @@ describe('account CLI handlers', () => {
     })
   })
 
+  it('imports an authenticated Codex home without starting device auth', async () => {
+    const ctx = context('codex', true)
+    ctx.flags.set('source-home', '/tmp/codexbar-account')
+
+    await ACCOUNT_HANDLERS['account add'](ctx)
+
+    expect(spawnMock).not.toHaveBeenCalled()
+    expect(callMock).toHaveBeenCalledWith('accounts.addCodexFromHome', {
+      sourceHome: '/tmp/codexbar-account'
+    })
+  })
+
+  it('rejects source-home for Claude accounts', async () => {
+    const ctx = context('claude')
+    ctx.flags.set('source-home', '/tmp/codexbar-account')
+
+    await expect(ACCOUNT_HANDLERS['account add'](ctx)).rejects.toThrow(
+      '--source-home` is only supported with `--agent codex'
+    )
+    expect(spawnMock).not.toHaveBeenCalled()
+  })
+
   it('routes Windows package-manager shims through the safe cmd launcher', async () => {
     Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' })
     resolveCliCommandMock.mockReturnValue('C:\\tools\\codex.cmd')

@@ -22,6 +22,7 @@ import {
   WINDOWS_BATCH_UNSAFE_CHARACTERS_LABEL
 } from '../../shared/windows-batch-spawn'
 import { ACCOUNT_IMPORT_RUNTIME_CAPABILITY } from '../../shared/protocol-version'
+import { resolveCodexSourceHome } from './account-source-home'
 import type { RuntimeStatus } from '../../shared/runtime-types'
 import type {
   ClaudeRateLimitAccountsState,
@@ -223,8 +224,15 @@ async function addClaudeAccount({ client, json }: HandlerContext): Promise<void>
   printResult(result, json, (state) => formatAccountsBlock('Claude', state))
 }
 
-/** Logs into a Codex account in a temp CODEX_HOME, then registers it with the local runtime. */
-async function addCodexAccount({ client, json }: HandlerContext): Promise<void> {
+async function addCodexAccount({ client, flags, json }: HandlerContext): Promise<void> {
+  const sourceHome = resolveCodexSourceHome(flags, 'codex')
+  if (sourceHome) {
+    const result = await client.call<CodexRateLimitAccountsState>('accounts.addCodexFromHome', {
+      sourceHome
+    })
+    printResult(result, json, (state) => formatAccountsBlock('Codex', state))
+    return
+  }
   const codexHome = mkdtempSync(join(tmpdir(), 'orca-account-add-codex-'))
   const session: InteractiveLoginSession = {
     child: null,
@@ -302,8 +310,8 @@ export const ACCOUNT_HANDLERS: Record<string, CommandHandler> = {
         `Unsupported --agent "${agent}". Use "claude" or "codex".`
       )
     }
+    resolveCodexSourceHome(ctx.flags, agent)
     rejectRemoteSelectionFlags(ctx, 'orca account add')
-    // Why: fail on runtime version skew before burning a full OAuth round trip.
     await assertAccountImportSupported(ctx)
     await ctx.client.call('accounts.list', { refreshUsage: false })
     await (agent === 'claude' ? addClaudeAccount(ctx) : addCodexAccount(ctx))
