@@ -329,7 +329,8 @@ import {
   preserveEphemeralVmViewerCatalogEntry,
   projectEphemeralVmLiveMembers,
   projectEphemeralVmViewerAccess,
-  revokeNonOwnerViewerAccess
+  revokeNonOwnerViewerAccess,
+  syncEphemeralVmOwnerCodexAccounts
 } from './ephemeral-vm-viewer-access'
 import { EphemeralVmRuntimeCatalogPublisher } from './ephemeral-vm-runtime-catalog-publisher'
 import type { WorkspaceCreatorProvenance } from '../shared/worktree/types'
@@ -2879,6 +2880,27 @@ void app.whenReady().then(async () => {
         args.creatorProvenance?.kind !== 'paired-device'
       ) {
         return result
+      }
+      if (ownerMemberKey) {
+        try {
+          await syncEphemeralVmOwnerCodexAccounts({
+            userDataPath: app.getPath('userData'),
+            runtime: result.runtime,
+            ownerMemberKey
+          })
+        } catch (error) {
+          await cleanupEphemeralVmRuntimeRecord(store!, app.getPath('userData'), {
+            runtimeId: result.runtime.id
+          }).catch((cleanupError) => {
+            console.warn(
+              '[ephemeral-vm] Failed to clean up after account sync failure:',
+              cleanupError
+            )
+          })
+          throw new Error("Could not install the workspace owner's Codex accounts.", {
+            cause: error
+          })
+        }
       }
       const pairingCode = await createViewerPairingCode({
         userDataPath: app.getPath('userData'),

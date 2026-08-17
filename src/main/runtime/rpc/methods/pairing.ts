@@ -6,11 +6,22 @@ import {
 import { MobilePairingOfferParamsSchema } from '../../../../shared/mobile-pairing-host-contract'
 import { z } from 'zod'
 import {
+  ManagedRuntimeCodexImportParamsSchema,
   ManagedRuntimeOfferParamsSchema,
   ManagedRuntimeRevokeParamsSchema
 } from '../../../../shared/managed-runtime-access-contract'
 
 export const PAIRING_METHODS: readonly RpcAnyMethod[] = [
+  defineMethod({
+    name: 'pairing.importManagedRuntimeCodexAccounts',
+    params: ManagedRuntimeCodexImportParamsSchema,
+    handler: async (params, ctx) => {
+      if (!ctx.pairing?.importManagedRuntimeCodexAccounts) {
+        throw new Error('pairing_management_unavailable')
+      }
+      return await ctx.pairing.importManagedRuntimeCodexAccounts(params)
+    }
+  }),
   defineMethod({
     name: 'pairing.listManagedRuntimePresence',
     params: z.object({}),

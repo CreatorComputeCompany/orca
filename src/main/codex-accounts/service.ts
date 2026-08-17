@@ -297,6 +297,12 @@ export class CodexAccountService {
     return this.serializeMutation(() => this.doAddAccountFromHome(sourceHome, target))
   }
 
+  async addAccountFromAuthJson(
+    authJson: string
+  ): Promise<{ state: CodexRateLimitAccountsState; imported: boolean }> {
+    return this.serializeMutation(() => this.doAddAccountFromAuthJson(authJson))
+  }
+
   async reauthenticateAccount(accountId: string): Promise<CodexRateLimitAccountsState> {
     return this.serializeMutation(() => this.doReauthenticateAccount(accountId))
   }
@@ -745,6 +751,41 @@ export class CodexAccountService {
       this.safeSyncCanonicalConfigIntoManagedHome(managedHomePath, canonicalConfig, accountId)
       this.importCodexAuthFromHome(sourceHome, managedHomePath, accountId)
       return await this.persistCapturedCodexAccount(accountId, managedHome)
+    } catch (error) {
+      this.safeRemoveManagedHome(managedHomePath, accountId)
+      throw error
+    }
+  }
+
+  private async doAddAccountFromAuthJson(
+    authJson: string
+  ): Promise<{ state: CodexRateLimitAccountsState; imported: boolean }> {
+    const accountId = randomUUID()
+    const managedHome = this.createManagedHome(accountId)
+    const { managedHomePath } = managedHome
+    try {
+      JSON.parse(authJson)
+      const canonicalConfig = this.readCanonicalConfigForManagedHome(managedHomePath)
+      this.assertOAuthAccountAddAllowed(canonicalConfig)
+      this.safeSyncCanonicalConfigIntoManagedHome(managedHomePath, canonicalConfig, accountId)
+      const trustedHome = this.assertManagedHomePath(managedHomePath, accountId)
+      writeFileAtomically(join(trustedHome, 'auth.json'), authJson, { mode: 0o600 })
+      const identity = this.readIdentityFromHome(managedHomePath, accountId)
+      const settings = this.store.getSettings()
+      const existing = settings.codexManagedAccounts.find(
+        (account) =>
+          (identity.providerAccountId &&
+            account.providerAccountId === identity.providerAccountId) ||
+          (!identity.providerAccountId && identity.email && account.email === identity.email)
+      )
+      if (existing) {
+        this.safeRemoveManagedHome(managedHomePath, accountId)
+        return { state: this.getSnapshot(), imported: false }
+      }
+      return {
+        state: await this.persistCapturedCodexAccount(accountId, managedHome),
+        imported: true
+      }
     } catch (error) {
       this.safeRemoveManagedHome(managedHomePath, accountId)
       throw error

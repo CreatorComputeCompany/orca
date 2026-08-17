@@ -24,6 +24,19 @@ export type ManagedRuntimeRevokeResult = {
   revoked: number
 }
 
+const ManagedCodexAuthJsonSchema = z.string().min(2).max(2_000_000)
+
+export const ManagedRuntimeCodexImportParamsSchema = z.object({
+  authJson: z.array(ManagedCodexAuthJsonSchema).min(1).max(16)
+})
+
+export type ManagedRuntimeCodexImportParams = z.infer<typeof ManagedRuntimeCodexImportParamsSchema>
+
+export type ManagedRuntimeCodexImportResult = {
+  imported: number
+  reused: number
+}
+
 export type ManagedRuntimePresenceResult = {
   members: {
     grantKey: string

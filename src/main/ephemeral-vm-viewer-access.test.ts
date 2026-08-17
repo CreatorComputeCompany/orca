@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -6,6 +6,7 @@ import { encodePairingOffer, PAIRING_OFFER_VERSION } from '../shared/pairing'
 import { addEnvironmentFromPairingCode } from '../shared/runtime-environment-store'
 import type { EphemeralVmRuntimeRecord } from '../shared/ephemeral-vm-runtimes'
 import { enrollMultiplayerDevice } from './runtime/multiplayer-identity-store'
+import { importMultiplayerCodexAccountFromHome } from './runtime/multiplayer-codex-account-store'
 
 const { sendRemoteRuntimeRequest } = vi.hoisted(() => ({
   sendRemoteRuntimeRequest: vi.fn()
@@ -17,7 +18,8 @@ import {
   preserveEphemeralVmViewerCatalogEntry,
   projectEphemeralVmLiveMembers,
   projectEphemeralVmViewerAccess,
-  revokeNonOwnerViewerAccess
+  revokeNonOwnerViewerAccess,
+  syncEphemeralVmOwnerCodexAccounts
 } from './ephemeral-vm-viewer-access'
 
 const roots: string[] = []
@@ -156,6 +158,29 @@ describe('ephemeral VM viewer access', () => {
 
     await expect(revokeNonOwnerViewerAccess({ userDataPath, runtime })).rejects.toThrow(
       'pairing_management_unavailable'
+    )
+  })
+
+  it('syncs only the requested owner member Codex pool over manager access', async () => {
+    const { userDataPath, runtime } = setupRuntime()
+    const home = join(userDataPath, 'jake-codex')
+    mkdirSync(home)
+    writeFileSync(join(home, 'auth.json'), JSON.stringify({ token: 'jake-secret' }))
+    importMultiplayerCodexAccountFromHome({ userDataPath, memberKey: 'jake', sourceHome: home })
+    sendRemoteRuntimeRequest.mockResolvedValue({ ok: true, result: { imported: 1, reused: 0 } })
+
+    await expect(
+      syncEphemeralVmOwnerCodexAccounts({ userDataPath, runtime, ownerMemberKey: 'steven' })
+    ).resolves.toEqual({ imported: 0, reused: 0 })
+    await expect(
+      syncEphemeralVmOwnerCodexAccounts({ userDataPath, runtime, ownerMemberKey: 'jake' })
+    ).resolves.toEqual({ imported: 1, reused: 0 })
+    expect(sendRemoteRuntimeRequest).toHaveBeenCalledOnce()
+    expect(sendRemoteRuntimeRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ deviceToken: 'manager-token' }),
+      'pairing.importManagedRuntimeCodexAccounts',
+      { authJson: [JSON.stringify({ token: 'jake-secret' })] },
+      15_000
     )
   })
 })

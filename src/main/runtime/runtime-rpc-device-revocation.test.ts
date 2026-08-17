@@ -192,6 +192,9 @@ describe('OrcaRuntimeRpcServer', () => {
   it('lets only the pairing manager mint and revoke member runtime grants', async () => {
     const userDataPath = mkdtempSync(join(tmpdir(), 'orca-runtime-rpc-'))
     const runtime = new OrcaRuntimeService()
+    const importCodex = vi
+      .spyOn(runtime, 'addCodexAccountFromAuthJson')
+      .mockResolvedValue({ state: {} as never, imported: true })
     const server = new OrcaRuntimeRpcServer({
       runtime,
       userDataPath,
@@ -253,6 +256,24 @@ describe('OrcaRuntimeRpcServer', () => {
           }
         ]
       })
+
+      await expect(
+        sendRemoteRuntimeRequest(
+          managerPairing,
+          'pairing.importManagedRuntimeCodexAccounts',
+          { authJson: ['{}'] },
+          5_000
+        )
+      ).resolves.toMatchObject({ ok: true, result: { imported: 1, reused: 0 } })
+      expect(importCodex).toHaveBeenCalledWith('{}')
+      await expect(
+        sendRemoteRuntimeRequest(
+          viewerPairing,
+          'pairing.importManagedRuntimeCodexAccounts',
+          { authJson: ['{}'] },
+          5_000
+        )
+      ).resolves.toMatchObject({ ok: false })
 
       await expect(
         sendRemoteRuntimeRequest(

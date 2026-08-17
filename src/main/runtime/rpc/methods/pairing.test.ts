@@ -31,12 +31,14 @@ describe('pairing RPC methods', () => {
     const listManagedRuntimePresence = vi.fn().mockResolvedValue({
       members: [{ grantKey: 'steven', worktreeId: 'wt-1' }]
     })
+    const importManagedRuntimeCodexAccounts = vi.fn().mockResolvedValue({ imported: 1, reused: 0 })
     const pairing = {
       getEndpoints: vi.fn(),
       provisionRelay: vi.fn(),
       createManagedRuntimeOffer,
       revokeManagedRuntimeAccess,
-      listManagedRuntimePresence
+      listManagedRuntimePresence,
+      importManagedRuntimeCodexAccounts
     }
 
     await expect(
@@ -45,6 +47,9 @@ describe('pairing RPC methods', () => {
       ok: true,
       result: { members: [{ grantKey: 'steven', worktreeId: 'wt-1' }] }
     })
+    await expect(
+      dispatchPairing('pairing.importManagedRuntimeCodexAccounts', { authJson: ['{}'] }, pairing)
+    ).resolves.toMatchObject({ ok: true, result: { imported: 1, reused: 0 } })
     await expect(
       dispatchPairing(
         'pairing.createManagedRuntimeOffer',
@@ -65,7 +70,15 @@ describe('pairing RPC methods', () => {
     })
     expect(revokeManagedRuntimeAccess).toHaveBeenCalledWith({ retainGrantKeys: ['steven'] })
     expect(listManagedRuntimePresence).toHaveBeenCalledOnce()
+    expect(importManagedRuntimeCodexAccounts).toHaveBeenCalledWith({ authJson: ['{}'] })
 
+    await expect(
+      dispatchPairing(
+        'pairing.importManagedRuntimeCodexAccounts',
+        { authJson: ['{}'] },
+        { getEndpoints: vi.fn(), provisionRelay: vi.fn() }
+      )
+    ).resolves.toMatchObject({ ok: false })
     await expect(
       dispatchPairing(
         'pairing.createManagedRuntimeOffer',

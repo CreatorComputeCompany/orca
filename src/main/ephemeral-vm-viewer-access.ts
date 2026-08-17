@@ -1,4 +1,5 @@
 import type {
+  ManagedRuntimeCodexImportResult,
   ManagedRuntimeOfferResult,
   ManagedRuntimePresenceResult,
   ManagedRuntimeRevokeResult
@@ -14,6 +15,7 @@ import {
   findMultiplayerMemberByKey,
   resolveEphemeralVmRuntimeOwnerMemberKey
 } from './runtime/multiplayer-identity-store'
+import { listMultiplayerCodexAuthJson } from './runtime/multiplayer-codex-account-store'
 
 const VIEWER_ACCESS_TIMEOUT_MS = 15_000
 const TRANSIENTLY_UNAVAILABLE_PAIRING_CODE = 'orca://pair?unavailable=transient'
@@ -120,6 +122,30 @@ export async function revokeNonOwnerViewerAccess(args: {
   if (!response.ok) {
     throw new Error(response.error.message)
   }
+}
+
+export async function syncEphemeralVmOwnerCodexAccounts(args: {
+  userDataPath: string
+  runtime: EphemeralVmRuntimeRecord
+  ownerMemberKey: string
+}): Promise<ManagedRuntimeCodexImportResult> {
+  if (!args.runtime.runtimeEnvironmentId || args.runtime.connectionMode === 'ssh') {
+    return { imported: 0, reused: 0 }
+  }
+  const authJson = listMultiplayerCodexAuthJson(args.userDataPath, args.ownerMemberKey)
+  if (authJson.length === 0) {
+    return { imported: 0, reused: 0 }
+  }
+  const response = await sendRemoteRuntimeRequest<ManagedRuntimeCodexImportResult>(
+    getManagerPairing(args.userDataPath, args.runtime.runtimeEnvironmentId),
+    'pairing.importManagedRuntimeCodexAccounts',
+    { authJson },
+    VIEWER_ACCESS_TIMEOUT_MS
+  )
+  if (!response.ok) {
+    throw new Error(response.error.message)
+  }
+  return response.result
 }
 
 function getManagerPairing(userDataPath: string, runtimeEnvironmentId: string) {

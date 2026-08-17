@@ -26,6 +26,8 @@ import type {
 import type {
   ManagedRuntimeOfferParams,
   ManagedRuntimeOfferResult,
+  ManagedRuntimeCodexImportParams,
+  ManagedRuntimeCodexImportResult,
   ManagedRuntimePresenceResult,
   ManagedRuntimeRevokeParams,
   ManagedRuntimeRevokeResult
@@ -49,6 +51,9 @@ export type PairingRpcContext = {
   consumeGsdOrcaLaunch?(params: GsdOrcaLaunchConsumeParams): Promise<GsdOrcaLaunchConsumeResult>
   linkGsdOrcaLaunch?(params: GsdOrcaLaunchLinkParams): Promise<GsdOrcaLaunchLinkResult>
   createManagedRuntimeOffer?(params: ManagedRuntimeOfferParams): Promise<ManagedRuntimeOfferResult>
+  importManagedRuntimeCodexAccounts?(
+    params: ManagedRuntimeCodexImportParams
+  ): Promise<ManagedRuntimeCodexImportResult>
   revokeManagedRuntimeAccess?(
     params: ManagedRuntimeRevokeParams
   ): Promise<ManagedRuntimeRevokeResult>

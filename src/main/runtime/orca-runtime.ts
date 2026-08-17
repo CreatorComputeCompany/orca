@@ -13561,6 +13561,12 @@ export class OrcaRuntimeService {
     return this.requireAccountServices().codexAccounts.addAccountFromHome(sourceHome, target)
   }
 
+  addCodexAccountFromAuthJson(
+    authJson: string
+  ): Promise<{ state: CodexRateLimitAccountsState; imported: boolean }> {
+    return this.requireAccountServices().codexAccounts.addAccountFromAuthJson(authJson)
+  }
+
   // Why: rate-limit polling fires every 5 minutes and on account switch.
   // Mobile clients subscribe to receive a fresh AccountsSnapshot whenever
   // RateLimitService pushes new usage data, mirroring the existing

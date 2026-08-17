@@ -1980,6 +1980,19 @@ export class OrcaRuntimeRpcServer {
           },
           ...(device.pairingManagement
             ? {
+                importManagedRuntimeCodexAccounts: async (params: { authJson: string[] }) => {
+                  let imported = 0
+                  let reused = 0
+                  for (const authJson of params.authJson) {
+                    const result = await this.runtime.addCodexAccountFromAuthJson(authJson)
+                    if (result.imported) {
+                      imported += 1
+                    } else {
+                      reused += 1
+                    }
+                  }
+                  return { imported, reused }
+                },
                 listManagedRuntimePresence: async () => {
                   const connectedDeviceIds = new Set(
                     this.mobileSocketWiring?.getConnectedDeviceIds() ?? []
