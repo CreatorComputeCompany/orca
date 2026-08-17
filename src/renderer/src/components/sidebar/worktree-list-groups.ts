@@ -1135,10 +1135,13 @@ export function buildRows(
     }
   }
 
+  const nonMultiplayerWorktrees = worktrees.filter(
+    (worktree) => worktree.ephemeralVmSharing !== 'shared'
+  )
   const naturalWorktrees =
     pinnedDisplayPolicy === 'duplicate-in-groups'
-      ? worktrees
-      : worktrees.filter((worktree) => !worktree.isPinned)
+      ? nonMultiplayerWorktrees
+      : nonMultiplayerWorktrees.filter((worktree) => !worktree.isPinned)
   const mixedWorktreeHostContextLabels = getMixedWorktreeHostContextLabels(
     naturalWorktrees,
     repoMap,
@@ -1157,7 +1160,7 @@ export function buildRows(
   })
   emitMultiplayerGroup(worktrees, repoMap, defaultHostId, collapsedGroups, result)
   emitPinnedGroup(
-    worktrees,
+    nonMultiplayerWorktrees,
     repoMap,
     defaultHostId,
     collapsedGroups,

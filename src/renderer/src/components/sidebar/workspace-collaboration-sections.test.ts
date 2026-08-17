@@ -102,7 +102,7 @@ describe('getWorkspaceCollaborationSection', () => {
       rows.flatMap((row) =>
         row.type === 'header' ? [row.label] : row.type === 'item' ? [row.worktree.id] : []
       )
-    ).toEqual(['Multiplayer', 'shared', repo.displayName, 'Mine', 'mine', 'Shared', 'shared'])
+    ).toEqual(['Multiplayer', 'shared', repo.displayName, 'Mine', 'mine'])
   })
 
   it('keeps Multiplayer above status grouping', () => {
@@ -124,10 +124,10 @@ describe('getWorkspaceCollaborationSection', () => {
       rows.flatMap((row) =>
         row.type === 'header' ? [row.label] : row.type === 'item' ? [row.worktree.id] : []
       )
-    ).toEqual(['Multiplayer', 'shared', 'In progress', 'shared'])
+    ).toEqual(['Multiplayer', 'shared'])
   })
 
-  it('collapses Multiplayer without hiding the natural workspace row', () => {
+  it('keeps shared worktrees exclusively in Multiplayer when it is collapsed', () => {
     const shared: Worktree = {
       ...worktree,
       id: 'shared',
@@ -141,10 +141,6 @@ describe('getWorkspaceCollaborationSection', () => {
       new Set(['multiplayer'])
     )
 
-    expect(rows).toMatchObject([
-      { type: 'header', key: 'multiplayer', count: 1 },
-      { type: 'header', key: 'all', count: 1 },
-      { type: 'item', sectionKey: 'all', worktree: { id: 'shared' } }
-    ])
+    expect(rows).toMatchObject([{ type: 'header', key: 'multiplayer', count: 1 }])
   })
 })
