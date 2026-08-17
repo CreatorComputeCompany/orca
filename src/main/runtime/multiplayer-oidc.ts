@@ -20,6 +20,7 @@ type OidcUser = {
 
 type PendingAuthorization = {
   verifier: string
+  nonce: string
   memberKey?: string
   createdAt: number
 }
@@ -82,8 +83,10 @@ export class MultiplayerOidcController {
     const metadata = await this.getMetadata()
     const state = randomBytes(24).toString('base64url')
     const verifier = randomBytes(32).toString('base64url')
+    const nonce = randomBytes(24).toString('base64url')
     this.pending.set(state, {
       verifier,
+      nonce,
       ...(memberKey ? { memberKey } : {}),
       createdAt: Date.now()
     })
@@ -93,6 +96,7 @@ export class MultiplayerOidcController {
     url.searchParams.set('response_type', 'code')
     url.searchParams.set('scope', 'openid profile email')
     url.searchParams.set('state', state)
+    url.searchParams.set('nonce', nonce)
     url.searchParams.set('code_challenge_method', 'S256')
     url.searchParams.set(
       'code_challenge',
@@ -127,17 +131,26 @@ export class MultiplayerOidcController {
     if (!tokenResponse.ok) {
       throw new Error('GSD rejected the shared-login code.')
     }
-    const token = (await tokenResponse.json()) as { access_token?: unknown }
+    const token = (await tokenResponse.json()) as {
+      access_token?: unknown
+      id_token?: unknown
+    }
     if (typeof token.access_token !== 'string' || !token.access_token) {
       throw new Error('GSD did not return an access token.')
     }
     const userResponse = await fetch(metadata.userinfo_endpoint, {
       headers: { Authorization: `Bearer ${token.access_token}` }
     })
-    if (!userResponse.ok) {
-      throw new Error('GSD could not verify this account.')
-    }
-    const user = (await userResponse.json()) as Partial<OidcUser>
+    // Better Auth can return the newly minted token before a subsequent
+    // Cloudflare request observes its opaque-token row. The ID token came
+    // directly from this PKCE exchange, so its one-time nonce, audience, and
+    // expiry provide a bounded fallback instead of making the user restart.
+    const user = userResponse.ok
+      ? ((await userResponse.json()) as Partial<OidcUser>)
+      : readDirectTokenIdentity(token.id_token, {
+          clientId: this.config.clientId,
+          nonce: pending.nonce
+        })
     if (
       typeof user.sub !== 'string' ||
       !user.sub ||
@@ -195,6 +208,40 @@ export class MultiplayerOidcController {
         this.pending.delete(state)
       }
     }
+  }
+}
+
+function readDirectTokenIdentity(
+  token: unknown,
+  expected: { clientId: string; nonce: string }
+): Partial<OidcUser> {
+  if (typeof token !== 'string') {
+    throw new Error('GSD could not verify this account.')
+  }
+  const parts = token.split('.')
+  if (parts.length !== 3) {
+    throw new Error('GSD could not verify this account.')
+  }
+  try {
+    const claims = JSON.parse(Buffer.from(parts[1]!, 'base64url').toString('utf8')) as Record<
+      string,
+      unknown
+    >
+    const audience = claims.aud
+    const matchesAudience =
+      audience === expected.clientId ||
+      (Array.isArray(audience) && audience.includes(expected.clientId))
+    if (
+      !matchesAudience ||
+      claims.nonce !== expected.nonce ||
+      typeof claims.exp !== 'number' ||
+      claims.exp <= Math.floor(Date.now() / 1000)
+    ) {
+      throw new Error('invalid token claims')
+    }
+    return claims
+  } catch {
+    throw new Error('GSD could not verify this account.')
   }
 }
 

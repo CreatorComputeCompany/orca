@@ -75,6 +75,7 @@ describe('multiplayer OIDC controller', () => {
     const authorizationUrl = new URL(await controller.createAuthorizationUrl('jake'))
     expect(authorizationUrl.searchParams.get('code_challenge_method')).toBe('S256')
     expect(authorizationUrl.searchParams.get('code_challenge')).toBeTruthy()
+    expect(authorizationUrl.searchParams.get('nonce')).toBeTruthy()
     const state = authorizationUrl.searchParams.get('state')!
     const callback = new URL('https://orca.example.com/api/multiplayer/sso/callback')
     callback.searchParams.set('state', state)
@@ -133,6 +134,67 @@ describe('multiplayer OIDC controller', () => {
     expect(issueIdentity).toHaveBeenCalledWith(
       expect.objectContaining({ sub: 'user', email_verified: false }),
       undefined
+    )
+  })
+
+  it('uses the nonce-bound ID token when userinfo cannot read the new access token', async () => {
+    const issueIdentity = vi.fn(() => ({
+      email: 'jake@example.com',
+      member: { key: 'jake', displayName: 'Jake', deviceIds: ['device'] },
+      pairingUrl: 'orca://pair?code=personal'
+    }))
+    let nonce = ''
+    const fetchMock = vi.fn((input: string | URL | Request) => {
+      const url = String(input)
+      if (url.includes('openid-configuration')) {
+        return Promise.resolve(
+          jsonResponse({
+            issuer: 'https://gsd.example.com',
+            authorization_endpoint: 'https://gsd.example.com/authorize',
+            token_endpoint: 'https://gsd.example.com/token',
+            userinfo_endpoint: 'https://gsd.example.com/userinfo'
+          })
+        )
+      }
+      if (url.endsWith('/token')) {
+        const payload = Buffer.from(
+          JSON.stringify({
+            sub: 'gsd-user-1',
+            aud: 'orca-web',
+            nonce,
+            exp: Math.floor(Date.now() / 1000) + 300,
+            email: 'jake@example.com',
+            email_verified: true,
+            name: 'Jake'
+          })
+        ).toString('base64url')
+        return Promise.resolve(
+          jsonResponse({ access_token: 'access-token', id_token: `e30.${payload}.signature` })
+        )
+      }
+      return Promise.resolve(new Response('{"error":"invalid_token"}', { status: 401 }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new MultiplayerOidcController(
+      {
+        issuer: 'https://gsd.example.com',
+        clientId: 'orca-web',
+        redirectUrl: 'https://orca.example.com/callback',
+        webClientUrl: 'https://orca.example.com/web-index.html'
+      },
+      issueIdentity
+    )
+
+    const authorizationUrl = new URL(await controller.createAuthorizationUrl('jake'))
+    nonce = authorizationUrl.searchParams.get('nonce')!
+    const callback = new URL('https://orca.example.com/callback')
+    callback.searchParams.set('state', authorizationUrl.searchParams.get('state')!)
+    callback.searchParams.set('code', 'code')
+
+    await expect(controller.completeCallback(callback)).resolves.toContain('#sso=')
+    expect(issueIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({ sub: 'gsd-user-1', email: 'jake@example.com' }),
+      'jake'
     )
   })
 })
