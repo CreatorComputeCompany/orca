@@ -30,6 +30,7 @@ import { translate } from '../i18n/i18n'
 import { useAppStore } from '@/store'
 import { Button } from '@/components/ui/button'
 import {
+  buildGsdLaunchPrompt,
   captureGsdLaunchFromLocation,
   consumePendingGsdLaunch,
   isGsdIdentityLinkRequired,
@@ -134,12 +135,7 @@ function WebRoot(): React.JSX.Element {
           initialEphemeralVmRecipeId: 'boxd-fork',
           initialAgent: launch.agent,
           autoCreate: true,
-          prefilledPrompt: [
-            launch.description?.trim(),
-            launch.cardUrl ? `GSD card: ${launch.cardUrl}` : null
-          ]
-            .filter(Boolean)
-            .join('\n\n'),
+          prefilledPrompt: buildGsdLaunchPrompt(launch),
           telemetrySource: 'unknown'
         })
       })

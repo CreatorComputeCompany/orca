@@ -40,6 +40,23 @@ export function resolveGsdControllerRepoId(args: {
   return match?.id ?? null
 }
 
+export function buildGsdLaunchPrompt(launch: GsdOrcaLaunchConsumeResult): string {
+  const description = launch.description?.trim() ?? ''
+  const visibleDescription = description
+    .replace(/<[^>]*>/g, '')
+    .replace(/&(?:nbsp|#160);/gi, '')
+    .trim()
+  return [
+    `# ${launch.title}`,
+    visibleDescription ? description : null,
+    launch.cardUrl ? `GSD card: ${launch.cardUrl}` : `GSD card: ${launch.cardPublicId}`,
+    `Board: ${launch.boardName}`,
+    `List: ${launch.listName}`
+  ]
+    .filter(Boolean)
+    .join('\n\n')
+}
+
 export function isGsdIdentityLinkRequired(error: unknown): boolean {
   return error instanceof Error && error.message === GSD_IDENTITY_LINK_REQUIRED_MESSAGE
 }

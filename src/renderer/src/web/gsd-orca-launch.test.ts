@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildGsdLaunchPrompt,
   isGsdIdentityLinkRequired,
   resolveGsdControllerRepoId,
   shouldAutoCreateGsdWorkspace,
   shouldConsumePendingGsdLaunch
 } from './gsd-orca-launch'
+import type { GsdOrcaLaunchConsumeResult } from '../../../shared/gsd-orca-launch-contract'
 import type { Repo } from '../../../shared/repo-types'
 
 describe('GSD Orca launch errors', () => {
@@ -35,6 +37,37 @@ describe('GSD Orca launch errors', () => {
         alreadyStarted: false
       })
     ).toBe(true)
+  })
+})
+
+describe('GSD agent prompt', () => {
+  const launch: GsdOrcaLaunchConsumeResult = {
+    runPublicId: 'run-1',
+    cardPublicId: 'card-1',
+    title: 'Reroute messages that bypass head.',
+    description: '<p></p>',
+    boardName: "Jake's Tasks",
+    listName: 'Backlog',
+    cardUrl: 'https://gsd.example.com/cards/card-1',
+    repository: { name: 'emma', remoteUrl: 'https://github.com/example/emma.git' },
+    agent: 'codex'
+  }
+
+  it('includes task context while dropping an empty rich-text description', () => {
+    expect(buildGsdLaunchPrompt(launch)).toBe(
+      [
+        '# Reroute messages that bypass head.',
+        'GSD card: https://gsd.example.com/cards/card-1',
+        "Board: Jake's Tasks",
+        'List: Backlog'
+      ].join('\n\n')
+    )
+  })
+
+  it('keeps a meaningful card description', () => {
+    expect(
+      buildGsdLaunchPrompt({ ...launch, description: '<p>Preserve the head route.</p>' })
+    ).toContain('<p>Preserve the head route.</p>')
   })
 })
 
