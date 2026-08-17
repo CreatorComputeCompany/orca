@@ -10,6 +10,7 @@ import WebMultiplayerLogin from './WebMultiplayerLogin'
 import {
   clearWebMultiplayerSsoResult,
   installWebMultiplayerAuth,
+  linkCurrentOrcaMemberToGsd,
   readWebMultiplayerSsoResult
 } from './web-multiplayer-enrollment'
 import { RecoverableRenderErrorBoundary } from '../components/error-boundaries/RecoverableRenderErrorBoundary'
@@ -27,8 +28,12 @@ import { installWebPreloadApi } from './web-preload-api'
 import { I18nProvider } from '../i18n/I18nProvider'
 import { translate } from '../i18n/i18n'
 import { useAppStore } from '@/store'
-import { captureGsdLaunchFromLocation, consumePendingGsdLaunch } from './gsd-orca-launch'
-
+import { Button } from '@/components/ui/button'
+import {
+  captureGsdLaunchFromLocation,
+  consumePendingGsdLaunch,
+  isGsdIdentityLinkRequired
+} from './gsd-orca-launch'
 const App = lazy(() => import('../App'))
 
 function WebRoot(): React.JSX.Element {
@@ -50,9 +55,9 @@ function WebRoot(): React.JSX.Element {
     }
     return decision
   }, [initialPairingInput])
-  const [ssoState, setSsoState] = useState<'idle' | 'installing' | 'installed' | 'failed'>(() =>
-    initialSsoResult ? 'installing' : 'idle'
-  )
+  const [ssoState, setSsoState] = useState<
+    'idle' | 'installing' | 'installed' | 'link-required' | 'linking' | 'failed'
+  >(() => (initialSsoResult ? 'installing' : 'idle'))
   const [ssoError, setSsoError] = useState<string | null>(null)
   const [hasEnvironment, setHasEnvironment] = useState(() => {
     if (startupDecision.kind === 'auto-save-runtime-offer') {
@@ -113,6 +118,10 @@ function WebRoot(): React.JSX.Element {
         })
       })
       .catch((error) => {
+        if (isGsdIdentityLinkRequired(error)) {
+          setSsoState('link-required')
+          return
+        }
         setSsoError(error instanceof Error ? error.message : String(error))
         setSsoState('failed')
       })
@@ -120,6 +129,34 @@ function WebRoot(): React.JSX.Element {
 
   if (ssoState === 'installing') {
     return <div className="min-h-dvh bg-background" />
+  }
+  if (ssoState === 'link-required' || ssoState === 'linking') {
+    const current = readStoredWebRuntimeEnvironment()
+    const memberName = current?.multiplayerDisplayName ?? 'this Orca user'
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-background p-6 text-foreground">
+        <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-sm">
+          <h1 className="font-semibold">Link {memberName} to GSD</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            This one-time link lets GSD open card worktrees as your existing Orca user. It does not
+            create a new Orca user or change workspace ownership.
+          </p>
+          <Button
+            className="mt-5 w-full"
+            disabled={ssoState === 'linking'}
+            onClick={() => {
+              setSsoState('linking')
+              void linkCurrentOrcaMemberToGsd().catch((error) => {
+                setSsoError(error instanceof Error ? error.message : String(error))
+                setSsoState('failed')
+              })
+            }}
+          >
+            {ssoState === 'linking' ? 'Opening GSD…' : 'Link GSD and continue'}
+          </Button>
+        </div>
+      </div>
+    )
   }
   if (ssoState === 'failed') {
     return (

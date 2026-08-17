@@ -8,6 +8,12 @@ import {
 } from './web-runtime-environment'
 
 const PENDING_LAUNCH_KEY = 'orca.web.gsdLaunch.v1'
+const GSD_IDENTITY_LINK_REQUIRED_MESSAGE =
+  'Link this Orca member to GSD before opening card worktrees.'
+
+export function isGsdIdentityLinkRequired(error: unknown): boolean {
+  return error instanceof Error && error.message === GSD_IDENTITY_LINK_REQUIRED_MESSAGE
+}
 
 export function captureGsdLaunchFromLocation(location: Location): boolean {
   const token = new URLSearchParams(location.hash.replace(/^#/, '')).get('launch')?.trim()
