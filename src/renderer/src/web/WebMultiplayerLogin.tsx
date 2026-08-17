@@ -3,7 +3,11 @@ import { LogIn } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { loginWebMultiplayerAccount } from './web-multiplayer-enrollment'
+import {
+  loginWebMultiplayerAccount,
+  linkCurrentOrcaMemberToGsd,
+  startGsdSharedLogin
+} from './web-multiplayer-enrollment'
 
 type Props = {
   onAuthenticated: () => void
@@ -26,7 +30,11 @@ export default function WebMultiplayerLogin({
     setError(null)
     try {
       await loginWebMultiplayerAccount({ email: email.trim(), password })
-      onAuthenticated()
+      try {
+        await linkCurrentOrcaMemberToGsd()
+      } catch {
+        onAuthenticated()
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -77,6 +85,14 @@ export default function WebMultiplayerLogin({
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <Button onClick={() => void login()} disabled={submitting || !email.trim() || !password}>
           {submitting ? 'Signing in…' : 'Sign in'}
+        </Button>
+        <div className="flex items-center gap-3 text-xs text-muted-foreground">
+          <span className="h-px flex-1 bg-border" />
+          <span>or</span>
+          <span className="h-px flex-1 bg-border" />
+        </div>
+        <Button variant="outline" onClick={startGsdSharedLogin}>
+          Continue with GSD
         </Button>
         <Button variant="ghost" onClick={onUseAccessLink}>
           {secondaryActionLabel}

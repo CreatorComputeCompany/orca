@@ -17,6 +17,9 @@ export const MultiplayerAuthLoginParamsSchema = z.object({
 export type MultiplayerAuthRegisterParams = z.infer<typeof MultiplayerAuthRegisterParamsSchema>
 export type MultiplayerAuthLoginParams = z.infer<typeof MultiplayerAuthLoginParamsSchema>
 
+export const MultiplayerSsoLinkParamsSchema = z.object({}).strict()
+export type MultiplayerSsoLinkResult = { authorizationUrl: string }
+
 export type MultiplayerAuthResult = {
   email: string
   member: {

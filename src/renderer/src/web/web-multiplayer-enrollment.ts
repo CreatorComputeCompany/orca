@@ -51,7 +51,7 @@ export async function loginWebMultiplayerAccount(args: {
   await installWebMultiplayerAuth((await response.json()) as MultiplayerAuthResult, null)
 }
 
-async function installWebMultiplayerAuth(
+export async function installWebMultiplayerAuth(
   result: MultiplayerAuthResult,
   current: ReturnType<typeof readStoredWebRuntimeEnvironment>
 ): Promise<void> {
@@ -102,6 +102,63 @@ async function installWebMultiplayerAuth(
   )
 }
 
+export function readWebMultiplayerSsoResult(location: Location): MultiplayerAuthResult | null {
+  const value = new URLSearchParams(location.hash.replace(/^#/, '')).get('sso')
+  if (!value) {
+    return null
+  }
+  try {
+    const decoded = JSON.parse(
+      new TextDecoder().decode(
+        Uint8Array.from(atob(toBase64(value)), (character) => character.charCodeAt(0))
+      )
+    ) as MultiplayerAuthResult
+    if (
+      typeof decoded?.pairingUrl !== 'string' ||
+      typeof decoded?.email !== 'string' ||
+      typeof decoded?.member?.key !== 'string' ||
+      typeof decoded?.member?.displayName !== 'string'
+    ) {
+      return null
+    }
+    return decoded
+  } catch {
+    return null
+  }
+}
+
+export function clearWebMultiplayerSsoResult(): void {
+  window.history.replaceState(null, '', `${window.location.pathname}${window.location.search}`)
+}
+
+export function startGsdSharedLogin(): void {
+  const pathname = window.location.pathname.endsWith('web-index.html')
+    ? window.location.pathname.replace(/web-index\.html$/, 'api/multiplayer/sso/start')
+    : `${window.location.pathname.replace(/\/$/, '')}/api/multiplayer/sso/start`
+  window.location.assign(`${window.location.origin}${pathname}`)
+}
+
+export async function linkCurrentOrcaMemberToGsd(): Promise<void> {
+  const current = readStoredWebRuntimeEnvironment()
+  if (!current) {
+    throw new Error('Sign in to Orca before linking GSD.')
+  }
+  const client = new WebRuntimeClient(getPreferredWebPairingOffer(current))
+  try {
+    const response = await client.call('multiplayer.auth.createSsoLink', {})
+    if (!response.ok) {
+      throw new Error(response.error.message)
+    }
+    const result = response.result as { authorizationUrl?: unknown }
+    if (typeof result.authorizationUrl !== 'string') {
+      throw new Error('Orca returned an invalid GSD authorization URL.')
+    }
+    window.location.assign(result.authorizationUrl)
+  } finally {
+    client.close()
+  }
+}
+
 function multiplayerLoginUrl(): string {
   const pathname = window.location.pathname.endsWith('web-index.html')
     ? window.location.pathname.replace(/web-index\.html$/, 'api/multiplayer/login')
@@ -111,4 +168,9 @@ function multiplayerLoginUrl(): string {
 
 function sameOriginWebSocketUrl(): string {
   return `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
+}
+
+function toBase64(value: string): string {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/')
+  return normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=')
 }

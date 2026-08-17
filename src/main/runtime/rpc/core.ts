@@ -20,7 +20,8 @@ import type {
 } from '../../../shared/multiplayer-identity-contract'
 import type {
   MultiplayerAuthRegisterParams,
-  MultiplayerAuthResult
+  MultiplayerAuthResult,
+  MultiplayerSsoLinkResult
 } from '../../../shared/multiplayer-auth-contract'
 import type {
   ManagedRuntimeOfferParams,
@@ -29,6 +30,12 @@ import type {
   ManagedRuntimeRevokeParams,
   ManagedRuntimeRevokeResult
 } from '../../../shared/managed-runtime-access-contract'
+import type {
+  GsdOrcaLaunchConsumeParams,
+  GsdOrcaLaunchConsumeResult,
+  GsdOrcaLaunchLinkParams,
+  GsdOrcaLaunchLinkResult
+} from '../../../shared/gsd-orca-launch-contract'
 
 export type PairingRpcContext = {
   getEndpoints(params: PairingGetEndpointsParams): Promise<PairingGetEndpointsResult>
@@ -38,6 +45,9 @@ export type PairingRpcContext = {
     params: MultiplayerIdentityEnrollParams
   ): Promise<MultiplayerIdentityEnrollResult>
   registerMultiplayerAccount?(params: MultiplayerAuthRegisterParams): Promise<MultiplayerAuthResult>
+  createMultiplayerSsoLink?(): Promise<MultiplayerSsoLinkResult>
+  consumeGsdOrcaLaunch?(params: GsdOrcaLaunchConsumeParams): Promise<GsdOrcaLaunchConsumeResult>
+  linkGsdOrcaLaunch?(params: GsdOrcaLaunchLinkParams): Promise<GsdOrcaLaunchLinkResult>
   createManagedRuntimeOffer?(params: ManagedRuntimeOfferParams): Promise<ManagedRuntimeOfferResult>
   revokeManagedRuntimeAccess?(
     params: ManagedRuntimeRevokeParams

@@ -53,6 +53,13 @@ export class MultiplayerAccountStore {
     return this.read().accounts.length > 0
   }
 
+  findByEmail(emailInput: string): MultiplayerAccount | null {
+    const email = MultiplayerEmailSchema.safeParse(emailInput)
+    return email.success
+      ? (this.read().accounts.find((account) => account.email === email.data) ?? null)
+      : null
+  }
+
   async register(args: {
     email: string
     password: string

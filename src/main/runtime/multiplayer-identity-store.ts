@@ -7,10 +7,19 @@ import type { EphemeralVmRuntimeRecord } from '../../shared/ephemeral-vm-runtime
 const MEMBER_KEY_PATTERN = /^[a-z0-9][a-z0-9-]{0,62}$/
 const STORE_FILE = 'orca-multiplayer-identities.json'
 
+const ExternalIdentitySchema = z.object({
+  issuer: z.string().url().max(512),
+  subject: z.string().min(1).max(512),
+  email: z.string().email().max(254),
+  linkedAt: z.number().finite(),
+  lastValidatedAt: z.number().finite()
+})
+
 const MemberSchema = z.object({
   key: z.string().regex(MEMBER_KEY_PATTERN),
   displayName: z.string().min(1).max(80),
   deviceIds: z.array(z.string().min(1)).max(32),
+  externalIdentities: z.array(ExternalIdentitySchema).max(8).default([]),
   createdAt: z.number().finite(),
   updatedAt: z.number().finite()
 })
@@ -52,6 +61,7 @@ export function enrollMultiplayerDevice(args: {
     key,
     displayName,
     deviceIds: [...new Set([...(existing?.deviceIds ?? []), args.deviceId])],
+    externalIdentities: existing?.externalIdentities ?? [],
     createdAt: existing?.createdAt ?? now,
     updatedAt: now
   })
@@ -60,10 +70,117 @@ export function enrollMultiplayerDevice(args: {
       ...candidate,
       deviceIds: candidate.deviceIds.filter((deviceId) => deviceId !== args.deviceId)
     }))
-    .filter((candidate) => candidate.deviceIds.length > 0 && candidate.key !== key)
+    .filter(
+      (candidate) =>
+        (candidate.deviceIds.length > 0 || candidate.externalIdentities.length > 0) &&
+        candidate.key !== key
+    )
   writeDurableSecureJsonFile(storePath(args.userDataPath), {
     version: 1,
     members: [...members, member]
+  })
+  return member
+}
+
+export function findMultiplayerMemberByExternalIdentity(
+  userDataPath: string,
+  identity: { issuer: string; subject: string }
+): MultiplayerMember | null {
+  return (
+    readStore(userDataPath).members.find((member) =>
+      member.externalIdentities.some(
+        (candidate) =>
+          candidate.issuer === identity.issuer && candidate.subject === identity.subject
+      )
+    ) ?? null
+  )
+}
+
+export function linkMultiplayerMemberExternalIdentity(args: {
+  userDataPath: string
+  memberKey: string
+  issuer: string
+  subject: string
+  email: string
+}): MultiplayerMember {
+  const store = readStore(args.userDataPath)
+  const member = store.members.find((candidate) => candidate.key === args.memberKey)
+  if (!member) {
+    throw new Error('The Orca member no longer exists.')
+  }
+  const claimed = store.members.find((candidate) =>
+    candidate.externalIdentities.some(
+      (identity) => identity.issuer === args.issuer && identity.subject === args.subject
+    )
+  )
+  if (claimed && claimed.key !== member.key) {
+    throw new Error('This GSD account is already linked to another Orca member.')
+  }
+  const now = Date.now()
+  const externalIdentity = ExternalIdentitySchema.parse({
+    issuer: args.issuer,
+    subject: args.subject,
+    email: args.email.trim().toLowerCase(),
+    linkedAt:
+      member.externalIdentities.find(
+        (identity) => identity.issuer === args.issuer && identity.subject === args.subject
+      )?.linkedAt ?? now,
+    lastValidatedAt: now
+  })
+  const linked = MemberSchema.parse({
+    ...member,
+    externalIdentities: [
+      ...member.externalIdentities.filter(
+        (identity) => identity.issuer !== args.issuer || identity.subject !== args.subject
+      ),
+      externalIdentity
+    ],
+    updatedAt: now
+  })
+  writeDurableSecureJsonFile(storePath(args.userDataPath), {
+    version: 1,
+    members: store.members.map((candidate) => (candidate.key === linked.key ? linked : candidate))
+  })
+  return linked
+}
+
+export function createMultiplayerMemberForExternalIdentity(args: {
+  userDataPath: string
+  displayName: string
+  issuer: string
+  subject: string
+  email: string
+}): MultiplayerMember {
+  const store = readStore(args.userDataPath)
+  const existing = findMultiplayerMemberByExternalIdentity(args.userDataPath, args)
+  if (existing) {
+    return existing
+  }
+  const baseKey = normalizeMultiplayerMemberKey(args.displayName)
+  let key = baseKey
+  for (let suffix = 2; store.members.some((member) => member.key === key); suffix += 1) {
+    key = `${baseKey.slice(0, Math.max(1, 63 - String(suffix).length - 1))}-${suffix}`
+  }
+  const now = Date.now()
+  const member = MemberSchema.parse({
+    key,
+    displayName: args.displayName.trim(),
+    deviceIds: [],
+    externalIdentities: [
+      {
+        issuer: args.issuer,
+        subject: args.subject,
+        email: args.email.trim().toLowerCase(),
+        linkedAt: now,
+        lastValidatedAt: now
+      }
+    ],
+    createdAt: now,
+    updatedAt: now
+  })
+  writeDurableSecureJsonFile(storePath(args.userDataPath), {
+    version: 1,
+    members: [...store.members, member]
   })
   return member
 }

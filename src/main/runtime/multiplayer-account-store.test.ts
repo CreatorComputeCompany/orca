@@ -78,5 +78,12 @@ function makeRoot(): string {
 }
 
 function member(key: string, displayName: string): MultiplayerMember {
-  return { key, displayName, deviceIds: [`${key}-device`], createdAt: 1, updatedAt: 1 }
+  return {
+    key,
+    displayName,
+    deviceIds: [`${key}-device`],
+    externalIdentities: [],
+    createdAt: 1,
+    updatedAt: 1
+  }
 }

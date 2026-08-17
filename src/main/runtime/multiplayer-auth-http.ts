@@ -1,8 +1,11 @@
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { MultiplayerAuthLoginParamsSchema } from '../../shared/multiplayer-auth-contract'
 import type { MultiplayerAuthResult } from '../../shared/multiplayer-auth-contract'
+import type { MultiplayerOidcController } from './multiplayer-oidc'
 
 const LOGIN_PATH = '/api/multiplayer/login'
+const SSO_START_PATH = '/api/multiplayer/sso/start'
+const SSO_CALLBACK_PATH = '/api/multiplayer/sso/callback'
 const MAX_LOGIN_BODY_BYTES = 4 * 1024
 const LOGIN_WINDOW_MS = 15 * 60 * 1000
 const LOGIN_ATTEMPT_LIMIT = 5
@@ -14,11 +17,49 @@ type LoginIssuer = (args: {
   password: string
 }) => Promise<MultiplayerAuthResult | null>
 
-export function createMultiplayerAuthHttpHandler(issueLogin: LoginIssuer) {
+export function createMultiplayerAuthHttpHandler(
+  issueLogin: LoginIssuer,
+  oidc: MultiplayerOidcController | null = null
+) {
   const attempts = new Map<string, number[]>()
   let globalAttempts: number[] = []
   let activeLogins = 0
   return (request: IncomingMessage, response: ServerResponse): boolean => {
+    const requestUrl = parseRequestUrl(request.url)
+    if (requestUrl?.pathname.endsWith(SSO_START_PATH)) {
+      setSecurityHeaders(response)
+      if (!oidc) {
+        writeJson(response, 503, { error: 'shared_login_unavailable' })
+        return true
+      }
+      if (request.method !== 'GET') {
+        response.setHeader('Allow', 'GET')
+        writeJson(response, 405, { error: 'method_not_allowed' })
+        return true
+      }
+      void oidc
+        .createAuthorizationUrl()
+        .then((location) => writeRedirect(response, location))
+        .catch((error) => writeAuthError(response, error))
+      return true
+    }
+    if (requestUrl?.pathname.endsWith(SSO_CALLBACK_PATH)) {
+      setSecurityHeaders(response)
+      if (!oidc) {
+        writeAuthError(response, new Error('Shared login is not configured.'))
+        return true
+      }
+      if (request.method !== 'GET') {
+        response.setHeader('Allow', 'GET')
+        writeJson(response, 405, { error: 'method_not_allowed' })
+        return true
+      }
+      void oidc
+        .completeCallback(requestUrl)
+        .then((location) => writeRedirect(response, location))
+        .catch((error) => writeAuthError(response, error))
+      return true
+    }
     if (!matchesLoginPath(request.url)) {
       return false
     }
@@ -78,6 +119,17 @@ export function createMultiplayerAuthHttpHandler(issueLogin: LoginIssuer) {
         activeLogins -= 1
       })
     return true
+  }
+}
+
+function parseRequestUrl(rawUrl: string | undefined): URL | null {
+  if (!rawUrl) {
+    return null
+  }
+  try {
+    return new URL(rawUrl, 'http://127.0.0.1')
+  } catch {
+    return null
   }
 }
 
@@ -143,4 +195,38 @@ function writeJson(response: ServerResponse, statusCode: number, value: unknown)
   }
   response.statusCode = statusCode
   response.end(JSON.stringify(value))
+}
+
+function writeRedirect(response: ServerResponse, location: string): void {
+  if (response.writableEnded) {
+    return
+  }
+  response.statusCode = 302
+  response.setHeader('Location', location)
+  response.end()
+}
+
+function writeAuthError(response: ServerResponse, error: unknown): void {
+  if (response.writableEnded) {
+    return
+  }
+  const message = error instanceof Error ? error.message : 'Shared login failed.'
+  response.statusCode = 400
+  response.setHeader('Content-Type', 'text/html; charset=utf-8')
+  response.end(
+    `<!doctype html><meta name="viewport" content="width=device-width"><title>Orca sign-in failed</title><main style="font:16px system-ui;max-width:36rem;margin:10vh auto;padding:1.5rem"><h1>Orca sign-in failed</h1><p>${escapeHtml(message)}</p><p><a href="/web-index.html">Back to Orca</a></p></main>`
+  )
+}
+
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"']/g, (character) => {
+    const entities: Record<string, string> = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }
+    return entities[character] ?? character
+  })
 }

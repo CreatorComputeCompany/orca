@@ -1,12 +1,17 @@
 import '../assets/main.css'
 
-import { Suspense, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useRef, useState } from 'react'
 import { lazyWithRetry as lazy } from '@/lib/lazy-with-retry'
 import ReactDOM from 'react-dom/client'
 import { useTranslation } from 'react-i18next'
 import WebConnect from './WebConnect'
 import WebMultiplayerIdentitySetup from './WebMultiplayerIdentitySetup'
 import WebMultiplayerLogin from './WebMultiplayerLogin'
+import {
+  clearWebMultiplayerSsoResult,
+  installWebMultiplayerAuth,
+  readWebMultiplayerSsoResult
+} from './web-multiplayer-enrollment'
 import { RecoverableRenderErrorBoundary } from '../components/error-boundaries/RecoverableRenderErrorBoundary'
 import {
   clearPairingInputFromAddressBar,
@@ -21,10 +26,14 @@ import {
 import { installWebPreloadApi } from './web-preload-api'
 import { I18nProvider } from '../i18n/I18nProvider'
 import { translate } from '../i18n/i18n'
+import { useAppStore } from '@/store'
+import { captureGsdLaunchFromLocation, consumePendingGsdLaunch } from './gsd-orca-launch'
 
 const App = lazy(() => import('../App'))
 
 function WebRoot(): React.JSX.Element {
+  const initialSsoResult = useMemo(() => readWebMultiplayerSsoResult(window.location), [])
+  const hasPendingGsdLaunch = useMemo(() => captureGsdLaunchFromLocation(window.location), [])
   const initialPairingInput = useMemo(() => readPairingInputFromLocation(window.location), [])
   // Why: current runtime links carry scope metadata. Runtime-scope offers keep
   // the instant save path; mobile/legacy-unknown offers must be shown/probed.
@@ -41,6 +50,10 @@ function WebRoot(): React.JSX.Element {
     }
     return decision
   }, [initialPairingInput])
+  const [ssoState, setSsoState] = useState<'idle' | 'installing' | 'installed' | 'failed'>(() =>
+    initialSsoResult ? 'installing' : 'idle'
+  )
+  const [ssoError, setSsoError] = useState<string | null>(null)
   const [hasEnvironment, setHasEnvironment] = useState(() => {
     if (startupDecision.kind === 'auto-save-runtime-offer') {
       saveStoredWebRuntimeEnvironment(
@@ -59,6 +72,68 @@ function WebRoot(): React.JSX.Element {
   )
   const [showAccessLink, setShowAccessLink] = useState(false)
   const [showAccountLogin, setShowAccountLogin] = useState(false)
+  const gsdLaunchStarted = useRef(false)
+
+  useEffect(() => {
+    if (!initialSsoResult) {
+      return
+    }
+    clearWebMultiplayerSsoResult()
+    void installWebMultiplayerAuth(initialSsoResult, readStoredWebRuntimeEnvironment())
+      .then(() => {
+        setHasEnvironment(true)
+        setHasMultiplayerAccount(true)
+        setSsoState('installed')
+      })
+      .catch((error) => {
+        setSsoError(error instanceof Error ? error.message : String(error))
+        setSsoState('failed')
+      })
+  }, [initialSsoResult])
+
+  useEffect(() => {
+    if (!hasMultiplayerAccount || !hasPendingGsdLaunch || gsdLaunchStarted.current) {
+      return
+    }
+    gsdLaunchStarted.current = true
+    void consumePendingGsdLaunch()
+      .then((launch) => {
+        if (!launch) {
+          return
+        }
+        useAppStore.getState().openModal('new-workspace-composer', {
+          prefilledName: launch.title,
+          prefilledPrompt: [
+            launch.description?.trim(),
+            launch.cardUrl ? `GSD card: ${launch.cardUrl}` : null
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
+          telemetrySource: 'unknown'
+        })
+      })
+      .catch((error) => {
+        setSsoError(error instanceof Error ? error.message : String(error))
+        setSsoState('failed')
+      })
+  }, [hasMultiplayerAccount, hasPendingGsdLaunch])
+
+  if (ssoState === 'installing') {
+    return <div className="min-h-dvh bg-background" />
+  }
+  if (ssoState === 'failed') {
+    return (
+      <div className="flex min-h-dvh items-center justify-center bg-background p-6 text-foreground">
+        <div className="max-w-md rounded-lg border border-border bg-card p-5">
+          <h1 className="font-semibold">Could not finish GSD sign-in</h1>
+          <p className="mt-2 text-sm text-muted-foreground">{ssoError}</p>
+          <button className="mt-4 underline" onClick={() => window.location.reload()}>
+            Try again
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   if (showAccountLogin) {
     return (

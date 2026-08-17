@@ -5,9 +5,12 @@ import { afterEach, describe, expect, it } from 'vitest'
 import type { EphemeralVmRuntimeRecord } from '../../shared/ephemeral-vm-runtimes'
 import {
   canDeviceAccessEphemeralVmRuntime,
+  createMultiplayerMemberForExternalIdentity,
   devicesBelongToSameMember,
   enrollMultiplayerDevice,
-  findMultiplayerMemberByDevice
+  findMultiplayerMemberByDevice,
+  findMultiplayerMemberByExternalIdentity,
+  linkMultiplayerMemberExternalIdentity
 } from './multiplayer-identity-store'
 
 const directories: string[] = []
@@ -138,5 +141,96 @@ describe('multiplayer identity store', () => {
     const owned = runtime('retired-creator-browser', 'private', 'jake')
     expect(canDeviceAccessEphemeralVmRuntime(userDataPath, 'jake-phone', owned)).toBe(true)
     expect(canDeviceAccessEphemeralVmRuntime(userDataPath, 'steven-browser', owned)).toBe(false)
+  })
+
+  it('links an external subject to an existing member without changing ownership', () => {
+    const userDataPath = temporaryUserData()
+    enrollMultiplayerDevice({
+      userDataPath,
+      memberKey: 'jake',
+      displayName: 'Jake',
+      deviceId: 'legacy-browser'
+    })
+
+    const linked = linkMultiplayerMemberExternalIdentity({
+      userDataPath,
+      memberKey: 'jake',
+      issuer: 'https://gsd.example.com/api/auth',
+      subject: 'gsd-user-1',
+      email: 'jake@example.com'
+    })
+    enrollMultiplayerDevice({
+      userDataPath,
+      memberKey: linked.key,
+      displayName: linked.displayName,
+      deviceId: 'gsd-browser'
+    })
+
+    expect(
+      findMultiplayerMemberByExternalIdentity(userDataPath, {
+        issuer: 'https://gsd.example.com/api/auth',
+        subject: 'gsd-user-1'
+      })?.key
+    ).toBe('jake')
+    expect(
+      canDeviceAccessEphemeralVmRuntime(
+        userDataPath,
+        'gsd-browser',
+        runtime('old', 'private', 'jake')
+      )
+    ).toBe(true)
+  })
+
+  it('never merges external identities by email', () => {
+    const userDataPath = temporaryUserData()
+    const first = createMultiplayerMemberForExternalIdentity({
+      userDataPath,
+      displayName: 'Jake',
+      issuer: 'https://gsd.example.com/api/auth',
+      subject: 'subject-1',
+      email: 'shared@example.com'
+    })
+    const second = createMultiplayerMemberForExternalIdentity({
+      userDataPath,
+      displayName: 'Jake',
+      issuer: 'https://gsd.example.com/api/auth',
+      subject: 'subject-2',
+      email: 'shared@example.com'
+    })
+
+    expect(first.key).toBe('jake')
+    expect(second.key).toBe('jake-2')
+  })
+
+  it('keeps other externally linked members while enrolling a browser', () => {
+    const userDataPath = temporaryUserData()
+    const jake = createMultiplayerMemberForExternalIdentity({
+      userDataPath,
+      displayName: 'Jake',
+      issuer: 'https://gsd.example.com/api/auth',
+      subject: 'subject-1',
+      email: 'jake@example.com'
+    })
+    createMultiplayerMemberForExternalIdentity({
+      userDataPath,
+      displayName: 'Steven',
+      issuer: 'https://gsd.example.com/api/auth',
+      subject: 'subject-2',
+      email: 'steven@example.com'
+    })
+
+    enrollMultiplayerDevice({
+      userDataPath,
+      memberKey: jake.key,
+      displayName: jake.displayName,
+      deviceId: 'jake-browser'
+    })
+
+    expect(
+      findMultiplayerMemberByExternalIdentity(userDataPath, {
+        issuer: 'https://gsd.example.com/api/auth',
+        subject: 'subject-2'
+      })?.key
+    ).toBe('steven')
   })
 })

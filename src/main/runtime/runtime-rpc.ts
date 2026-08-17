@@ -57,20 +57,29 @@ import { encodeMobilePairingQr } from './mobile-pairing-qr'
 import { MobileRuntimeFederationGateway } from './mobile-runtime-federation-gateway'
 import { MultiplayerAccountStore } from './multiplayer-account-store'
 import { createMultiplayerAuthHttpHandler } from './multiplayer-auth-http'
+import { MultiplayerOidcController, type MultiplayerOidcIdentity } from './multiplayer-oidc'
 import { migrateEphemeralVmRuntimeMemberOwnership } from '../ephemeral-vm-runtime-member-ownership'
 import type { RuntimeWorktreePsResult } from '../../shared/runtime-types'
 import type {
   MultiplayerAuthRegisterParams,
   MultiplayerAuthResult
 } from '../../shared/multiplayer-auth-contract'
+import type {
+  GsdOrcaLaunchConsumeResult,
+  GsdOrcaLaunchLinkResult
+} from '../../shared/gsd-orca-launch-contract'
 import {
   enrollMultiplayerDevice,
+  createMultiplayerMemberForExternalIdentity,
   findMultiplayerMemberByDevice,
+  findMultiplayerMemberByExternalIdentity,
   findMultiplayerMemberByKey,
+  linkMultiplayerMemberExternalIdentity,
   type MultiplayerMember
 } from './multiplayer-identity-store'
 
 const DEFAULT_WS_PORT = 6768
+const GSD_LAUNCH_REQUEST_TIMEOUT_MS = 15_000
 
 // Why: STA-2370 — the WS listener defaults to loopback so a desktop with no paired device is not
 // reachable from the LAN; it widens to all interfaces only on explicit pairing (or `orca serve`).
@@ -508,6 +517,7 @@ export class OrcaRuntimeRpcServer {
   private readonly dispatcher: RpcDispatcher
   private readonly mobileRuntimeFederation: MobileRuntimeFederationGateway
   private readonly multiplayerAccounts: MultiplayerAccountStore
+  private readonly multiplayerOidc: MultiplayerOidcController | null
   private readonly multiplayerAuthHttpHandler: ReturnType<typeof createMultiplayerAuthHttpHandler>
   private multiplayerRegistrationQueue: Promise<void> = Promise.resolve()
   private readonly userDataPath: string
@@ -588,8 +598,12 @@ export class OrcaRuntimeRpcServer {
       userDataPath
     )
     this.multiplayerAccounts = new MultiplayerAccountStore(userDataPath)
-    this.multiplayerAuthHttpHandler = createMultiplayerAuthHttpHandler((credentials) =>
-      this.issueMultiplayerLogin(credentials)
+    this.multiplayerOidc = MultiplayerOidcController.fromEnvironment((identity, memberKey) =>
+      this.issueMultiplayerOidcLogin(identity, memberKey)
+    )
+    this.multiplayerAuthHttpHandler = createMultiplayerAuthHttpHandler(
+      (credentials) => this.issueMultiplayerLogin(credentials),
+      this.multiplayerOidc
     )
     this.userDataPath = userDataPath
     this.pid = pid
@@ -647,6 +661,40 @@ export class OrcaRuntimeRpcServer {
     }
     const member = findMultiplayerMemberByKey(this.userDataPath, account.memberKey)
     return member ? this.issueMemberBrowserOffer(member, account.email) : null
+  }
+
+  private issueMultiplayerOidcLogin(
+    identity: MultiplayerOidcIdentity,
+    memberKey?: string
+  ): MultiplayerAuthResult {
+    let member = findMultiplayerMemberByExternalIdentity(this.userDataPath, {
+      issuer: identity.issuer,
+      subject: identity.sub
+    })
+    if (memberKey) {
+      member = linkMultiplayerMemberExternalIdentity({
+        userDataPath: this.userDataPath,
+        memberKey,
+        issuer: identity.issuer,
+        subject: identity.sub,
+        email: identity.email
+      })
+    } else if (!member) {
+      if (this.multiplayerAccounts.findByEmail(identity.email)) {
+        throw new Error(
+          'This email already has an Orca account. Sign in with its password once, then link GSD from Orca.'
+        )
+      }
+      member = createMultiplayerMemberForExternalIdentity({
+        userDataPath: this.userDataPath,
+        displayName: identity.name ?? identity.email.split('@')[0],
+        issuer: identity.issuer,
+        subject: identity.sub,
+        email: identity.email
+      })
+    }
+    migrateEphemeralVmRuntimeMemberOwnership(this.userDataPath)
+    return this.issueMemberBrowserOffer(member, identity.email)
   }
 
   private issueMemberBrowserOffer(member: MultiplayerMember, email: string): MultiplayerAuthResult {
@@ -1893,6 +1941,43 @@ export class OrcaRuntimeRpcServer {
             displayName: string
           }) =>
             this.registerMultiplayerAccountForDevice(params, authenticatedSocket.device.deviceId),
+          createMultiplayerSsoLink: async () => {
+            const member = findMultiplayerMemberByDevice(
+              this.userDataPath,
+              authenticatedSocket.device.deviceId
+            )
+            if (!member || !this.multiplayerOidc) {
+              throw new Error('multiplayer_sso_unavailable')
+            }
+            return {
+              authorizationUrl: await this.multiplayerOidc.createAuthorizationUrl(member.key)
+            }
+          },
+          consumeGsdOrcaLaunch: async (params: { token: string }) => {
+            const member = findMultiplayerMemberByDevice(
+              this.userDataPath,
+              authenticatedSocket.device.deviceId
+            )
+            return await callGsdLaunchApi<GsdOrcaLaunchConsumeResult>(member, {
+              action: 'consume',
+              token: params.token
+            })
+          },
+          linkGsdOrcaLaunch: async (params: {
+            token: string
+            runtimeEnvironmentId: string
+            worktreeId: string
+            url: string
+          }) => {
+            const member = findMultiplayerMemberByDevice(
+              this.userDataPath,
+              authenticatedSocket.device.deviceId
+            )
+            return await callGsdLaunchApi<GsdOrcaLaunchLinkResult>(member, {
+              action: 'link',
+              ...params
+            })
+          },
           ...(device.pairingManagement
             ? {
                 listManagedRuntimePresence: async () => {
@@ -2049,6 +2134,40 @@ export class OrcaRuntimeRpcServer {
     }
     writeRuntimeMetadata(this.userDataPath, metadata)
   }
+}
+
+async function callGsdLaunchApi<TResult>(
+  member: MultiplayerMember | null,
+  body:
+    | { action: 'consume'; token: string }
+    | {
+        action: 'link'
+        token: string
+        runtimeEnvironmentId: string
+        worktreeId: string
+        url: string
+      }
+): Promise<TResult> {
+  const issuer = process.env.ORCA_GSD_OIDC_ISSUER?.replace(/\/$/, '')
+  const endpoint = process.env.ORCA_GSD_LAUNCH_URL
+  const identity = member?.externalIdentities.find((candidate) => candidate.issuer === issuer)
+  if (!identity) {
+    throw new Error('Link this Orca member to GSD before opening card worktrees.')
+  }
+  if (!endpoint || new URL(endpoint).protocol !== 'https:') {
+    throw new Error('GSD card launches are not configured.')
+  }
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, subject: identity.subject }),
+    signal: AbortSignal.timeout(GSD_LAUNCH_REQUEST_TIMEOUT_MS)
+  })
+  const result = (await response.json()) as { error?: unknown }
+  if (!response.ok) {
+    throw new Error(typeof result.error === 'string' ? result.error : 'GSD rejected this launch.')
+  }
+  return result as TResult
 }
 
 /** Why: MUST stay in lockstep with createRuntimeTransportMetadata()'s `o-${pid}-${suffix}.sock` shape (unit-test enforced). */
