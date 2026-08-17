@@ -33,6 +33,7 @@ export class MultiplayerOidcController {
   constructor(
     private readonly config: {
       issuer: string
+      discoveryUrl?: string
       clientId: string
       redirectUrl: string
       webClientUrl: string
@@ -47,12 +48,16 @@ export class MultiplayerOidcController {
     issueIdentity: (identity: MultiplayerOidcIdentity, memberKey?: string) => MultiplayerAuthResult
   ): MultiplayerOidcController | null {
     const issuer = process.env.ORCA_GSD_OIDC_ISSUER?.replace(/\/$/, '')
+    const discoveryUrl = process.env.ORCA_GSD_OIDC_DISCOVERY_URL
     const redirectUrl = process.env.ORCA_GSD_OIDC_REDIRECT_URL
     const webClientUrl = process.env.ORCA_WEB_CLIENT_URL
     if (!issuer || !redirectUrl || !webClientUrl) {
       return null
     }
-    for (const value of [issuer, redirectUrl, webClientUrl]) {
+    for (const value of [issuer, discoveryUrl, redirectUrl, webClientUrl]) {
+      if (!value) {
+        continue
+      }
       if (new URL(value).protocol !== 'https:') {
         throw new Error('GSD shared login URLs must use HTTPS.')
       }
@@ -60,6 +65,7 @@ export class MultiplayerOidcController {
     return new MultiplayerOidcController(
       {
         issuer,
+        ...(discoveryUrl ? { discoveryUrl } : {}),
         clientId: process.env.ORCA_GSD_OIDC_CLIENT_ID ?? 'orca-web',
         redirectUrl,
         webClientUrl
@@ -160,9 +166,12 @@ export class MultiplayerOidcController {
     if (this.metadata) {
       return this.metadata
     }
-    const response = await fetch(`${this.config.issuer}/.well-known/openid-configuration`, {
-      headers: { Accept: 'application/json' }
-    })
+    const response = await fetch(
+      this.config.discoveryUrl ?? `${this.config.issuer}/.well-known/openid-configuration`,
+      {
+        headers: { Accept: 'application/json' }
+      }
+    )
     if (!response.ok) {
       throw new Error('GSD shared-login discovery is unavailable.')
     }

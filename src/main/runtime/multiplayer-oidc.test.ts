@@ -6,6 +6,36 @@ afterEach(() => {
 })
 
 describe('multiplayer OIDC controller', () => {
+  it('supports discovery hosted below the stable issuer URL', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      jsonResponse({
+        issuer: 'https://gsd.example.com',
+        authorization_endpoint: 'https://gsd.example.com/api/auth/oauth2/authorize',
+        token_endpoint: 'https://gsd.example.com/api/auth/oauth2/token',
+        userinfo_endpoint: 'https://gsd.example.com/api/auth/oauth2/userinfo'
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new MultiplayerOidcController(
+      {
+        issuer: 'https://gsd.example.com',
+        discoveryUrl: 'https://gsd.example.com/api/auth/.well-known/openid-configuration',
+        clientId: 'orca-web',
+        redirectUrl: 'https://orca.example.com/callback',
+        webClientUrl: 'https://orca.example.com/web-index.html'
+      },
+      vi.fn()
+    )
+
+    await expect(controller.createAuthorizationUrl()).resolves.toContain(
+      '/api/auth/oauth2/authorize'
+    )
+    expect(fetchMock).toHaveBeenCalledWith(
+      'https://gsd.example.com/api/auth/.well-known/openid-configuration',
+      { headers: { Accept: 'application/json' } }
+    )
+  })
+
   it('uses authorization code plus PKCE and consumes state once', async () => {
     const issueIdentity = vi.fn(() => ({
       email: 'jake@example.com',
