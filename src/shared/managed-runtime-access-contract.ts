@@ -25,5 +25,5 @@ export type ManagedRuntimeRevokeResult = {
 }
 
 export type ManagedRuntimePresenceResult = {
-  grantKeys: string[]
+  members: { grantKey: string; worktreeId: string }[]
 }

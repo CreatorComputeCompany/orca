@@ -35,7 +35,13 @@ export const KnownRuntimeEnvironmentSchema = z.object({
   workspaceOwnerMemberKey: z.string().min(1).optional(),
   workspaceViewerMemberKey: z.string().min(1).optional(),
   workspaceLiveMembers: z
-    .array(z.object({ key: z.string().min(1), displayName: z.string().min(1) }))
+    .array(
+      z.object({
+        key: z.string().min(1),
+        displayName: z.string().min(1),
+        worktreeId: z.string().min(1)
+      })
+    )
     .optional(),
   lastUsedAt: z.number().finite().nullable(),
   runtimeId: z.string().min(1).nullable(),

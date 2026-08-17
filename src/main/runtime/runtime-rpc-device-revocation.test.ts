@@ -232,6 +232,7 @@ describe('OrcaRuntimeRpcServer', () => {
       }
       const viewerPairing = parsePairingCode(viewer.result.pairingUrl)!
       const viewerSocket = await authenticateMobileWs(viewer.result.pairingUrl)
+      runtime.registerActiveWorktreePresence('test:jake:wt-1', viewer.result.deviceId, 'wt-1')
 
       await expect(
         sendRemoteRuntimeRequest(
@@ -240,7 +241,10 @@ describe('OrcaRuntimeRpcServer', () => {
           undefined,
           5_000
         )
-      ).resolves.toMatchObject({ ok: true, result: { grantKeys: ['jake'] } })
+      ).resolves.toMatchObject({
+        ok: true,
+        result: { members: [{ grantKey: 'jake', worktreeId: 'wt-1' }] }
+      })
 
       await expect(
         sendRemoteRuntimeRequest(
@@ -266,7 +270,7 @@ describe('OrcaRuntimeRpcServer', () => {
           undefined,
           5_000
         )
-      ).resolves.toMatchObject({ ok: true, result: { grantKeys: [] } })
+      ).resolves.toMatchObject({ ok: true, result: { members: [] } })
       expect(server.getDeviceRegistry()?.getDevice(viewer.result.deviceId)).toBeNull()
       expect(server.getDeviceRegistry()?.getDevice(owner.result.deviceId)).not.toBeNull()
     } finally {

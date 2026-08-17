@@ -1895,19 +1895,27 @@ export class OrcaRuntimeRpcServer {
             this.registerMultiplayerAccountForDevice(params, authenticatedSocket.device.deviceId),
           ...(device.pairingManagement
             ? {
-                listManagedRuntimePresence: async () => ({
-                  grantKeys: [
-                    ...new Set(
-                      (this.mobileSocketWiring?.getConnectedDeviceIds() ?? []).flatMap(
-                        (deviceId) => {
-                          const grantKey =
-                            this.deviceRegistry?.getDevice(deviceId)?.managedRuntimeGrantKey
-                          return grantKey ? [grantKey] : []
-                        }
-                      )
-                    )
-                  ]
-                }),
+                listManagedRuntimePresence: async () => {
+                  const connectedDeviceIds = new Set(
+                    this.mobileSocketWiring?.getConnectedDeviceIds() ?? []
+                  )
+                  const unique = new Map<string, { grantKey: string; worktreeId: string }>()
+                  for (const presence of this.runtime.listActiveWorktreePresence()) {
+                    if (!connectedDeviceIds.has(presence.deviceId)) {
+                      continue
+                    }
+                    const grantKey = this.deviceRegistry?.getDevice(
+                      presence.deviceId
+                    )?.managedRuntimeGrantKey
+                    if (grantKey) {
+                      unique.set(`${grantKey}\0${presence.worktreeId}`, {
+                        grantKey,
+                        worktreeId: presence.worktreeId
+                      })
+                    }
+                  }
+                  return { members: [...unique.values()] }
+                },
                 createManagedRuntimeOffer: async (params: { grantKey: string; name: string }) => {
                   const offer = this.createPairingOffer({
                     name: params.name,

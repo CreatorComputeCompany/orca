@@ -28,7 +28,9 @@ describe('pairing RPC methods', () => {
       deviceId: 'viewer-device'
     })
     const revokeManagedRuntimeAccess = vi.fn().mockResolvedValue({ revoked: 1 })
-    const listManagedRuntimePresence = vi.fn().mockResolvedValue({ grantKeys: ['steven'] })
+    const listManagedRuntimePresence = vi.fn().mockResolvedValue({
+      members: [{ grantKey: 'steven', worktreeId: 'wt-1' }]
+    })
     const pairing = {
       getEndpoints: vi.fn(),
       provisionRelay: vi.fn(),
@@ -39,7 +41,10 @@ describe('pairing RPC methods', () => {
 
     await expect(
       dispatchPairing('pairing.listManagedRuntimePresence', undefined, pairing)
-    ).resolves.toMatchObject({ ok: true, result: { grantKeys: ['steven'] } })
+    ).resolves.toMatchObject({
+      ok: true,
+      result: { members: [{ grantKey: 'steven', worktreeId: 'wt-1' }] }
+    })
     await expect(
       dispatchPairing(
         'pairing.createManagedRuntimeOffer',

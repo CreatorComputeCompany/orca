@@ -47,7 +47,7 @@ describe('ephemeral VM viewer access', () => {
     expect(preserved.recipeResult).not.toMatchObject({ pairingCode: 'orca://pair?code=manager' })
   })
 
-  it('projects connected grant keys as named live members', async () => {
+  it('projects active worktrees as named live members', async () => {
     const { userDataPath, runtime } = setupRuntime()
     enrollMultiplayerDevice({
       userDataPath,
@@ -57,11 +57,16 @@ describe('ephemeral VM viewer access', () => {
     })
     sendRemoteRuntimeRequest.mockResolvedValue({
       ok: true,
-      result: { grantKeys: ['jake', 'unknown'] }
+      result: {
+        members: [
+          { grantKey: 'jake', worktreeId: 'wt-jake' },
+          { grantKey: 'unknown', worktreeId: 'wt-unknown' }
+        ]
+      }
     })
 
     await expect(projectEphemeralVmLiveMembers({ userDataPath, runtime })).resolves.toMatchObject({
-      liveMembers: [{ key: 'jake', displayName: 'Jake' }]
+      liveMembers: [{ key: 'jake', displayName: 'Jake', worktreeId: 'wt-jake' }]
     })
     expect(sendRemoteRuntimeRequest).toHaveBeenCalledWith(
       expect.objectContaining({ deviceToken: 'manager-token' }),

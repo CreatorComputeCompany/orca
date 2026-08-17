@@ -93,9 +93,9 @@ export async function projectEphemeralVmLiveMembers(args: {
   if (!response.ok) {
     throw new Error(response.error.message)
   }
-  const liveMembers = response.result.grantKeys.flatMap((key) => {
-    const member = findMultiplayerMemberByKey(args.userDataPath, key)
-    return member ? [{ key: member.key, displayName: member.displayName }] : []
+  const liveMembers = response.result.members.flatMap(({ grantKey, worktreeId }) => {
+    const member = findMultiplayerMemberByKey(args.userDataPath, grantKey)
+    return member ? [{ key: member.key, displayName: member.displayName, worktreeId }] : []
   })
   return { ...args.runtime, liveMembers }
 }

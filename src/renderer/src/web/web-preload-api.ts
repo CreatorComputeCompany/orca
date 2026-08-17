@@ -51,6 +51,7 @@ import type {
 import type { SkillDiscoveryResult } from '../../../shared/skills'
 import type { SkillFreshnessInventory } from '../../../shared/skill-freshness'
 import type { SshConnectionState, SshTarget } from '../../../shared/ssh-types'
+import { selectLiveMembersForWorktree } from '../lib/worktree-live-members'
 import {
   getDefaultOnboardingState,
   getDefaultSettings,
@@ -3882,7 +3883,11 @@ function withRuntimeWorktreeOwner<T extends Worktree>(worktree: T, hostId: Execu
     runtimeOwnerEnvironmentId: runtimeOwner.environmentId,
     ...(creatorProvenance ? { creatorProvenance } : {}),
     ...(ownerMemberKey ? { ownerMemberKey } : {}),
-    ...(liveMembers ? { liveMembers } : {}),
+    ...(liveMembers
+      ? {
+          liveMembers: selectLiveMembersForWorktree(liveMembers, worktree.id)
+        }
+      : {}),
     ...(ephemeralVmSharing ? { ephemeralVmSharing } : {})
   }
 }
