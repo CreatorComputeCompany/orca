@@ -33,6 +33,7 @@ import type { PluginService } from './plugins/plugin-service'
 import { getApprovedPluginVmRecipes } from './plugins/plugin-approved-vm-recipes'
 import { resolveProvisionedRootSource } from './ephemeral-vm-provisioned-root-source'
 import type { WorkspaceCreatorProvenance } from '../shared/worktree/types'
+import { resolveEphemeralVmProvisionRepo } from './ephemeral-vm-provision-repo'
 
 const activeProvisionControllers = new Map<string, AbortController>()
 export async function listEphemeralVmRecipes(
@@ -118,7 +119,7 @@ export async function provisionEphemeralVmForRpc(
   userDataPath: string,
   args: EphemeralVmProvisionArgs
 ): Promise<EphemeralVmProvisionRpcResult> {
-  const repo = getRecipeRepo(store, args.repoId)
+  const repo = resolveEphemeralVmProvisionRepo(store, args)
   if (!repo.ok) {
     return { ok: false, error: repo.message, stdout: '', stderr: '' }
   }
