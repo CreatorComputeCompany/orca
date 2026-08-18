@@ -16,6 +16,7 @@ import {
 const PENDING_LAUNCH_KEY = 'orca.web.gsdLaunch.v1'
 const GSD_IDENTITY_LINK_REQUIRED_MESSAGE =
   'Link this Orca member to GSD before opening card worktrees.'
+const GSD_LAUNCH_EXPIRED_MESSAGE = 'This Orca launch link expired.'
 const GSD_ATTACHMENT_CHUNK_BASE64_LENGTH = 512 * 1024
 const GSD_ATTACHMENT_DIRECTORY = '.gsd/attachments'
 const GSD_IDENTITY_LINK_RETRY_DELAY_MS = 750
@@ -125,6 +126,16 @@ export function isGsdIdentityLinkRequired(error: unknown): boolean {
   return error instanceof Error && error.message === GSD_IDENTITY_LINK_REQUIRED_MESSAGE
 }
 
+export function isGsdLaunchExpired(error: unknown): boolean {
+  return error instanceof Error && error.message === GSD_LAUNCH_EXPIRED_MESSAGE
+}
+
+export function clearPendingGsdLaunch(expectedToken?: string): void {
+  if (expectedToken === undefined || sessionStorage.getItem(PENDING_LAUNCH_KEY) === expectedToken) {
+    sessionStorage.removeItem(PENDING_LAUNCH_KEY)
+  }
+}
+
 export async function retryGsdIdentityLink<T>(operation: () => Promise<T>): Promise<T> {
   try {
     return await operation()
@@ -201,9 +212,7 @@ export async function linkPendingGsdLaunch(
     worktreeId: worktree.id,
     url: createWebWorkspaceLink(window.location, runtimeEnvironmentId)
   })
-  if (sessionStorage.getItem(PENDING_LAUNCH_KEY) === token) {
-    sessionStorage.removeItem(PENDING_LAUNCH_KEY)
-  }
+  clearPendingGsdLaunch(token)
 }
 
 export function pendingGsdLaunchToken(): string | null {

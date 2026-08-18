@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   buildGsdLaunchPrompt,
+  clearPendingGsdLaunch,
   isGsdIdentityLinkRequired,
+  isGsdLaunchExpired,
   materializeGsdLaunchAttachments,
   retryGsdIdentityLink,
   resolveGsdControllerRepoId,
@@ -20,6 +22,34 @@ describe('GSD Orca launch errors', () => {
     ).toBe(true)
     expect(isGsdIdentityLinkRequired(new Error('GSD rejected this launch.'))).toBe(false)
     expect(isGsdIdentityLinkRequired('Link this Orca member to GSD')).toBe(false)
+  })
+
+  it('recognizes and discards an expired one-time launch', () => {
+    const storage = new Map<string, string>([['orca.web.gsdLaunch.v1', 'expired-token']])
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => storage.get(key) ?? null,
+      removeItem: (key: string) => storage.delete(key)
+    })
+
+    expect(isGsdLaunchExpired(new Error('This Orca launch link expired.'))).toBe(true)
+    expect(isGsdLaunchExpired(new Error('GSD launch failed.'))).toBe(false)
+    clearPendingGsdLaunch()
+    expect(storage.has('orca.web.gsdLaunch.v1')).toBe(false)
+
+    vi.unstubAllGlobals()
+  })
+
+  it('does not clear a newer launch while finishing an older one', () => {
+    const storage = new Map<string, string>([['orca.web.gsdLaunch.v1', 'new-token']])
+    vi.stubGlobal('sessionStorage', {
+      getItem: (key: string) => storage.get(key) ?? null,
+      removeItem: (key: string) => storage.delete(key)
+    })
+
+    clearPendingGsdLaunch('old-token')
+    expect(storage.get('orca.web.gsdLaunch.v1')).toBe('new-token')
+
+    vi.unstubAllGlobals()
   })
 
   it('waits for app hydration before consuming the pending launch', () => {

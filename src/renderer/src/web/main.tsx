@@ -31,8 +31,10 @@ import { useAppStore } from '@/store'
 import {
   buildGsdLaunchPrompt,
   captureGsdLaunchFromLocation,
+  clearPendingGsdLaunch,
   consumePendingGsdLaunch,
   isGsdIdentityLinkRequired,
+  isGsdLaunchExpired,
   linkPendingGsdLaunch,
   pendingGsdLaunchToken,
   retryGsdIdentityLink,
@@ -170,6 +172,12 @@ function WebRoot(): React.JSX.Element {
         })
       })
       .catch((error) => {
+        if (isGsdLaunchExpired(error)) {
+          clearPendingGsdLaunch()
+          setSsoError(null)
+          setSsoState('idle')
+          return
+        }
         if (isGsdIdentityLinkRequired(error)) {
           setSsoState('link-required')
           return
