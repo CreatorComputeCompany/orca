@@ -28,7 +28,6 @@ import { installWebPreloadApi } from './web-preload-api'
 import { I18nProvider } from '../i18n/I18nProvider'
 import { translate } from '../i18n/i18n'
 import { useAppStore } from '@/store'
-import { Button } from '@/components/ui/button'
 import {
   buildGsdLaunchPrompt,
   captureGsdLaunchFromLocation,
@@ -36,9 +35,11 @@ import {
   isGsdIdentityLinkRequired,
   linkPendingGsdLaunch,
   pendingGsdLaunchToken,
+  retryGsdIdentityLink,
   resolveGsdControllerRepoId,
   shouldConsumePendingGsdLaunch
 } from './gsd-orca-launch'
+import GsdLaunchOverlay from './GsdLaunchOverlay'
 const App = lazy(() => import('../App'))
 
 function WebRoot(): React.JSX.Element {
@@ -114,7 +115,7 @@ function WebRoot(): React.JSX.Element {
       return
     }
     gsdLaunchStarted.current = true
-    void consumePendingGsdLaunch()
+    void retryGsdIdentityLink(consumePendingGsdLaunch)
       .then(async (launch) => {
         if (!launch) {
           return
@@ -178,49 +179,8 @@ function WebRoot(): React.JSX.Element {
       })
   }, [appHydrated, hasMultiplayerAccount, hasPendingGsdLaunch])
 
-  if (ssoState === 'installing') {
+  if (ssoState === 'installing' && (!hasEnvironment || !hasMultiplayerAccount)) {
     return <div className="min-h-dvh bg-background" />
-  }
-  if (ssoState === 'link-required' || ssoState === 'linking') {
-    const current = readStoredWebRuntimeEnvironment()
-    const memberName = current?.multiplayerDisplayName ?? 'this Orca user'
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-background p-6 text-foreground">
-        <div className="w-full max-w-md rounded-lg border border-border bg-card p-5 shadow-sm">
-          <h1 className="font-semibold">Link {memberName} to GSD</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            This one-time link lets GSD open card worktrees as your existing Orca user. It does not
-            create a new Orca user or change workspace ownership.
-          </p>
-          <Button
-            className="mt-5 w-full"
-            disabled={ssoState === 'linking'}
-            onClick={() => {
-              setSsoState('linking')
-              void linkCurrentOrcaMemberToGsd().catch((error) => {
-                setSsoError(error instanceof Error ? error.message : String(error))
-                setSsoState('failed')
-              })
-            }}
-          >
-            {ssoState === 'linking' ? 'Opening GSD…' : 'Link GSD and continue'}
-          </Button>
-        </div>
-      </div>
-    )
-  }
-  if (ssoState === 'failed') {
-    return (
-      <div className="flex min-h-dvh items-center justify-center bg-background p-6 text-foreground">
-        <div className="max-w-md rounded-lg border border-border bg-card p-5">
-          <h1 className="font-semibold">Could not finish GSD sign-in</h1>
-          <p className="mt-2 text-sm text-muted-foreground">{ssoError}</p>
-          <button className="mt-4 underline" onClick={() => window.location.reload()}>
-            Try again
-          </button>
-        </div>
-      </div>
-    )
   }
 
   if (showAccountLogin) {
@@ -269,10 +229,33 @@ function WebRoot(): React.JSX.Element {
   }
 
   installWebPreloadApi()
+  const showGsdOverlay =
+    ssoState === 'installing' ||
+    ssoState === 'link-required' ||
+    ssoState === 'linking' ||
+    ssoState === 'failed'
+  const memberName = readStoredWebRuntimeEnvironment()?.multiplayerDisplayName ?? 'this Orca user'
   return (
-    <Suspense fallback={<div className="min-h-dvh bg-background" />}>
-      <App />
-    </Suspense>
+    <>
+      <Suspense fallback={<div className="min-h-dvh bg-background" />}>
+        <App />
+      </Suspense>
+      {showGsdOverlay ? (
+        <GsdLaunchOverlay
+          state={ssoState}
+          memberName={memberName}
+          error={ssoError}
+          onLink={() => {
+            setSsoState('linking')
+            void linkCurrentOrcaMemberToGsd().catch((error) => {
+              setSsoError(error instanceof Error ? error.message : String(error))
+              setSsoState('failed')
+            })
+          }}
+          onRetry={() => window.location.reload()}
+        />
+      ) : null}
+    </>
   )
 }
 

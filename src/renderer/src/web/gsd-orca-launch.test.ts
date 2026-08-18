@@ -3,6 +3,7 @@ import {
   buildGsdLaunchPrompt,
   isGsdIdentityLinkRequired,
   materializeGsdLaunchAttachments,
+  retryGsdIdentityLink,
   resolveGsdControllerRepoId,
   shouldAutoCreateGsdWorkspace,
   shouldConsumePendingGsdLaunch
@@ -38,6 +39,24 @@ describe('GSD Orca launch errors', () => {
         alreadyStarted: false
       })
     ).toBe(true)
+  })
+
+  it('retries a transient identity-link miss before asking the user to relink', async () => {
+    vi.useFakeTimers()
+    const operation = vi
+      .fn<() => Promise<string>>()
+      .mockRejectedValueOnce(
+        new Error('Link this Orca member to GSD before opening card worktrees.')
+      )
+      .mockResolvedValueOnce('launch')
+
+    const result = retryGsdIdentityLink(operation)
+    const assertion = expect(result).resolves.toBe('launch')
+    await vi.runAllTimersAsync()
+
+    await assertion
+    expect(operation).toHaveBeenCalledTimes(2)
+    vi.useRealTimers()
   })
 })
 

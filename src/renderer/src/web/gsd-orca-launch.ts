@@ -18,6 +18,7 @@ const GSD_IDENTITY_LINK_REQUIRED_MESSAGE =
   'Link this Orca member to GSD before opening card worktrees.'
 const GSD_ATTACHMENT_CHUNK_BASE64_LENGTH = 512 * 1024
 const GSD_ATTACHMENT_DIRECTORY = '.gsd/attachments'
+const GSD_IDENTITY_LINK_RETRY_DELAY_MS = 750
 
 export function getGsdAttachmentRelativePath(attachment: GsdOrcaLaunchAttachment): string {
   const safePublicId = attachment.publicId.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80)
@@ -122,6 +123,18 @@ export async function materializeGsdLaunchAttachments(args: {
 
 export function isGsdIdentityLinkRequired(error: unknown): boolean {
   return error instanceof Error && error.message === GSD_IDENTITY_LINK_REQUIRED_MESSAGE
+}
+
+export async function retryGsdIdentityLink<T>(operation: () => Promise<T>): Promise<T> {
+  try {
+    return await operation()
+  } catch (error) {
+    if (!isGsdIdentityLinkRequired(error)) {
+      throw error
+    }
+  }
+  await new Promise((resolve) => globalThis.setTimeout(resolve, GSD_IDENTITY_LINK_RETRY_DELAY_MS))
+  return await operation()
 }
 
 export function shouldConsumePendingGsdLaunch(args: {
