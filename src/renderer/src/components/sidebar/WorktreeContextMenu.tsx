@@ -29,7 +29,8 @@ import {
   FolderInput,
   FolderPlus,
   FolderTree,
-  Link2
+  Link2,
+  ExternalLink
 } from 'lucide-react'
 import { useAppStore } from '@/store'
 import type { AppState } from '@/store/types'
@@ -563,6 +564,12 @@ const WorktreeContextMenu = React.memo(function WorktreeContextMenu({
     )
   }, [worktree.runtimeOwnerEnvironmentId])
 
+  const handleOpenGsdCard = useCallback(() => {
+    if (worktree.gsdWorktreeLink) {
+      void window.api.shell.openUrl(worktree.gsdWorktreeLink.cardUrl)
+    }
+  }, [worktree.gsdWorktreeLink])
+
   const handleToggleRead = useCallback(() => {
     updateWorktreeMeta(worktree.id, { isUnread: !worktree.isUnread })
   }, [worktree.id, worktree.isUnread, updateWorktreeMeta])
@@ -912,6 +919,15 @@ const WorktreeContextMenu = React.memo(function WorktreeContextMenu({
                   {translate(
                     'auto.components.sidebar.WorktreeContextMenu.copyWorkspaceLink',
                     'Copy workspace link'
+                  )}
+                </DropdownMenuItem>
+              )}
+              {worktree.gsdWorktreeLink && (
+                <DropdownMenuItem onSelect={handleOpenGsdCard} disabled={isDeleting}>
+                  <ExternalLink className="size-3.5" />
+                  {translate(
+                    'auto.components.sidebar.WorktreeContextMenu.openGsdCard',
+                    'Open GSD card'
                   )}
                 </DropdownMenuItem>
               )}

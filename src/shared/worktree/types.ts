@@ -6,6 +6,7 @@ import type { DiffComment, MobileDiffReviewState } from '../diff-comment-types'
 import type { EphemeralVmCheckoutMode } from '../orca-yaml-hook-types'
 import type { EphemeralVmWorkspaceSharing } from '../ephemeral-vm-runtimes'
 import type { BuiltInWorktreeVisibilitySourceId } from '../repo-types'
+import type { GsdWorktreeLink } from '../gsd-worktree-link'
 
 export type WorkspaceLinkedItem = {
   provider: 'github' | 'gitlab' | 'linear' | 'jira'
@@ -82,6 +83,8 @@ export type Worktree = {
   }[]
   /** Team visibility projected from the controller-owned VM record. */
   ephemeralVmSharing?: EphemeralVmWorkspaceSharing
+  /** GSD card that launched this workspace, projected from the controller-owned VM record. */
+  gsdWorktreeLink?: GsdWorktreeLink
   /** Host-specific setup used to create/run this workspace. */
   projectHostSetupId?: string
   /** Checkout ownership for a recipe-provisioned main workspace. */

@@ -1,5 +1,5 @@
 import React from 'react'
-import { AlertCircle, Server, ServerOff, Star, Trash2 } from 'lucide-react'
+import { AlertCircle, ExternalLink, Server, ServerOff, Star, Trash2 } from 'lucide-react'
 
 import { RepoIconGlyph } from '@/components/repo/repo-icon'
 import { Badge } from '@/components/ui/badge'
@@ -184,6 +184,39 @@ export function WorktreeCardHeader({
           }
           onBeginEditingConsumed={affiliateListMode ? undefined : () => setRenamingWorktreeId(null)}
         />
+
+        {worktree.gsdWorktreeLink && !titleRenaming ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-5 shrink-0 gap-1 rounded px-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground"
+                aria-label={translate(
+                  'auto.components.sidebar.WorktreeCard.openGsdCard',
+                  'Open GSD card for {{value0}}',
+                  { value0: worktree.displayName }
+                )}
+                onPointerDown={(event) => event.stopPropagation()}
+                onDoubleClick={(event) => event.stopPropagation()}
+                onClick={(event) => {
+                  event.stopPropagation()
+                  void window.api.shell.openUrl(worktree.gsdWorktreeLink!.cardUrl)
+                }}
+              >
+                <ExternalLink className="size-2.5" />
+                GSD
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right" sideOffset={8}>
+              {translate(
+                'auto.components.sidebar.WorktreeCard.openGsdCard',
+                'Open GSD card for {{value0}}',
+                { value0: worktree.displayName }
+              )}
+            </TooltipContent>
+          </Tooltip>
+        ) : null}
 
         {typeof worktree.firstAgentMessageRenameError === 'string' &&
         worktree.firstAgentMessageRenameError.length > 0 &&

@@ -115,6 +115,7 @@ import type {
 } from '../../../shared/runtime-types'
 import type { MobilePairingOfferResult } from '../../../shared/mobile-pairing-host-contract'
 import { getEphemeralVmRecipeResultPairingCode } from '../../../shared/ephemeral-vm-recipes'
+import { getGsdWorktreeLink } from '../../../shared/gsd-worktree-link'
 import type {
   EphemeralVmRuntimeRecord,
   EphemeralVmWorkspaceSharing
@@ -1531,6 +1532,12 @@ function createEphemeralVmApi(): NonNullable<Partial<PreloadApi>['ephemeralVm']>
         ephemeralVmOwnerMemberByEnvironmentId.set(environment.id, result.runtime.ownerMemberKey)
       }
       ephemeralVmSharingByEnvironmentId.set(environment.id, result.runtime.sharing ?? 'private')
+      if (result.runtime.externalLaunchId) {
+        ephemeralVmExternalLaunchIdByEnvironmentId.set(
+          environment.id,
+          result.runtime.externalLaunchId
+        )
+      }
       saveAdditionalWebRuntimeEnvironment(environment)
       const { pairingCode: _pairingCode, ...publicResult } = result
       return {
@@ -1827,6 +1834,7 @@ type EphemeralVmRuntimeList = Awaited<
 const ephemeralVmCreatorByEnvironmentId = new Map<string, WorkspaceCreatorProvenance>()
 const ephemeralVmOwnerMemberByEnvironmentId = new Map<string, string>()
 const ephemeralVmSharingByEnvironmentId = new Map<string, EphemeralVmWorkspaceSharing>()
+const ephemeralVmExternalLaunchIdByEnvironmentId = new Map<string, string>()
 const retiredEphemeralVmEnvironmentIds = new Set<string>()
 
 async function listAndStoreEphemeralVmRuntimes(): Promise<EphemeralVmRuntimeList> {
@@ -1860,6 +1868,7 @@ function reconcileEphemeralVmRuntimes(runtimes: EphemeralVmRuntimeList): Ephemer
   ephemeralVmCreatorByEnvironmentId.clear()
   ephemeralVmOwnerMemberByEnvironmentId.clear()
   ephemeralVmSharingByEnvironmentId.clear()
+  ephemeralVmExternalLaunchIdByEnvironmentId.clear()
   const viewerMemberKey = readStoredWebRuntimeEnvironment()?.multiplayerMemberKey
   for (const runtime of runtimes) {
     if (!runtime.runtimeEnvironmentId) {
@@ -1878,6 +1887,12 @@ function reconcileEphemeralVmRuntimes(runtimes: EphemeralVmRuntimeList): Ephemer
       runtime.runtimeEnvironmentId,
       runtime.sharing ?? 'private'
     )
+    if (runtime.externalLaunchId) {
+      ephemeralVmExternalLaunchIdByEnvironmentId.set(
+        runtime.runtimeEnvironmentId,
+        runtime.externalLaunchId
+      )
+    }
     if (runtime.viewerAccessUnavailable) {
       // Why: absence from the authorized list means revoke, while this marker means only the
       // child credential refresh failed. Keep the last working member credential and retry later.
@@ -3886,8 +3901,11 @@ function withEphemeralVmCreatorResponse(
 ): RuntimeRpcResponse<unknown> {
   const creatorProvenance = ephemeralVmCreatorByEnvironmentId.get(environmentId)
   const ownerMemberKey = ephemeralVmOwnerMemberByEnvironmentId.get(environmentId)
+  const gsdWorktreeLink = getGsdWorktreeLink(
+    ephemeralVmExternalLaunchIdByEnvironmentId.get(environmentId)
+  )
   if (
-    (!creatorProvenance && !ownerMemberKey) ||
+    (!creatorProvenance && !ownerMemberKey && !gsdWorktreeLink) ||
     !response.ok ||
     (method !== 'worktree.list' && method !== 'worktree.detectedList') ||
     !response.result ||
@@ -3910,7 +3928,8 @@ function withEphemeralVmCreatorResponse(
               ...(creatorProvenance && !('creatorProvenance' in worktree)
                 ? { creatorProvenance }
                 : {}),
-              ...(ownerMemberKey && !('ownerMemberKey' in worktree) ? { ownerMemberKey } : {})
+              ...(ownerMemberKey && !('ownerMemberKey' in worktree) ? { ownerMemberKey } : {}),
+              ...(gsdWorktreeLink && !('gsdWorktreeLink' in worktree) ? { gsdWorktreeLink } : {})
             }
           : worktree
       )
@@ -3963,6 +3982,9 @@ function withRuntimeWorktreeOwner<T extends Worktree>(worktree: T, hostId: Execu
     ephemeralVmCreatorByEnvironmentId.get(runtimeOwner.environmentId) ?? worktree.creatorProvenance
   const ephemeralVmSharing = ephemeralVmSharingByEnvironmentId.get(runtimeOwner.environmentId)
   const ownerMemberKey = ephemeralVmOwnerMemberByEnvironmentId.get(runtimeOwner.environmentId)
+  const gsdWorktreeLink = getGsdWorktreeLink(
+    ephemeralVmExternalLaunchIdByEnvironmentId.get(runtimeOwner.environmentId)
+  )
   const liveMembers = readAdditionalWebRuntimeEnvironments().find(
     (environment) => environment.id === runtimeOwner.environmentId
   )?.workspaceLiveMembers
@@ -3976,7 +3998,8 @@ function withRuntimeWorktreeOwner<T extends Worktree>(worktree: T, hostId: Execu
           liveMembers: selectLiveMembersForWorktree(liveMembers, worktree.id)
         }
       : {}),
-    ...(ephemeralVmSharing ? { ephemeralVmSharing } : {})
+    ...(ephemeralVmSharing ? { ephemeralVmSharing } : {}),
+    ...(gsdWorktreeLink ? { gsdWorktreeLink } : {})
   }
 }
 
