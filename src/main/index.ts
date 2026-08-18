@@ -2791,10 +2791,11 @@ void app.whenReady().then(async () => {
   migrateEphemeralVmRuntimeMemberOwnership(app.getPath('userData'))
   const listEphemeralVmRuntimesForActor = async (actor: WorkspaceCreatorProvenance) => {
     const runtimes = listEphemeralVmRuntimeRecords(app.getPath('userData'))
+    const visibleRuntimes = runtimes.filter((runtime) => runtime.status !== 'cleaned')
     const accessibleRuntimes =
       actor.kind === 'host'
-        ? runtimes
-        : runtimes.filter((runtime) =>
+        ? visibleRuntimes
+        : visibleRuntimes.filter((runtime) =>
             canDeviceAccessEphemeralVmRuntime(app.getPath('userData'), actor.deviceId, runtime)
           )
     return await Promise.all(

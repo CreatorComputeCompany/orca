@@ -34,6 +34,7 @@ import {
   captureGsdLaunchFromLocation,
   consumePendingGsdLaunch,
   isGsdIdentityLinkRequired,
+  linkPendingGsdLaunch,
   pendingGsdLaunchToken,
   resolveGsdControllerRepoId,
   shouldConsumePendingGsdLaunch
@@ -114,7 +115,7 @@ function WebRoot(): React.JSX.Element {
     }
     gsdLaunchStarted.current = true
     void consumePendingGsdLaunch()
-      .then((launch) => {
+      .then(async (launch) => {
         if (!launch) {
           return
         }
@@ -130,6 +131,27 @@ function WebRoot(): React.JSX.Element {
         if (!controllerRepoId) {
           throw new Error('Orca could not find this project on the workspace controller.')
         }
+        const externalLaunchId = `gsd:${launch.cardPublicId}`
+        const existingRuntime = (await window.api.ephemeralVm.listRuntimes()).find(
+          (runtime) =>
+            runtime.externalLaunchId === externalLaunchId &&
+            runtime.workspaceId &&
+            runtime.runtimeEnvironmentId
+        )
+        if (existingRuntime?.workspaceId && existingRuntime.runtimeEnvironmentId) {
+          const token = pendingGsdLaunchToken()!
+          await linkPendingGsdLaunch(
+            {
+              id: existingRuntime.workspaceId,
+              runtimeOwnerEnvironmentId: existingRuntime.runtimeEnvironmentId
+            },
+            token
+          )
+          state.setActiveView('terminal')
+          state.setActiveWorktree(existingRuntime.workspaceId)
+          state.setSidebarOpen(true)
+          return
+        }
         state.openModal('new-workspace-composer', {
           prefilledName: launch.title,
           initialRepoId: controllerRepoId,
@@ -139,6 +161,8 @@ function WebRoot(): React.JSX.Element {
           prefilledPrompt: buildGsdLaunchPrompt(launch),
           gsdLaunch: {
             token: pendingGsdLaunchToken()!,
+            runPublicId: launch.runPublicId,
+            cardPublicId: launch.cardPublicId,
             attachments: launch.attachments
           },
           telemetrySource: 'unknown'

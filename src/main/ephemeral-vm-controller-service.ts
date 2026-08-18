@@ -34,6 +34,10 @@ import { getApprovedPluginVmRecipes } from './plugins/plugin-approved-vm-recipes
 import { resolveProvisionedRootSource } from './ephemeral-vm-provisioned-root-source'
 import type { WorkspaceCreatorProvenance } from '../shared/worktree/types'
 import { resolveEphemeralVmProvisionRepo } from './ephemeral-vm-provision-repo'
+import {
+  resolveExistingExternalLaunch,
+  runIdempotentExternalLaunch
+} from './external-launch-idempotency'
 
 const activeProvisionControllers = new Map<string, AbortController>()
 export async function listEphemeralVmRecipes(
@@ -105,6 +109,7 @@ export type EphemeralVmProvisionArgs = {
   provisionId?: string
   creatorProvenance?: WorkspaceCreatorProvenance
   ownerMemberKey?: string
+  externalLaunchId?: string
 }
 
 export type EphemeralVmProvisionRpcResult =
@@ -119,6 +124,33 @@ export async function provisionEphemeralVmForRpc(
   userDataPath: string,
   args: EphemeralVmProvisionArgs
 ): Promise<EphemeralVmProvisionRpcResult> {
+  return runIdempotentExternalLaunch(args.externalLaunchId, () =>
+    provisionEphemeralVmForRpcOnce(store, pluginService, userDataPath, args)
+  )
+}
+
+async function provisionEphemeralVmForRpcOnce(
+  store: Store,
+  pluginService: PluginService | undefined,
+  userDataPath: string,
+  args: EphemeralVmProvisionArgs
+): Promise<EphemeralVmProvisionRpcResult> {
+  const existing = resolveExistingExternalLaunch({
+    userDataPath,
+    externalLaunchId: args.externalLaunchId,
+    ownerMemberKey: args.ownerMemberKey
+  })
+  if (existing.kind === 'ready') {
+    return { ok: true, connectionType: 'orca-server', ...existing, stderr: '' }
+  }
+  if (existing.kind === 'pending') {
+    return {
+      ok: false,
+      error: 'This GSD card already has a workspace VM being prepared.',
+      stdout: '',
+      stderr: ''
+    }
+  }
   const repo = resolveEphemeralVmProvisionRepo(store, args)
   if (!repo.ok) {
     return { ok: false, error: repo.message, stdout: '', stderr: '' }
@@ -172,6 +204,7 @@ export async function provisionEphemeralVmForRpc(
       projectId: args.projectId,
       workspaceId: args.workspaceId,
       workspaceName: args.workspaceName,
+      externalLaunchId: args.externalLaunchId,
       creatorProvenance: args.creatorProvenance,
       ownerMemberKey: args.ownerMemberKey,
       ...(repoUrl ? { repoUrl } : {}),
@@ -227,7 +260,7 @@ export async function provisionEphemeralVmForRpc(
     let environment: ReturnType<typeof addEnvironmentFromPairingCode>
     try {
       environment = addEnvironmentFromPairingCode(userDataPath, {
-        name: buildEphemeralEnvironmentName(repo.repo.displayName, result.runtime.id),
+        name: `${repo.repo.displayName} VM ${result.runtime.id.slice(-8)}`,
         pairingCode: connection.pairingCode,
         source: 'ephemeral-vm'
       })
@@ -274,8 +307,4 @@ export function cancelEphemeralVmProvision(args: { provisionId: string }): {
   controller.abort()
   activeProvisionControllers.delete(args.provisionId)
   return { cancelled: true }
-}
-
-function buildEphemeralEnvironmentName(repoName: string, runtimeId: string): string {
-  return `${repoName} VM ${runtimeId.slice(-8)}`
 }

@@ -19,6 +19,7 @@ import {
 } from '@/lib/workspace-create-error-format'
 import type { CreateWorktreeResult } from '../../../shared/worktree/create-types'
 import {
+  findPendingGsdLaunchCreationId,
   findPendingLinkedWorkItemCreationId,
   type WorktreeCreationPhase,
   type WorktreeCreationRequest
@@ -277,10 +278,9 @@ async function executeWorktreeCreation(
  */
 export function runBackgroundWorktreeCreation(request: WorktreeCreationRequest): string {
   const store = useAppStore.getState()
-  const existingCreationId = findPendingLinkedWorkItemCreationId(
-    store.pendingWorktreeCreations,
-    request
-  )
+  const existingCreationId =
+    findPendingLinkedWorkItemCreationId(store.pendingWorktreeCreations, request) ??
+    findPendingGsdLaunchCreationId(store.pendingWorktreeCreations, request)
   if (existingCreationId) {
     store.setActivePendingWorktreeCreation(existingCreationId)
     store.setActiveView('terminal')

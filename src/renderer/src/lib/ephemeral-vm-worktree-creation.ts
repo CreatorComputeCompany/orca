@@ -52,6 +52,7 @@ export async function prepareRequestForCreate(
           }
         : {}),
       provisionId: creationId,
+      ...(request.gsdLaunch ? { externalLaunchId: `gsd:${request.gsdLaunch.cardPublicId}` } : {}),
       setupExistingFolder: store.setupProjectExistingFolder
     })
   } catch (error) {

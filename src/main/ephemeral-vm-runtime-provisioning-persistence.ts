@@ -54,6 +54,7 @@ export async function persistProvisionedEphemeralVmRuntime(
       ...(args.projectId ? { projectId: args.projectId } : {}),
       ...(args.workspaceId ? { workspaceId: args.workspaceId } : {}),
       ...(args.workspaceName ? { workspaceName: args.workspaceName } : {}),
+      ...(args.externalLaunchId ? { externalLaunchId: args.externalLaunchId } : {}),
       ...(args.creatorProvenance ? { creatorProvenance: args.creatorProvenance } : {}),
       ...(args.ownerMemberKey ? { ownerMemberKey: args.ownerMemberKey } : {}),
       sharing: 'private',

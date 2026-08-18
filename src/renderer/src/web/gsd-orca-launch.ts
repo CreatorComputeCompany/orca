@@ -174,7 +174,7 @@ export async function consumePendingGsdLaunch(): Promise<GsdOrcaLaunchConsumeRes
 }
 
 export async function linkPendingGsdLaunch(
-  worktree: Worktree,
+  worktree: Pick<Worktree, 'id' | 'runtimeOwnerEnvironmentId'>,
   launchToken = sessionStorage.getItem(PENDING_LAUNCH_KEY)
 ): Promise<void> {
   const token = launchToken

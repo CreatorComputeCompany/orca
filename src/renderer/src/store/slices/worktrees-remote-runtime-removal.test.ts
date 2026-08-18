@@ -289,6 +289,32 @@ describe('worktree remote runtime mutations', () => {
     }
   )
 
+  it.each(['runtime_unavailable', 'remote_runtime_timeout'])(
+    'forgets an ephemeral VM row when its dead runtime returns %s',
+    async (errorCode) => {
+      const store = createTestStore()
+      const wt = makeWorktree({
+        id: 'repo-gone::/path/stale-vm',
+        repoId: 'repo-gone',
+        path: '/path/stale-vm',
+        hostId: 'runtime:env-gone',
+        runtimeOwnerEnvironmentId: 'env-gone'
+      })
+      runtimeEnvironmentCall.mockResolvedValue({
+        id: 'rpc-rm',
+        ok: false,
+        error: { code: errorCode, message: errorCode },
+        _meta: { runtimeId: null }
+      })
+      store.setState({ worktreesByRepo: { 'repo-gone': [wt] } } as Partial<AppState>)
+
+      await expect(store.getState().removeWorktree(wt.id)).resolves.toEqual({ ok: true })
+
+      expect(mockApi.worktrees.forgetLocal).not.toHaveBeenCalled()
+      expect(store.getState().worktreesByRepo['repo-gone']).toEqual([])
+    }
+  )
+
   it('does not forget a row that becomes ambiguous while remote removal is in flight', async () => {
     const store = createTestStore()
     const worktreeId = 'repo-shared::/path/stale'

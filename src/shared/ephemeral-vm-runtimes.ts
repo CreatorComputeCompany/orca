@@ -62,6 +62,8 @@ export const EphemeralVmRuntimeRecordSchema = z.object({
   projectId: z.string().min(1).optional(),
   workspaceId: z.string().min(1).optional(),
   workspaceName: z.string().min(1).optional(),
+  /** Stable external intent key used to make integrations such as GSD idempotent. */
+  externalLaunchId: z.string().min(1).max(200).optional(),
   creatorProvenance: WorkspaceCreatorProvenanceSchema.optional(),
   /** Stable multiplayer account that owns the workspace across devices. */
   ownerMemberKey: z

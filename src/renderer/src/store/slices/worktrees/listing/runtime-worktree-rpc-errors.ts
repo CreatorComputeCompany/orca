@@ -11,3 +11,10 @@ export function isRuntimeSelectorNotFoundError(error: unknown): boolean {
 export function isRuntimeRepoNotFoundError(error: unknown): boolean {
   return hasRuntimeRpcErrorCode(error, 'repo_not_found')
 }
+
+export function isRuntimeUnavailableForForgetError(error: unknown): boolean {
+  return (
+    hasRuntimeRpcErrorCode(error, 'runtime_unavailable') ||
+    hasRuntimeRpcErrorCode(error, 'remote_runtime_timeout')
+  )
+}

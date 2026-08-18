@@ -107,4 +107,33 @@ describe('runBackgroundWorktreeCreation linked-item dedupe', () => {
     expect(store.beginPendingWorktreeCreation).not.toHaveBeenCalled()
     expect(store.createWorktree).not.toHaveBeenCalled()
   })
+
+  it('reuses the pending creation for the same GSD card across launch retries', () => {
+    const firstRequest = makeRequest({
+      gsdLaunch: {
+        token: 'first-token',
+        runPublicId: 'run-first',
+        cardPublicId: 'card-stable',
+        attachments: []
+      }
+    })
+    store.pendingWorktreeCreations = {
+      existing: makePendingCreation(firstRequest)
+    }
+
+    const creationId = runBackgroundWorktreeCreation(
+      makeRequest({
+        gsdLaunch: {
+          token: 'retry-token',
+          runPublicId: 'run-retry',
+          cardPublicId: 'card-stable',
+          attachments: []
+        }
+      })
+    )
+
+    expect(creationId).toBe('existing')
+    expect(store.setActivePendingWorktreeCreation).toHaveBeenCalledWith('existing')
+    expect(store.beginPendingWorktreeCreation).not.toHaveBeenCalled()
+  })
 })

@@ -34,7 +34,8 @@ import { purgeOrphanedRuntimeSshProjects } from './orphaned-runtime-ssh-project-
 import { preservedBranchRuntimeTargetByCleanupKey } from './preserved-branch-cleanup-target'
 import {
   isRuntimeRepoNotFoundError,
-  isRuntimeSelectorNotFoundError
+  isRuntimeSelectorNotFoundError,
+  isRuntimeUnavailableForForgetError
 } from '../listing/runtime-worktree-rpc-errors'
 import { applyRemoveWorktreeSuccessState } from './remove-worktree-store-cleanup'
 
@@ -165,6 +166,15 @@ export function createRemoveWorktree(
               { cause: error }
             )
           }
+        } else if (
+          !forgetLocalOnly &&
+          target.kind !== 'local' &&
+          isRuntimeUnavailableForForgetError(error)
+        ) {
+          // The user explicitly asked to delete a row whose ephemeral host is gone.
+          // There is no remote branch left to protect, so finish renderer teardown;
+          // controller catalog reconciliation removes cleaned runtimes permanently.
+          removalResult = {}
         } else {
           throw error
         }

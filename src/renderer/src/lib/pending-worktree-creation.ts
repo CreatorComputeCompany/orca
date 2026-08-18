@@ -64,6 +64,8 @@ export type WorktreeCreationRequest = {
    *  and before agent startup, then the resulting workspace is linked back. */
   gsdLaunch?: {
     token: string
+    runPublicId: string
+    cardPublicId: string
     attachments: GsdOrcaLaunchAttachment[]
   }
   /** Captured from the repo/run owner at submit time so Retry keeps the same
@@ -160,6 +162,21 @@ export function findPendingLinkedWorkItemCreationId(
     )
   })
   return match?.creationId ?? null
+}
+
+export function findPendingGsdLaunchCreationId(
+  pendingCreations: Readonly<Record<string, PendingWorktreeCreation>>,
+  request: Pick<WorktreeCreationRequest, 'gsdLaunch'>
+): string | null {
+  const cardPublicId = request.gsdLaunch?.cardPublicId
+  if (!cardPublicId) {
+    return null
+  }
+  return (
+    Object.values(pendingCreations).find(
+      (entry) => entry.request.gsdLaunch?.cardPublicId === cardPublicId
+    )?.creationId ?? null
+  )
 }
 
 /** Human-readable progress line for an in-flight create, shared by the in-frame

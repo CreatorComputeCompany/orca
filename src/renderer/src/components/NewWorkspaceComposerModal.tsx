@@ -43,7 +43,12 @@ type ComposerModalData = {
   initialEphemeralVmRecipeId?: string
   initialAgent?: TuiAgent
   autoCreate?: boolean
-  gsdLaunch?: { token: string; attachments: GsdOrcaLaunchAttachment[] }
+  gsdLaunch?: {
+    token: string
+    runPublicId: string
+    cardPublicId: string
+    attachments: GsdOrcaLaunchAttachment[]
+  }
   initialProjectGroupId?: string
   linkedWorkItem?: LinkedWorkItemSummary | null
   initialGitHubWorkItem?: GitHubWorkItem | null

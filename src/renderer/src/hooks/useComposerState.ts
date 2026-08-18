@@ -40,7 +40,6 @@ import {
   type TaskSourceContext
 } from '../../../shared/task-source-context'
 import type { GitHubRepositoryIdentity } from '../../../shared/github/pull-request-types'
-import type { GsdOrcaLaunchAttachment } from '../../../shared/gsd-orca-launch-contract'
 import type { GitHubWorkItem } from '../../../shared/github/work-item-types'
 import type { GitLabWorkItem } from '../../../shared/gitlab-types'
 import type { JiraIssue } from '../../../shared/jira-types'
@@ -256,7 +255,7 @@ export type UseComposerStateOptions = {
   initialGitHubWorkItem?: GitHubWorkItem | null
   initialTaskSourceContext?: TaskSourceContext | null
   initialWorkspaceStatus?: WorkspaceStatus
-  initialGsdLaunch?: { token: string; attachments: GsdOrcaLaunchAttachment[] }
+  initialGsdLaunch?: WorktreeCreationRequest['gsdLaunch']
   /** Seeds the Start-from selection on open; the Create-from → Quick fallback uses it so a PR pick lands with the resolved PR head as base. */
   initialBaseBranch?: string
   /** The full-page composer persists drafts across navigation; the transient quick-composer modal must not clobber that draft. */

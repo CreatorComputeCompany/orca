@@ -74,7 +74,8 @@ const ProvisionParams = DoctorParams.extend({
   workspaceId: z.string().optional(),
   branch: z.string().optional(),
   ref: z.string().optional(),
-  provisionId: z.string().optional()
+  provisionId: z.string().optional(),
+  externalLaunchId: z.string().min(1).max(200).optional()
 })
 const CancelProvisionParams = z.object({ provisionId: z.string().min(1) })
 const RuntimeIdParams = z.object({ runtimeId: z.string().min(1) })
