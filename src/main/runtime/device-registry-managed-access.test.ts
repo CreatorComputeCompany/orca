@@ -14,6 +14,21 @@ afterEach(() => {
 })
 
 describe('managed runtime access registry', () => {
+  it('keeps app tickets memory-only, expiring, and one-shot', () => {
+    const root = mkdtempSync(join(tmpdir(), 'orca-managed-runtime-access-'))
+    roots.push(root)
+    const registry = new DeviceRegistry(root)
+    const ticket = registry.addTransientRuntimeDevice('imabird web', Date.now() + 60_000)
+
+    expect(registry.validateToken(ticket.token)?.deviceId).toBe(ticket.deviceId)
+    expect(new DeviceRegistry(root).validateToken(ticket.token)).toBeNull()
+    expect(registry.consumeTransientDevice(ticket.deviceId)).toBe(true)
+    expect(registry.validateToken(ticket.token)).toBeNull()
+
+    const expired = registry.addTransientRuntimeDevice('expired web', Date.now() - 1)
+    expect(registry.validateToken(expired.token)).toBeNull()
+  })
+
   it('rotates all runtime credentials when establishing controller authority', () => {
     const root = mkdtempSync(join(tmpdir(), 'orca-managed-runtime-access-'))
     roots.push(root)
