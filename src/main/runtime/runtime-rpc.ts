@@ -57,6 +57,7 @@ import { encodeMobilePairingQr } from './mobile-pairing-qr'
 import { MobileRuntimeFederationGateway } from './mobile-runtime-federation-gateway'
 import { MultiplayerAccountStore } from './multiplayer-account-store'
 import { createMultiplayerAuthHttpHandler } from './multiplayer-auth-http'
+import { createRuntimeAppTicketHttpHandler } from './runtime-app-ticket-http'
 import { MultiplayerOidcController, type MultiplayerOidcIdentity } from './multiplayer-oidc'
 import { migrateEphemeralVmRuntimeMemberOwnership } from '../ephemeral-vm-runtime-member-ownership'
 import type { RuntimeWorktreePsResult } from '../../shared/runtime-types'
@@ -519,6 +520,7 @@ export class OrcaRuntimeRpcServer {
   private readonly multiplayerAccounts: MultiplayerAccountStore
   private readonly multiplayerOidc: MultiplayerOidcController | null
   private readonly multiplayerAuthHttpHandler: ReturnType<typeof createMultiplayerAuthHttpHandler>
+  private readonly runtimeHttpRequestHandler: ReturnType<typeof createMultiplayerAuthHttpHandler>
   private multiplayerRegistrationQueue: Promise<void> = Promise.resolve()
   private readonly userDataPath: string
   private readonly pid: number
@@ -605,6 +607,11 @@ export class OrcaRuntimeRpcServer {
       (credentials) => this.issueMultiplayerLogin(credentials),
       this.multiplayerOidc
     )
+    const appTicketHandler = createRuntimeAppTicketHttpHandler((args) =>
+      this.issueRuntimeAppTicket(args)
+    )
+    this.runtimeHttpRequestHandler = (request, response) =>
+      appTicketHandler(request, response) || this.multiplayerAuthHttpHandler(request, response)
     this.userDataPath = userDataPath
     this.pid = pid
     this.platform = platform
@@ -639,6 +646,37 @@ export class OrcaRuntimeRpcServer {
 
   getMobileSocketWiring(): MobileSocketWiring | null {
     return this.mobileSocketWiring
+  }
+
+  private issueRuntimeAppTicket(args: { subject: string; name: string; expiresAt: number }): {
+    pairingUrl: string
+    expiresAt: string
+  } {
+    const rawEndpoint = this.getWebSocketEndpoint()
+    const registry = this.deviceRegistry
+    const publicKeyB64 = this.getE2EEPublicKey()
+    if (!rawEndpoint || !registry || !publicKeyB64) {
+      throw new Error('Runtime app tickets are unavailable')
+    }
+    const advertised = resolveAdvertisedPairingEndpoint(rawEndpoint, this.preferredPairingAddress)
+    if (!advertised.ok) {
+      throw new Error(advertised.guidance)
+    }
+    const device = registry.addTransientRuntimeDevice(
+      `${args.name} (${args.subject})`,
+      args.expiresAt
+    )
+    return {
+      pairingUrl: encodePairingOffer({
+        v: PAIRING_OFFER_VERSION,
+        endpoint: advertised.endpoint,
+        deviceToken: device.token,
+        publicKeyB64,
+        pairedDeviceId: device.deviceId,
+        scope: 'runtime'
+      }),
+      expiresAt: new Date(args.expiresAt).toISOString()
+    }
   }
 
   revokeMobileRuntimeEnvironmentAccess(
@@ -1457,7 +1495,7 @@ export class OrcaRuntimeRpcServer {
       host: options.host,
       port: options.port,
       staticRoot: this.webClientRoot,
-      httpRequestHandler: this.multiplayerAuthHttpHandler,
+      httpRequestHandler: this.runtimeHttpRequestHandler,
       ...(options.fallbackPort !== undefined ? { fallbackPort: options.fallbackPort } : {}),
       ...(options.preferPinnedPort ? { preferPinnedPort: true } : {})
     })
@@ -1835,7 +1873,14 @@ export class OrcaRuntimeRpcServer {
       reply(JSON.stringify(this.buildError(request.id, 'unauthorized', 'Missing device token')))
       return
     }
-    const device = this.deviceRegistry?.validateToken(token)
+    const device = authenticatedSocket
+      ? {
+          deviceId: authenticatedSocket.device.deviceId,
+          token: authenticatedSocket.device.deviceToken,
+          scope: authenticatedSocket.device.scope,
+          pairingManagement: false
+        }
+      : this.deviceRegistry?.validateToken(token)
     if (!device) {
       reply(JSON.stringify(this.buildError(request.id, 'unauthorized', 'Invalid device token')))
       return

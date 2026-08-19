@@ -11,6 +11,7 @@ import { DEVICE_REGISTRY_FILENAME } from './mobile-pairing-files'
 import type { RelayDeviceBinding } from './relay/relay-revoke-outbox'
 import type { MobilePairingConnectionMode } from '../../shared/mobile-pairing-connection-mode'
 import type { RuntimePairingReach } from '../../shared/runtime-pairing-reach'
+import { TransientRuntimeDeviceRegistry } from './transient-runtime-device-registry'
 
 export type { DeviceScope }
 
@@ -56,6 +57,7 @@ const LAST_SEEN_FLUSH_DELAY_MS = 250
 export class DeviceRegistry {
   private readonly registryPath: string
   private devices: DeviceEntry[] = []
+  private transientDevices = new TransientRuntimeDeviceRegistry()
   private pendingLastSeenFlush: NodeJS.Timeout | null = null
 
   constructor(userDataPath: string) {
@@ -69,6 +71,17 @@ export class DeviceRegistry {
     pairingReach: RuntimePairingReach = 'network'
   ): DeviceEntry {
     return this.createAndPersistDevice(this.devices, name, scope, pairingReach)
+  }
+
+  // Why: browser app tickets are bearer credentials only until one E2EE
+  // socket authenticates. They never touch disk and cannot survive a runtime
+  // restart or be reused after the handshake consumes them.
+  addTransientRuntimeDevice(name: string, expiresAt: number): DeviceEntry {
+    return this.transientDevices.add(name, expiresAt)
+  }
+
+  consumeTransientDevice(deviceId: string): boolean {
+    return this.transientDevices.consume(deviceId)
   }
 
   replaceRuntimeDevicesWithPairingManager(
@@ -255,7 +268,7 @@ export class DeviceRegistry {
   }
 
   validateToken(token: string): DeviceEntry | null {
-    return this.devices.find((d) => d.token === token) ?? null
+    return this.devices.find((d) => d.token === token) ?? this.transientDevices.validate(token)
   }
 
   updateLastSeen(deviceId: string): void {
