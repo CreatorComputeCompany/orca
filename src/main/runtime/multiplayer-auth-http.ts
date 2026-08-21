@@ -64,6 +64,17 @@ export function createMultiplayerAuthHttpHandler(
       return false
     }
     setSecurityHeaders(response)
+    // Why: host pages embedding the web client (e.g. Buzz) sign in from
+    // another origin. Credentials ride in the JSON body, not cookies, so the
+    // password check is the only gate CORS would otherwise duplicate.
+    response.setHeader('Access-Control-Allow-Origin', '*')
+    if (request.method === 'OPTIONS') {
+      response.setHeader('Access-Control-Allow-Methods', 'POST')
+      response.setHeader('Access-Control-Allow-Headers', 'Content-Type')
+      response.statusCode = 204
+      response.end()
+      return true
+    }
     if (request.method !== 'POST') {
       response.setHeader('Allow', 'POST')
       writeJson(response, 405, { error: 'method_not_allowed' })

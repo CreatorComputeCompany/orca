@@ -61,3 +61,62 @@ describe('terminal close CLI', () => {
     expect(help).toContain('durable persistence')
   })
 })
+
+describe('terminal send CLI', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('routes agent prompts through the atomic prompt RPC', async () => {
+    const parsed = parseArgs([
+      'terminal',
+      'send',
+      '--terminal',
+      'term-1',
+      '--text',
+      'continue',
+      '--agent-prompt'
+    ])
+    const call = vi.fn().mockResolvedValue({
+      result: { send: { handle: 'term-1', accepted: true, bytesWritten: 23 } }
+    })
+    vi.spyOn(console, 'log').mockImplementation(() => {})
+
+    await TERMINAL_HANDLERS['terminal send']({
+      flags: parsed.flags,
+      client: { call } as unknown as RuntimeClient,
+      cwd: '/tmp/worktree',
+      json: true
+    })
+
+    expect(call).toHaveBeenCalledWith('terminal.sendAgentPrompt', {
+      terminal: 'term-1',
+      text: 'continue',
+      client: { id: 'orca-cli', type: 'desktop' }
+    })
+  })
+
+  it('rejects raw submit controls with an atomic agent prompt', async () => {
+    const parsed = parseArgs([
+      'terminal',
+      'send',
+      '--terminal',
+      'term-1',
+      '--text',
+      'continue',
+      '--agent-prompt',
+      '--enter'
+    ])
+    const call = vi.fn()
+
+    await expect(
+      TERMINAL_HANDLERS['terminal send']({
+        flags: parsed.flags,
+        client: { call } as unknown as RuntimeClient,
+        cwd: '/tmp/worktree',
+        json: true
+      })
+    ).rejects.toThrow('--agent-prompt cannot be combined with --enter or --interrupt')
+    expect(call).not.toHaveBeenCalled()
+  })
+})

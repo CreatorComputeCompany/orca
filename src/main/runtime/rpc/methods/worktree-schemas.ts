@@ -181,6 +181,10 @@ export const WorktreeCreate = z
     // workspaces execute in a different shell than the client process.
     startupAgent: OptionalTuiAgent,
     startupPrompt: OptionalString,
+    startupLaunchPreferences: z
+      .object({ model: OptionalString, effort: OptionalString })
+      .strict()
+      .optional(),
     // Why: task-driven mobile creates need desktop parity: the host chooses
     // the same default/detected agent and drafts the linked issue/PR URL into it.
     startupDraft: OptionalString,
@@ -212,6 +216,12 @@ export const WorktreeCreate = z
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: 'startupPrompt requires startupAgent'
+      })
+    }
+    if (params.startupLaunchPreferences !== undefined && params.startupAgent === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'startupLaunchPreferences requires startupAgent'
       })
     }
   })
