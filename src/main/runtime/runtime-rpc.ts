@@ -694,14 +694,20 @@ export class OrcaRuntimeRpcServer {
           email: args.email,
           memberKey
         })
-      const suffix = args.channelId
-        .replace(/[^a-zA-Z0-9]/g, '')
-        .slice(-12)
-        .toLowerCase()
+      const normalizedChannelId = args.channelId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+      // Buzz's established worktree names use the first 12 channel characters.
+      // Keep the trailing form too so tickets can resolve worktrees created by
+      // short-lived identity builds that used the opposite truncation.
+      const channelTokens = new Set([
+        normalizedChannelId.slice(0, 12),
+        normalizedChannelId.slice(-12)
+      ])
       const listed = await this.runtime.listManagedWorktrees(undefined, 1000, true)
       const matchesChannel = (candidate: (typeof listed.worktrees)[number]): boolean =>
         [candidate.id, candidate.displayName, candidate.path, candidate.branch].some((value) =>
-          value.toLowerCase().includes(suffix)
+          [...channelTokens].some(
+            (token) => token.length > 0 && value.toLowerCase().includes(token)
+          )
         )
       let worktree = listed.worktrees.find(
         (candidate) => candidate.ownerMemberKey === member.key && matchesChannel(candidate)
