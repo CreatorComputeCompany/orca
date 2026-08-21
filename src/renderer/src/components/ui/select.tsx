@@ -5,6 +5,7 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from 'lucide-react'
 import { Select as SelectPrimitive } from 'radix-ui'
 
 import { cn } from '@/lib/utils'
+import { defaultOrcaPortalContainer } from '@/web/web-embed-portal'
 
 function Select({ ...props }: React.ComponentProps<typeof SelectPrimitive.Root>) {
   return <SelectPrimitive.Root data-slot="select" {...props} />
@@ -51,7 +52,7 @@ function SelectContent({
   portalContainer?: HTMLElement | null
 }) {
   return (
-    <SelectPrimitive.Portal container={portalContainer ?? undefined}>
+    <SelectPrimitive.Portal container={portalContainer ?? defaultOrcaPortalContainer()}>
       <SelectPrimitive.Content
         data-slot="select-content"
         // Why: matches the dropdown-menu recipe — translucent surface, solid

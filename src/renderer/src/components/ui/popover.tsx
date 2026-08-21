@@ -4,6 +4,7 @@ import * as React from 'react'
 import { Popover as PopoverPrimitive } from 'radix-ui'
 
 import { cn } from '@/lib/utils'
+import { defaultOrcaPortalContainer } from '@/web/web-embed-portal'
 import { updatePopoverContentRef } from './popover-content-ref'
 
 function Popover(props: React.ComponentProps<typeof PopoverPrimitive.Root>) {
@@ -88,7 +89,7 @@ function PopoverContent({
   )
 
   return (
-    <PopoverPrimitive.Portal container={portalContainer ?? undefined}>
+    <PopoverPrimitive.Portal container={portalContainer ?? defaultOrcaPortalContainer()}>
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}
