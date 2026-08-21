@@ -12,7 +12,9 @@ vi.mock('@/store', () => {
   const state = {
     hydrationSucceeded: false,
     setActiveView: vi.fn(),
-    setActiveWorktree: vi.fn()
+    setActiveWorktree: vi.fn(),
+    setSidebarOpen: vi.fn(),
+    setRightSidebarOpen: vi.fn()
   }
   const listeners = new Set<(next: typeof state) => void>()
   return {
@@ -54,6 +56,22 @@ describe('readOrcaWebEmbedBootstrap', () => {
     const bootstrap = readOrcaWebEmbedBootstrap(embedWindow({ container, pairingCode: 'abc' }))
     expect(bootstrap).toEqual({ container, pairingCode: 'abc' })
     expect(readOrcaWebEmbedBootstrap(embedWindow({ container }))).toEqual({ container })
+  })
+
+  it('validates an optional host-minted auth result', () => {
+    const container = document.createElement('div')
+    const authResult = {
+      pairingUrl: 'orca://pair?code=abc',
+      email: 'user@example.com',
+      member: { key: 'member-1', displayName: 'User', deviceIds: [] }
+    }
+    expect(readOrcaWebEmbedBootstrap(embedWindow({ container, authResult }))).toEqual({
+      container,
+      authResult
+    })
+    expect(
+      readOrcaWebEmbedBootstrap(embedWindow({ container, authResult: { pairingUrl: 'x' } }))
+    ).toBeNull()
   })
 })
 
@@ -102,6 +120,8 @@ describe('installOrcaWebEmbedController', () => {
     bootstrap.controller?.focusWorktree('worktree-1')
     expect(useAppStore.getState().setActiveView).toHaveBeenCalledWith('terminal')
     expect(useAppStore.getState().setActiveWorktree).toHaveBeenCalledWith('worktree-1')
+    expect(useAppStore.getState().setSidebarOpen).toHaveBeenCalledWith(false)
+    expect(useAppStore.getState().setRightSidebarOpen).toHaveBeenCalledWith(false)
   })
 
   it('defers the focus until hydration succeeds', () => {
