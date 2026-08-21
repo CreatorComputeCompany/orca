@@ -40,10 +40,13 @@ export const WORKTREE_METHODS: RpcMethod[] = [
   defineMethod({
     name: 'worktree.lineageList',
     params: null,
-    handler: async (_params, { runtime }) => ({
-      lineage: await runtime.listWorktreeLineage(),
-      workspaceLineage: await runtime.listWorkspaceLineage()
-    })
+    handler: async (_params, context) =>
+      context.workspaceOwnerMemberKey
+        ? { lineage: [], workspaceLineage: [] }
+        : {
+            lineage: await context.runtime.listWorktreeLineage(),
+            workspaceLineage: await context.runtime.listWorkspaceLineage()
+          }
   }),
   defineMethod({
     name: 'worktree.show',
@@ -95,6 +98,9 @@ export const WORKTREE_METHODS: RpcMethod[] = [
           })
         }
         const { runtime } = context
+        if (params.ownerMemberKey && context.pairedDeviceId) {
+          throw new Error('Remote clients cannot assign worktree ownership.')
+        }
         const repo = await runtime.showRepo(params.repo)
         const automationProvenance = resolveAutomationWorkspaceProvenance({
           authority: runtime,
@@ -112,7 +118,8 @@ export const WORKTREE_METHODS: RpcMethod[] = [
                 startupAgent: params.startupAgent ?? params.createdWithAgent,
                 createdAt: Date.now()
               }),
-              creatorProvenance: resolveRpcWorkspaceCreatorProvenance(context)
+              creatorProvenance: resolveRpcWorkspaceCreatorProvenance(context),
+              ownerMemberKey: params.ownerMemberKey
             })
           )
           finishAutomationWorkspaceProvenanceRequest(params.automationProvenanceRequest)

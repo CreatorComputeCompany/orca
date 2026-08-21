@@ -26,7 +26,7 @@ const MemberSchema = z.object({
 
 const StoreSchema = z.object({
   version: z.literal(1),
-  members: z.array(MemberSchema).max(32)
+  members: z.array(MemberSchema).max(1000)
 })
 
 export type MultiplayerMember = z.infer<typeof MemberSchema>
@@ -150,13 +150,14 @@ export function createMultiplayerMemberForExternalIdentity(args: {
   issuer: string
   subject: string
   email: string
+  memberKey?: string
 }): MultiplayerMember {
   const store = readStore(args.userDataPath)
   const existing = findMultiplayerMemberByExternalIdentity(args.userDataPath, args)
   if (existing) {
     return existing
   }
-  const baseKey = normalizeMultiplayerMemberKey(args.displayName)
+  const baseKey = normalizeMultiplayerMemberKey(args.memberKey ?? args.displayName)
   let key = baseKey
   for (let suffix = 2; store.members.some((member) => member.key === key); suffix += 1) {
     key = `${baseKey.slice(0, Math.max(1, 63 - String(suffix).length - 1))}-${suffix}`

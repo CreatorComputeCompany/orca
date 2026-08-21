@@ -8,10 +8,18 @@ const APP_TICKET_TTL_MS = 60_000
 export type RuntimeAppTicket = {
   pairingUrl: string
   expiresAt: string
+  worktreeId?: string
 }
 
 export function createRuntimeAppTicketHttpHandler(
-  issueTicket: (args: { subject: string; name: string; expiresAt: number }) => RuntimeAppTicket
+  issueTicket: (args: {
+    subject: string
+    name: string
+    email?: string
+    issuer?: string
+    channelId?: string
+    expiresAt: number
+  }) => RuntimeAppTicket | Promise<RuntimeAppTicket>
 ) {
   return (request: IncomingMessage, response: ServerResponse): boolean => {
     if (parsePath(request.url) !== APP_TICKET_PATH) {
@@ -34,7 +42,7 @@ export function createRuntimeAppTicketHttpHandler(
       return true
     }
     void readJsonBody(request)
-      .then((body) => {
+      .then(async (body) => {
         if (!body || typeof body !== 'object') {
           writeJson(response, 400, { error: 'invalid_request' })
           return
@@ -48,12 +56,20 @@ export function createRuntimeAppTicketHttpHandler(
           typeof value.name === 'string' && value.name.trim()
             ? value.name.trim().slice(0, 100)
             : 'imabird web'
+        const email = typeof value.email === 'string' ? value.email.trim().slice(0, 254) : undefined
+        const issuer =
+          typeof value.issuer === 'string' ? value.issuer.trim().slice(0, 512) : undefined
+        const channelId =
+          typeof value.channelId === 'string' ? value.channelId.trim().slice(0, 128) : undefined
         writeJson(
           response,
           201,
-          issueTicket({
+          await issueTicket({
             subject: value.subject.trim().slice(0, 200),
             name,
+            ...(email ? { email } : {}),
+            ...(issuer ? { issuer } : {}),
+            ...(channelId ? { channelId } : {}),
             expiresAt: Date.now() + APP_TICKET_TTL_MS
           })
         )

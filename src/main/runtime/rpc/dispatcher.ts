@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Why: the dispatcher is the single audited transport-to-handler authority boundary. */
 import {
   buildRegistry,
   formatZodError,
@@ -23,6 +24,7 @@ import {
 import { orchestrationMigrationFence } from './orchestration-contract-fence'
 import { recordRuntimeFeatureInteraction } from './runtime-feature-interaction'
 import { OrchestrationLegacyCompatibility } from './orchestration-legacy-compatibility'
+import { authorizeRestrictedWorkspaceRequest } from './restricted-workspace-authorization'
 import type { RpcDispatchStreamingOptions } from './dispatcher-stream-options'
 import { invalidArgumentResponse, mapDispatcherError } from './dispatcher-error-response'
 
@@ -181,6 +183,12 @@ export class RpcDispatcher {
           return
         }
         const effectiveParams = compatibility.params ?? parsedParams.value
+        await authorizeRestrictedWorkspaceRequest(
+          this.runtime,
+          request.method,
+          effectiveParams,
+          options?.workspaceOwnerMemberKey
+        )
         const legacyCoordinator = this.legacyOrchestration.createCoordinatorInvocation(
           request,
           compatibility.legacyCoordinatorAuthority
@@ -200,6 +208,7 @@ export class RpcDispatcher {
             clientId: options?.clientId,
             pairedDeviceId: options?.pairedDeviceId,
             multiplayerMemberKey: options?.multiplayerMemberKey,
+            workspaceOwnerMemberKey: options?.workspaceOwnerMemberKey,
             clientKind: options?.clientKind,
             clientCapabilities: options?.clientCapabilities,
             orchestrationCapability: request.orchestrationCapability,
@@ -253,6 +262,12 @@ export class RpcDispatcher {
     }
 
     try {
+      await authorizeRestrictedWorkspaceRequest(
+        this.runtime,
+        request.method,
+        parsedParams.value,
+        options?.workspaceOwnerMemberKey
+      )
       const result = await method.handler(
         parsedParams.value,
         {
@@ -263,6 +278,7 @@ export class RpcDispatcher {
           clientId: options?.clientId,
           pairedDeviceId: options?.pairedDeviceId,
           multiplayerMemberKey: options?.multiplayerMemberKey,
+          workspaceOwnerMemberKey: options?.workspaceOwnerMemberKey,
           clientKind: options?.clientKind,
           clientCapabilities: options?.clientCapabilities,
           orchestrationCapability: request.orchestrationCapability,

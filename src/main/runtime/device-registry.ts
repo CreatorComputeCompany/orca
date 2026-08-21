@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Why: persisted and transient device credential lifecycles share one registry boundary. */
 // Why: per-device tokens replace the shared runtime auth token for WebSocket
 // (mobile) connections. Each paired device gets its own revocable token so
 // compromising one device doesn't expose others. The registry is a simple
@@ -29,6 +30,10 @@ export type DeviceEntry = {
   pairingReach?: RuntimePairingReach
   pairingManagement?: boolean
   managedRuntimeGrantKey?: string
+  /** Server-minted browser grant restricted to worktrees owned by its member. */
+  memberWorkspaceOnly?: boolean
+  /** Member identity carried by a transient browser grant after it is consumed. */
+  multiplayerMemberKey?: string
 }
 
 function validRelayBinding(value: unknown, deviceId: string): RelayDeviceBinding | undefined {
@@ -73,11 +78,13 @@ export class DeviceRegistry {
     return this.createAndPersistDevice(this.devices, name, scope, pairingReach)
   }
 
-  // Why: browser app tickets are bearer credentials only until one E2EE
-  // socket authenticates. They never touch disk and cannot survive a runtime
-  // restart or be reused after the handshake consumes them.
-  addTransientRuntimeDevice(name: string, expiresAt: number): DeviceEntry {
-    return this.transientDevices.add(name, expiresAt)
+  // Why: browser app tickets stay in memory and are consumed by the first E2EE socket.
+  addTransientRuntimeDevice(
+    name: string,
+    expiresAt: number,
+    metadata: Pick<DeviceEntry, 'memberWorkspaceOnly' | 'multiplayerMemberKey'> = {}
+  ): DeviceEntry {
+    return this.transientDevices.add(name, expiresAt, metadata)
   }
 
   consumeTransientDevice(deviceId: string): boolean {

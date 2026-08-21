@@ -6,7 +6,11 @@ type TransientDeviceEntry = DeviceEntry & { expiresAt: number }
 export class TransientRuntimeDeviceRegistry {
   private devices = new Map<string, TransientDeviceEntry>()
 
-  add(name: string, expiresAt: number): DeviceEntry {
+  add(
+    name: string,
+    expiresAt: number,
+    metadata: Pick<DeviceEntry, 'memberWorkspaceOnly' | 'multiplayerMemberKey'> = {}
+  ): DeviceEntry {
     const entry: TransientDeviceEntry = {
       deviceId: randomUUID(),
       name,
@@ -15,6 +19,7 @@ export class TransientRuntimeDeviceRegistry {
       pairedAt: Date.now(),
       lastSeenAt: 0,
       pairingReach: 'network',
+      ...metadata,
       expiresAt
     }
     this.prune()
