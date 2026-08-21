@@ -1947,7 +1947,11 @@ export class OrcaRuntimeRpcServer {
           deviceId: authenticatedSocket.device.deviceId,
           token: authenticatedSocket.device.deviceToken,
           scope: authenticatedSocket.device.scope,
-          pairingManagement: false
+          pairingManagement: false,
+          ...(authenticatedSocket.device.memberWorkspaceOnly ? { memberWorkspaceOnly: true } : {}),
+          ...(authenticatedSocket.device.multiplayerMemberKey
+            ? { multiplayerMemberKey: authenticatedSocket.device.multiplayerMemberKey }
+            : {})
         }
       : this.deviceRegistry?.validateToken(token)
     if (!device) {

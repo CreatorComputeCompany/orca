@@ -52,7 +52,8 @@ class FakeTransport implements MobileSocketTransport {
 function registryFor(
   deviceId: string,
   token: string,
-  scope: 'mobile' | 'runtime' = 'mobile'
+  scope: 'mobile' | 'runtime' = 'mobile',
+  metadata: { memberWorkspaceOnly?: boolean; multiplayerMemberKey?: string } = {}
 ): DeviceRegistry {
   return {
     validateToken: (candidate: string) =>
@@ -63,11 +64,13 @@ function registryFor(
             name: 'Phone',
             scope,
             pairedAt: 1,
-            lastSeenAt: 0
+            lastSeenAt: 0,
+            ...metadata
           }
         : null,
     updateLastSeen: vi.fn(),
-    updateLastSeenDeferred: vi.fn()
+    updateLastSeenDeferred: vi.fn(),
+    consumeTransientDevice: vi.fn(() => false)
   } as unknown as DeviceRegistry
 }
 
@@ -188,6 +191,52 @@ describe('MobileSocketWiring', () => {
     expect(onClose).toHaveBeenCalledWith(expect.objectContaining({ ws }), false)
     expect(wiring.channelCount).toBe(0)
     expect(wiring.connectionCount).toBe(0)
+  })
+
+  it('preserves member workspace authorization after consuming an app ticket', () => {
+    const desktop = generateKeyPair()
+    const phone = generateKeyPair()
+    const ws = new FakeSocket()
+    const transport = new FakeTransport()
+    const onText = vi.fn()
+    const consumeTransientDevice = vi.fn(() => true)
+    const registry = registryFor('device-1', 'valid-token', 'runtime', {
+      memberWorkspaceOnly: true,
+      multiplayerMemberKey: 'member-bob'
+    })
+    registry.consumeTransientDevice = consumeTransientDevice
+    const wiring = new MobileSocketWiring({
+      deviceRegistry: registry,
+      e2eeKeypair: {
+        publicKey: desktop.publicKey,
+        secretKey: desktop.secretKey,
+        publicKeyB64: Buffer.from(desktop.publicKey).toString('base64')
+      },
+      onText,
+      onBinary: vi.fn(),
+      onClose: vi.fn()
+    })
+    wiring.attachTransport(transport)
+
+    transport.receive(
+      ws,
+      JSON.stringify({
+        type: 'e2ee_hello',
+        publicKeyB64: Buffer.from(phone.publicKey).toString('base64')
+      })
+    )
+    const sharedKey = deriveSharedKey(phone.secretKey, desktop.publicKey)
+    transport.receive(
+      ws,
+      encrypt(JSON.stringify({ type: 'e2ee_auth', deviceToken: 'valid-token' }), sharedKey)
+    )
+    transport.receive(ws, encrypt('{"id":"rpc-1","method":"worktree.list"}', sharedKey))
+
+    expect(consumeTransientDevice).toHaveBeenCalledWith('device-1')
+    expect(onText.mock.calls[0]?.[0].device).toMatchObject({
+      memberWorkspaceOnly: true,
+      multiplayerMemberKey: 'member-bob'
+    })
   })
 
   it('closes an unknown-token socket even when reporting the failure throws', () => {

@@ -40,6 +40,9 @@ export type E2EEAuthenticatedDevice = {
   deviceId: string
   deviceToken: string
   scope: 'mobile' | 'runtime'
+  /** Server-derived authorization carried across the one-shot app-ticket handshake. */
+  memberWorkspaceOnly?: boolean
+  multiplayerMemberKey?: string
 }
 
 export class E2EEChannel {
