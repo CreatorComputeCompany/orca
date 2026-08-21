@@ -34,11 +34,14 @@ describe('WebSocketTransport static web client', () => {
     const indexResponse = await fetch(`http://127.0.0.1:${transport.resolvedPort}/web-index.html`)
     expect(indexResponse.status).toBe(200)
     expect(indexResponse.headers.get('content-type')).toContain('text/html')
+    expect(indexResponse.headers.get('access-control-allow-origin')).toBe('*')
     await expect(indexResponse.text()).resolves.toBe('<html>web</html>')
 
     const assetResponse = await fetch(`http://127.0.0.1:${transport.resolvedPort}/assets/app.js`)
     expect(assetResponse.status).toBe(200)
     expect(assetResponse.headers.get('cache-control')).toContain('immutable')
+    expect(assetResponse.headers.get('access-control-allow-origin')).toBe('*')
+    expect(assetResponse.headers.get('cross-origin-resource-policy')).toBe('cross-origin')
     await expect(assetResponse.text()).resolves.toBe('console.log("web")')
   })
 

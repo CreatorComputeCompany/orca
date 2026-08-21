@@ -240,7 +240,7 @@ Common Commands:
   orca terminal list [--worktree <selector>] [--limit <n>] [--include-visual-layouts] [--json]
   orca terminal show [--terminal <handle>] [--json]
   orca terminal read [--terminal <handle>] [--cursor <n>] [--limit <n>] [--json]
-  orca terminal send [--terminal <handle>] [--text <text>] [--enter] [--interrupt] [--json]
+  orca terminal send [--terminal <handle>] [--text <text>] [--agent-prompt] [--enter] [--interrupt] [--json]
   orca terminal wait [--terminal <handle>] --for exit|tui-idle [--timeout-ms <ms>] [--json]
   orca terminal stop --worktree <selector> [--json]
   orca terminal create [--worktree <selector>] [--title <name>] [--command <text>] [--focus] [--json]
@@ -269,6 +269,7 @@ Selectors:
 
 Terminal Send Options:
   --text <text>             Text to send to the terminal
+  --agent-prompt            Atomically paste and submit text to an agent TUI
   --enter                   Append Enter after sending text
   --interrupt               Send as an interrupt-style input when supported
 
@@ -347,7 +348,7 @@ Examples:
   $ orca file open src/App.tsx
   $ orca terminal create --worktree active --command "codex"
   $ orca terminal list --worktree path:/Users/me/orca/workspaces/orca/cli-test-1 --json
-  $ orca terminal send --terminal term_123 --text "hi" --enter
+  $ orca terminal send --terminal term_123 --text "review this change" --agent-prompt
   $ orca terminal wait --terminal term_123 --for exit --timeout-ms 60000 --json
   $ orca tab current --json
   $ orca tab show --page page_123 --json
@@ -522,6 +523,7 @@ function formatCommandFlagHelp(flag: string, commandPath: string[]): string {
 export function formatFlagHelp(flag: string): string {
   const helpByFlag: Record<string, string> = {
     agent: '--agent <id>          Launch a known TUI agent in the first terminal',
+    'agent-prompt': '--agent-prompt        Atomically paste and submit text to an agent TUI',
     'base-branch': '--base-branch <ref>    Base branch/ref to create the worktree from',
     command: '--command <text>       Command to run in the terminal on startup',
     comment: '--comment <text>       Comment stored in Orca metadata',

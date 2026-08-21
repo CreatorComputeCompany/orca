@@ -1,4 +1,5 @@
 import type { MultiplayerAuthResult } from '../../../shared/multiplayer-auth-contract'
+import { readOrcaWebEmbedBootstrap } from './web-embed-bootstrap'
 import { parseWebPairingInput } from './web-pairing'
 import { WebRuntimeClient } from './web-runtime-client'
 import {
@@ -48,7 +49,16 @@ export async function loginWebMultiplayerAccount(args: {
         : 'Invalid email or password.'
     )
   }
-  await installWebMultiplayerAuth((await response.json()) as MultiplayerAuthResult, null)
+  // Why: embedded pages are not served by the runtime, so the same-origin
+  // WebSocket fallback would target the host page. The embed always has a
+  // stored environment carrying the real runtime endpoint.
+  const currentEnvironment = readOrcaWebEmbedBootstrap(window)
+    ? readStoredWebRuntimeEnvironment()
+    : null
+  await installWebMultiplayerAuth(
+    (await response.json()) as MultiplayerAuthResult,
+    currentEnvironment
+  )
 }
 
 export async function installWebMultiplayerAuth(
@@ -160,10 +170,31 @@ export async function linkCurrentOrcaMemberToGsd(): Promise<void> {
 }
 
 function multiplayerLoginUrl(): string {
+  const embeddedBase = embeddedRuntimeHttpBase()
+  if (embeddedBase) {
+    return `${embeddedBase}/api/multiplayer/login`
+  }
   const pathname = window.location.pathname.endsWith('web-index.html')
     ? window.location.pathname.replace(/web-index\.html$/, 'api/multiplayer/login')
     : `${window.location.pathname.replace(/\/$/, '')}/api/multiplayer/login`
   return `${window.location.origin}${pathname}`
+}
+
+// Why: standalone web pages are served by the runtime, so the page origin IS
+// the runtime. An embedding host page (e.g. Buzz) lives on its own origin;
+// auth endpoints must target the paired runtime endpoint instead.
+function embeddedRuntimeHttpBase(): string | null {
+  if (!readOrcaWebEmbedBootstrap(window)) {
+    return null
+  }
+  const current = readStoredWebRuntimeEnvironment()
+  const offer = current ? getPreferredWebPairingOffer(current) : null
+  if (!offer) {
+    return null
+  }
+  const url = new URL(offer.endpoint)
+  url.protocol = url.protocol === 'wss:' ? 'https:' : 'http:'
+  return `${url.origin}${url.pathname.replace(/\/$/, '')}`
 }
 
 function sameOriginWebSocketUrl(): string {

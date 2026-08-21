@@ -20,6 +20,11 @@ import {
   readPairingInputFromLocation
 } from './web-pairing'
 import {
+  installOrcaWebEmbedController,
+  readOrcaWebEmbedBootstrap,
+  storedEnvironmentCoversPairingOffer
+} from './web-embed-bootstrap'
+import {
   createStoredWebRuntimeEnvironment,
   readStoredWebRuntimeEnvironment,
   saveStoredWebRuntimeEnvironment
@@ -37,10 +42,27 @@ import {
 } from './gsd-orca-launch'
 const App = lazy(() => import('../App'))
 
+// Why: when a host page embeds the web client, the pairing input and mount
+// element come from the host, and URL-based flows (SSO returns, GSD launches,
+// address-bar pairing) belong to the host page's URL, not to Orca.
+const webEmbedBootstrap = readOrcaWebEmbedBootstrap(window)
+
 function WebRoot(): React.JSX.Element {
-  const initialSsoResult = useMemo(() => readWebMultiplayerSsoResult(window.location), [])
-  const hasPendingGsdLaunch = useMemo(() => captureGsdLaunchFromLocation(window.location), [])
-  const initialPairingInput = useMemo(() => readPairingInputFromLocation(window.location), [])
+  const initialSsoResult = useMemo(
+    () => (webEmbedBootstrap ? null : readWebMultiplayerSsoResult(window.location)),
+    []
+  )
+  const hasPendingGsdLaunch = useMemo(
+    () => (webEmbedBootstrap ? false : captureGsdLaunchFromLocation(window.location)),
+    []
+  )
+  const initialPairingInput = useMemo(
+    () =>
+      webEmbedBootstrap
+        ? (webEmbedBootstrap.pairingCode ?? null)
+        : readPairingInputFromLocation(window.location),
+    []
+  )
   // Why: current runtime links carry scope metadata. Runtime-scope offers keep
   // the instant save path; mobile/legacy-unknown offers must be shown/probed.
   const startupDecision = useMemo(() => {
@@ -49,8 +71,16 @@ function WebRoot(): React.JSX.Element {
       hasStoredEnvironment: readStoredWebRuntimeEnvironment() !== null
     })
     if (
-      decision.kind === 'auto-save-runtime-offer' ||
-      (decision.kind === 'show-connect' && decision.initialPairingInput !== null)
+      webEmbedBootstrap &&
+      decision.kind === 'auto-save-runtime-offer' &&
+      storedEnvironmentCoversPairingOffer(decision.offer)
+    ) {
+      return { kind: 'use-stored-environment' } as const
+    }
+    if (
+      !webEmbedBootstrap &&
+      (decision.kind === 'auto-save-runtime-offer' ||
+        (decision.kind === 'show-connect' && decision.initialPairingInput !== null))
     ) {
       clearPairingInputFromAddressBar()
     }
@@ -251,7 +281,13 @@ function WebRootBoundary(): React.JSX.Element {
   )
 }
 
-ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
+if (webEmbedBootstrap) {
+  installOrcaWebEmbedController(webEmbedBootstrap)
+}
+
+ReactDOM.createRoot(
+  webEmbedBootstrap?.container ?? (document.getElementById('root') as HTMLElement)
+).render(
   <I18nProvider>
     <WebRootBoundary />
   </I18nProvider>

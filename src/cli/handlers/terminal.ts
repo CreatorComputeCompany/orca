@@ -84,13 +84,31 @@ export const TERMINAL_HANDLERS: Record<string, CommandHandler> = {
     printResult(result, json, formatTerminalRead)
   },
   'terminal send': async ({ flags, client, cwd, json }) => {
-    const result = await client.call<{ send: RuntimeTerminalSend }>('terminal.send', {
-      terminal: await getTerminalHandle(flags, cwd, client),
-      text: getOptionalStringFlag(flags, 'text'),
-      enter: flags.get('enter') === true,
-      interrupt: flags.get('interrupt') === true,
-      client: { id: 'orca-cli', type: 'desktop' }
-    })
+    const text = getOptionalStringFlag(flags, 'text')
+    const agentPrompt = flags.get('agent-prompt') === true
+    if (agentPrompt && text === undefined) {
+      throw new RuntimeClientError('invalid_argument', '--agent-prompt requires --text')
+    }
+    if (agentPrompt && (flags.get('enter') === true || flags.get('interrupt') === true)) {
+      throw new RuntimeClientError(
+        'invalid_argument',
+        '--agent-prompt cannot be combined with --enter or --interrupt'
+      )
+    }
+    const terminal = await getTerminalHandle(flags, cwd, client)
+    const result = agentPrompt
+      ? await client.call<{ send: RuntimeTerminalSend }>('terminal.sendAgentPrompt', {
+          terminal,
+          text,
+          client: { id: 'orca-cli', type: 'desktop' }
+        })
+      : await client.call<{ send: RuntimeTerminalSend }>('terminal.send', {
+          terminal,
+          text,
+          enter: flags.get('enter') === true,
+          interrupt: flags.get('interrupt') === true,
+          client: { id: 'orca-cli', type: 'desktop' }
+        })
     printResult(result, json, formatTerminalSend)
   },
   'terminal wait': async ({ flags, client, cwd, json }) => {

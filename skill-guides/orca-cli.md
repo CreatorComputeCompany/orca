@@ -81,13 +81,13 @@ The create result's `worktree.id` already contains both pieces Orca needs: `<rep
 ORCA worktree create --name <task-name> --no-parent --json
 ORCA terminal create --worktree id:<repoId>::<newWorktreePath> --title <task-name> --command 'codex --model gpt-5.5 -c model_reasoning_effort="xhigh"' --json
 ORCA terminal wait --terminal <handle> --for tui-idle --timeout-ms 60000 --json
-ORCA terminal send --terminal <handle> --text "<task brief>" --enter --json
+ORCA terminal send --terminal <handle> --text "<task brief>" --agent-prompt --json
 ```
 
 Existing-terminal handoff:
 
 ```text
-ORCA terminal send --terminal <handle> --text "<task brief>" --enter --json
+ORCA terminal send --terminal <handle> --text "<task brief>" --agent-prompt --json
 ```
 
 ## Worktrees
@@ -178,7 +178,7 @@ ORCA terminal show --terminal <handle> --json
 ORCA terminal read --terminal <handle> --json
 ORCA terminal read --terminal <handle> --cursor <cursor> --limit 1000 --json
 ORCA terminal read --json
-ORCA terminal send --terminal <handle> --text "continue" --enter --json
+ORCA terminal send --terminal <handle> --text "continue" --agent-prompt --json
 ORCA terminal send --text "echo hello" --enter --json
 ORCA terminal wait --terminal <handle> --for exit --timeout-ms 5000 --json
 ORCA terminal wait --terminal <handle> --for tui-idle --timeout-ms 300000 --json
@@ -198,6 +198,7 @@ Terminal rules:
 - `--terminal` is optional for most commands; omitted means the active terminal in the current worktree.
 - `terminal list --json` omits `visualLayouts` to keep the common agent payload bounded. Add `--include-visual-layouts` only when tab and pane topology is required.
 - Use `terminal read` before `terminal send` unless the next input is obvious.
+- Use `--agent-prompt` for agent TUIs; reserve `--enter` for raw shell or terminal input.
 - Use `terminal send` only for direct terminal input or one-off prompts where no task state, inbox, or reply tracking is needed.
 - For structured coordination, invoke the `orchestration` skill; it uses `orca orchestration ...` commands for messages, handoffs, task DAGs, dispatches, inbox/reply flows, and coordinator loops. A receiving agent can run `orca orchestration check --unread --inject` to render its unread mail in agent-readable form; this checks the caller's inbox and does not remotely deliver input to another terminal.
 - Use `terminal create --worktree active --command "<agent>"` for a fresh agent in the current worktree. Use `worktree create --agent <agent>` only for a separate checkout (agent in the first terminal — do not also `terminal create` the same agent).

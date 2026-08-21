@@ -29,6 +29,11 @@ async function handleStaticRequest(
   request: IncomingMessage,
   response: ServerResponse
 ): Promise<void> {
+  // Why: host pages on other origins (e.g. Buzz) embed the web client by
+  // fetching web-index.html and importing its module graph cross-origin. The
+  // static bundle is public; access control stays in the runtime tokens.
+  response.setHeader('Access-Control-Allow-Origin', '*')
+  response.setHeader('Cross-Origin-Resource-Policy', 'cross-origin')
   if (request.method !== 'GET' && request.method !== 'HEAD') {
     response.setHeader('Allow', 'GET, HEAD')
     writeHttpStatus(response, 405)

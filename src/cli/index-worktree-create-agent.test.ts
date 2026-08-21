@@ -107,6 +107,10 @@ describe('orca cli worktree awareness', () => {
         'agent-task',
         '--agent',
         'codex',
+        '--model',
+        'gpt-5.2-codex',
+        '--effort',
+        'high',
         '--prompt',
         'hi',
         '--setup',
@@ -131,6 +135,7 @@ describe('orca cli worktree awareness', () => {
       callerTerminalHandle: undefined,
       cliProvenanceRequest: {},
       startupAgent: 'codex',
+      startupLaunchPreferences: { model: 'gpt-5.2-codex', effort: 'high' },
       startupPrompt: 'hi'
     })
   })

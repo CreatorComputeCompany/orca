@@ -85,6 +85,48 @@ describe('terminal send RPC', () => {
     expect(runtime.getTerminalAgentStatus).toHaveBeenCalledWith('terminal-1')
   })
 
+  it('sends an agent prompt through the runtime atomic prompt writer', async () => {
+    const resolveLiveLeafForHandle = vi.fn().mockReturnValue({ ptyId: 'pty-1' })
+    const runtime = stubRuntime({
+      resolveLiveLeafForHandle,
+      getDriver: vi.fn().mockReturnValue({ kind: 'desktop', clientId: 'desktop-1' }),
+      getTerminalAgentStatus: vi.fn().mockResolvedValue({
+        handle: 'terminal-1',
+        isRunningAgent: true,
+        status: 'idle'
+      }),
+      sendTerminalAgentPrompt: vi.fn().mockImplementation(async (_handle, _prompt, options) => {
+        await options?.beforeWrite?.('pty-1')
+        return { handle: 'terminal-1', accepted: true, bytesWritten: 31 }
+      }),
+      sendTerminal: vi.fn()
+    })
+    const dispatcher = new RpcDispatcher({ runtime, methods: TERMINAL_METHODS })
+
+    const response = await dispatcher.dispatch(
+      makeRequest('terminal.sendAgentPrompt', {
+        terminal: 'terminal-1',
+        text: 'review this change',
+        client: { id: 'desktop-1', type: 'desktop' }
+      })
+    )
+
+    expect(response.ok).toBe(true)
+    if (!response.ok) {
+      throw new Error(response.error.message)
+    }
+    expect(response.result).toEqual({
+      send: { handle: 'terminal-1', accepted: true, bytesWritten: 31 }
+    })
+    expect(runtime.sendTerminalAgentPrompt).toHaveBeenCalledWith(
+      'terminal-1',
+      'review this change',
+      expect.objectContaining({ beforeWrite: expect.any(Function) })
+    )
+    expect(runtime.sendTerminal).not.toHaveBeenCalled()
+    expect(resolveLiveLeafForHandle).toHaveBeenCalled()
+  })
+
   it('fails terminal.send with terminal_handle_stale for a stale handle instead of probing the wrong PTY', async () => {
     const runtime = stubRuntime({
       resolveLiveLeafForHandle: vi.fn(() => {
