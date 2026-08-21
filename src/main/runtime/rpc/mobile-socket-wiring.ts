@@ -61,7 +61,9 @@ function toAuthenticatedDevice(device: DeviceEntry): E2EEAuthenticatedDevice {
   return {
     deviceId: device.deviceId,
     deviceToken: device.token,
-    scope: device.scope
+    scope: device.scope,
+    ...(device.memberWorkspaceOnly ? { memberWorkspaceOnly: true } : {}),
+    ...(device.multiplayerMemberKey ? { multiplayerMemberKey: device.multiplayerMemberKey } : {})
   }
 }
 
