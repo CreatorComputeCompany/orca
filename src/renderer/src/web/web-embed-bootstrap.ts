@@ -1,3 +1,4 @@
+import type { MultiplayerAuthResult } from '../../../shared/multiplayer-auth-contract'
 import { useAppStore } from '@/store'
 import { readStoredWebRuntimeEnvironment } from './web-runtime-environment'
 
@@ -8,6 +9,11 @@ export type OrcaWebEmbedController = {
 export type OrcaWebEmbedBootstrap = {
   container: HTMLElement
   pairingCode?: string
+  // Why: the host's backend signs the visitor in as an Orca member and hands
+  // the result over, so the embedded client never shows its own account
+  // screens. Shaped exactly like the SSO return the standalone web client
+  // already consumes.
+  authResult?: MultiplayerAuthResult
   controller?: OrcaWebEmbedController
 }
 
@@ -27,7 +33,20 @@ export function readOrcaWebEmbedBootstrap(target: Window): OrcaWebEmbedBootstrap
   if (bootstrap.pairingCode !== undefined && typeof bootstrap.pairingCode !== 'string') {
     return null
   }
+  if (bootstrap.authResult !== undefined && !isMultiplayerAuthResult(bootstrap.authResult)) {
+    return null
+  }
   return bootstrap as OrcaWebEmbedBootstrap
+}
+
+function isMultiplayerAuthResult(value: unknown): value is MultiplayerAuthResult {
+  const result = value as Partial<MultiplayerAuthResult> | null
+  return (
+    typeof result?.pairingUrl === 'string' &&
+    typeof result.email === 'string' &&
+    typeof result.member?.key === 'string' &&
+    typeof result.member.displayName === 'string'
+  )
 }
 
 // Why: a host page passes its pairing code on every boot (it has no address
@@ -45,6 +64,11 @@ export function installOrcaWebEmbedController(bootstrap: OrcaWebEmbedBootstrap):
         const state = useAppStore.getState()
         state.setActiveView('terminal')
         state.setActiveWorktree(worktreeId)
+        // Why: an embedding host shows one session inside its own product
+        // chrome. The workspace sidebar and explorer stay a click away, but
+        // the focused view is the worktree's terminal surface alone.
+        state.setSidebarOpen(false)
+        state.setRightSidebarOpen(false)
       })
     }
   }

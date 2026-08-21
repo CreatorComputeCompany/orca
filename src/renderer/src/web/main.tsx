@@ -49,7 +49,10 @@ const webEmbedBootstrap = readOrcaWebEmbedBootstrap(window)
 
 function WebRoot(): React.JSX.Element {
   const initialSsoResult = useMemo(
-    () => (webEmbedBootstrap ? null : readWebMultiplayerSsoResult(window.location)),
+    () =>
+      webEmbedBootstrap
+        ? (webEmbedBootstrap.authResult ?? null)
+        : readWebMultiplayerSsoResult(window.location),
     []
   )
   const hasPendingGsdLaunch = useMemo(
@@ -115,7 +118,11 @@ function WebRoot(): React.JSX.Element {
     if (!initialSsoResult) {
       return
     }
-    clearWebMultiplayerSsoResult()
+    // Why: embedded pages own their URL; the SSO payload arrived via the
+    // bootstrap object, not the address bar.
+    if (!webEmbedBootstrap) {
+      clearWebMultiplayerSsoResult()
+    }
     void installWebMultiplayerAuth(initialSsoResult, readStoredWebRuntimeEnvironment())
       .then(() => {
         setHasEnvironment(true)
