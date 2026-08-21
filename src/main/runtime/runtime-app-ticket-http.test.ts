@@ -20,7 +20,10 @@ describe('runtime app ticket HTTP boundary', () => {
 
     const response = await requestTicket(transport, 'service-secret', {
       subject: 'github:123',
-      name: 'Jake'
+      name: 'Jake',
+      email: 'jake@example.com',
+      issuer: 'https://buzz.chat',
+      channelId: 'channel-1'
     })
 
     expect(response.status).toBe(201)
@@ -29,7 +32,13 @@ describe('runtime app ticket HTTP boundary', () => {
       pairingUrl: 'orca://pair?code=one-shot-secret'
     })
     expect(issueTicket).toHaveBeenCalledWith(
-      expect.objectContaining({ subject: 'github:123', name: 'Jake' })
+      expect.objectContaining({
+        subject: 'github:123',
+        name: 'Jake',
+        email: 'jake@example.com',
+        issuer: 'https://buzz.chat',
+        channelId: 'channel-1'
+      })
     )
     const expiresAt = issueTicket.mock.calls[0]![0].expiresAt
     expect(expiresAt - Date.now()).toBeGreaterThan(55_000)

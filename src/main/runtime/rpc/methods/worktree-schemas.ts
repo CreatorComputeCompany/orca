@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Why: worktree create/set wire validation stays in one parity-audited schema module. */
 import { z } from 'zod'
 import { isTuiAgent } from '../../../../shared/tui-agent-config'
 import type { TuiAgent } from '../../../../shared/tui-agent'
@@ -105,6 +106,10 @@ export const WorktreeCreate = z
       .transform((v) => (typeof v === 'string' ? v : ''))
       .pipe(z.string().min(1, 'Missing repo selector')),
     name: OptionalString,
+    ownerMemberKey: z
+      .string()
+      .regex(/^[a-z0-9][a-z0-9-]{0,62}$/)
+      .optional(),
     /** Set by clients that fell back to a generated creature name. Absent means user-typed, so the
      *  host neither skips a retired candidate nor retires the name it lands on. */
     nameWasGenerated: z.boolean().optional(),

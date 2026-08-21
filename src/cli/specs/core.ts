@@ -102,6 +102,7 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
       'issue',
       'linear-issue',
       'comment',
+      'owner-member-key',
       'setup',
       'parent-worktree',
       'no-parent',

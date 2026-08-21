@@ -29,6 +29,7 @@ export function mergeWorktree(
       ? { ephemeralVmCheckoutMode: meta.ephemeralVmCheckoutMode }
       : {}),
     ...(creatorProvenance ? { creatorProvenance } : {}),
+    ...(meta?.ownerMemberKey ? { ownerMemberKey: meta.ownerMemberKey } : {}),
     path: git.path,
     head: git.head,
     branch: git.branch,

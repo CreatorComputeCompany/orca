@@ -787,6 +787,7 @@ export type RuntimeWorktreePsSummary = {
   lastActivityAt?: number
   createdAt?: number
   creatorProvenance?: Worktree['creatorProvenance']
+  ownerMemberKey?: string
   linkedIssue: number | null
   linkedPR: { number: number; state: string } | null
   linkedLinearIssue: string | null

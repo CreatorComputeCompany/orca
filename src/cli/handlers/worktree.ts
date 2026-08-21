@@ -232,6 +232,7 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
       }
     }
     const linearIssueLink = getOptionalLinearIssueLinkFlag(flags, 'linear-issue')
+    const ownerMemberKey = getOptionalStringFlag(flags, 'owner-member-key')
     const result = await client.call<RuntimeWorktreeCreateResult>('worktree.create', {
       repo: await getCreateRepoSelector(flags, cwdParentWorktree, client),
       name: getRequiredStringFlag(flags, 'name'),
@@ -239,6 +240,7 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
       linkedIssue: getOptionalNumberFlag(flags, 'issue'),
       ...linearIssueLink,
       comment: getOptionalStringFlag(flags, 'comment'),
+      ...(ownerMemberKey ? { ownerMemberKey } : {}),
       runHooks: flags.get('run-hooks') === true,
       activate: flags.get('activate') === true || flags.get('run-hooks') === true,
       ...(setupDecision ? { setupDecision } : {}),

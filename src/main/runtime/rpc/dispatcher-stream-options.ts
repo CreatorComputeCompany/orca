@@ -9,6 +9,7 @@ export type RpcDispatchStreamingOptions = {
   clientId?: string
   pairedDeviceId?: string
   multiplayerMemberKey?: string
+  workspaceOwnerMemberKey?: string
   clientKind?: 'mobile' | 'runtime'
   clientCapabilities?: readonly RuntimeCapability[]
   pairing?: PairingRpcContext

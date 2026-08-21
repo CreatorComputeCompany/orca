@@ -82,6 +82,13 @@ import {
 const DEFAULT_WS_PORT = 6768
 const GSD_LAUNCH_REQUEST_TIMEOUT_MS = 15_000
 
+function buzzMemberKey(subject: string): string {
+  if (!/^[0-9a-f]{64}$/i.test(subject)) {
+    throw new Error('Invalid Buzz identity.')
+  }
+  return `buzz-${subject.toLowerCase().slice(0, 48)}`
+}
+
 // Why: STA-2370 — the WS listener defaults to loopback so a desktop with no paired device is not
 // reachable from the LAN; it widens to all interfaces only on explicit pairing (or `orca serve`).
 const WS_BIND_HOST_LOOPBACK = '127.0.0.1'
@@ -648,10 +655,18 @@ export class OrcaRuntimeRpcServer {
     return this.mobileSocketWiring
   }
 
-  private issueRuntimeAppTicket(args: { subject: string; name: string; expiresAt: number }): {
+  private async issueRuntimeAppTicket(args: {
+    subject: string
+    name: string
+    email?: string
+    issuer?: string
+    channelId?: string
+    expiresAt: number
+  }): Promise<{
     pairingUrl: string
     expiresAt: string
-  } {
+    worktreeId?: string
+  }> {
     const rawEndpoint = this.getWebSocketEndpoint()
     const registry = this.deviceRegistry
     const publicKeyB64 = this.getE2EEPublicKey()
@@ -662,9 +677,56 @@ export class OrcaRuntimeRpcServer {
     if (!advertised.ok) {
       throw new Error(advertised.guidance)
     }
+    let restrictedWorktreeId: string | undefined
+    let multiplayerMemberKey: string | undefined
+    if (args.email && args.issuer && args.channelId) {
+      const memberKey = buzzMemberKey(args.subject)
+      const member =
+        findMultiplayerMemberByExternalIdentity(this.userDataPath, {
+          issuer: args.issuer,
+          subject: args.subject
+        }) ??
+        createMultiplayerMemberForExternalIdentity({
+          userDataPath: this.userDataPath,
+          displayName: args.name,
+          issuer: args.issuer,
+          subject: args.subject,
+          email: args.email,
+          memberKey
+        })
+      const suffix = args.channelId
+        .replace(/[^a-zA-Z0-9]/g, '')
+        .slice(-12)
+        .toLowerCase()
+      const listed = await this.runtime.listManagedWorktrees(undefined, 1000, true)
+      const matchesChannel = (candidate: (typeof listed.worktrees)[number]): boolean =>
+        [candidate.id, candidate.displayName, candidate.path, candidate.branch].some((value) =>
+          value.toLowerCase().includes(suffix)
+        )
+      let worktree = listed.worktrees.find(
+        (candidate) => candidate.ownerMemberKey === member.key && matchesChannel(candidate)
+      )
+      if (!worktree && process.env.ORCA_BUZZ_LEGACY_CLAIM_ENABLED === '1') {
+        const legacy = listed.worktrees.find(
+          (candidate) => !candidate.ownerMemberKey && matchesChannel(candidate)
+        )
+        if (legacy) {
+          worktree = await this.runtime.claimLegacyManagedWorktreeOwner(legacy.id, member.key)
+        }
+      }
+      if (!worktree) {
+        throw new Error('No Orca worktree owned by this Buzz user exists for the chat.')
+      }
+      restrictedWorktreeId = worktree.id
+      multiplayerMemberKey = member.key
+    }
     const device = registry.addTransientRuntimeDevice(
       `${args.name} (${args.subject})`,
-      args.expiresAt
+      args.expiresAt,
+      {
+        ...(restrictedWorktreeId ? { memberWorkspaceOnly: true } : {}),
+        ...(multiplayerMemberKey ? { multiplayerMemberKey } : {})
+      }
     )
     return {
       pairingUrl: encodePairingOffer({
@@ -675,7 +737,8 @@ export class OrcaRuntimeRpcServer {
         pairedDeviceId: device.deviceId,
         scope: 'runtime'
       }),
-      expiresAt: new Date(args.expiresAt).toISOString()
+      expiresAt: new Date(args.expiresAt).toISOString(),
+      ...(restrictedWorktreeId ? { worktreeId: restrictedWorktreeId } : {})
     }
   }
 
@@ -2148,8 +2211,15 @@ export class OrcaRuntimeRpcServer {
         connectionId,
         clientId: token,
         pairedDeviceId: device.deviceId,
-        multiplayerMemberKey: findMultiplayerMemberByDevice(this.userDataPath, device.deviceId)
-          ?.key,
+        multiplayerMemberKey:
+          ('multiplayerMemberKey' in device ? device.multiplayerMemberKey : undefined) ??
+          findMultiplayerMemberByDevice(this.userDataPath, device.deviceId)?.key,
+        workspaceOwnerMemberKey:
+          'memberWorkspaceOnly' in device && device.memberWorkspaceOnly
+            ? 'multiplayerMemberKey' in device
+              ? device.multiplayerMemberKey
+              : undefined
+            : undefined,
         // Why: gates the mobile-only payload diet so full-screen web/desktop clients aren't truncated.
         clientKind: device.scope,
         clientCapabilities: authenticatedSocket?.clientCapabilities,

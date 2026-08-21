@@ -115,6 +115,8 @@ export type RpcContext = {
   // Why: trusted server-side enrollment for backward-compatible mobile multiplayer routing.
   // Never accept this identity from request params.
   multiplayerMemberKey?: string
+  // Why: service-minted embedded browser tickets are confined to their member's worktrees.
+  workspaceOwnerMemberKey?: string
   // Why: lets handlers gate mobile payload truncation to phones only; undefined for in-process callers → treat as full-class (no clip).
   clientKind?: 'mobile' | 'runtime'
   // Why: negotiation is bound to the authenticated socket, never asserted by a destructive request.
