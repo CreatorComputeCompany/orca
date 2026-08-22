@@ -14,6 +14,7 @@ describe('runtime app ticket HTTP boundary', () => {
     process.env.ORCA_RUNTIME_APP_TICKET_SECRET = 'service-secret'
     const issueTicket = vi.fn(({ expiresAt }: { expiresAt: number }) => ({
       pairingUrl: 'orca://pair?code=one-shot-secret',
+      authPairingUrl: 'orca://pair?code=member-browser-secret',
       expiresAt: new Date(expiresAt).toISOString(),
       email: 'jake@example.com',
       member: { key: 'member-jake', displayName: 'Jake', deviceIds: [] }
@@ -32,6 +33,7 @@ describe('runtime app ticket HTTP boundary', () => {
     expect(response.headers.get('cache-control')).toBe('no-store')
     await expect(response.json()).resolves.toMatchObject({
       pairingUrl: 'orca://pair?code=one-shot-secret',
+      authPairingUrl: 'orca://pair?code=member-browser-secret',
       email: 'jake@example.com',
       member: { key: 'member-jake', displayName: 'Jake' }
     })

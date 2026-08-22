@@ -7,6 +7,7 @@ const APP_TICKET_TTL_MS = 60_000
 
 export type RuntimeAppTicket = {
   pairingUrl: string
+  authPairingUrl?: string
   expiresAt: string
   worktreeId?: string
   email?: string

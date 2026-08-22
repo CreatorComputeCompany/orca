@@ -732,6 +732,13 @@ export class OrcaRuntimeRpcServer {
         ...(multiplayerMemberKey ? { multiplayerMemberKey } : {})
       }
     )
+    // Why: the transient app ticket is consumed by the bootstrap connection.
+    // The browser must install a separate member-enrolled credential before
+    // starting Orca's real runtime client, or its second connection gets a 401.
+    const memberAuth =
+      args.email && multiplayerMember
+        ? this.issueMemberBrowserOffer(multiplayerMember, args.email)
+        : undefined
     return {
       pairingUrl: encodePairingOffer({
         v: PAIRING_OFFER_VERSION,
@@ -743,14 +750,11 @@ export class OrcaRuntimeRpcServer {
       }),
       expiresAt: new Date(args.expiresAt).toISOString(),
       ...(restrictedWorktreeId ? { worktreeId: restrictedWorktreeId } : {}),
-      ...(args.email && multiplayerMember
+      ...(memberAuth
         ? {
-            email: args.email,
-            member: {
-              key: multiplayerMember.key,
-              displayName: multiplayerMember.displayName,
-              deviceIds: multiplayerMember.deviceIds
-            }
+            authPairingUrl: memberAuth.pairingUrl,
+            email: memberAuth.email,
+            member: memberAuth.member
           }
         : {})
     }
