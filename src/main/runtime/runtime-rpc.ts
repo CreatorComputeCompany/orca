@@ -60,6 +60,7 @@ import { createMultiplayerAuthHttpHandler } from './multiplayer-auth-http'
 import { createRuntimeAppTicketHttpHandler, type RuntimeAppTicket } from './runtime-app-ticket-http'
 import { MultiplayerOidcController, type MultiplayerOidcIdentity } from './multiplayer-oidc'
 import { migrateEphemeralVmRuntimeMemberOwnership } from '../ephemeral-vm-runtime-member-ownership'
+import { selectBuzzWorktree } from './buzz-worktree-selection'
 import type { RuntimeWorktreePsResult } from '../../shared/runtime-types'
 import type {
   MultiplayerAuthRegisterParams,
@@ -706,16 +707,18 @@ export class OrcaRuntimeRpcServer {
             (token) => token.length > 0 && value.toLowerCase().includes(token)
           )
         )
-      let worktree = listed.worktrees.find(
-        (candidate) => candidate.ownerMemberKey === member.key && matchesChannel(candidate)
-      )
-      if (!worktree && process.env.ORCA_BUZZ_LEGACY_CLAIM_ENABLED === '1') {
-        const legacy = listed.worktrees.find(
-          (candidate) => !candidate.ownerMemberKey && matchesChannel(candidate)
+      const selection = selectBuzzWorktree({
+        worktrees: listed.worktrees,
+        memberKey: member.key,
+        matchesChannel,
+        allowLegacyClaim: process.env.ORCA_BUZZ_LEGACY_CLAIM_ENABLED === '1'
+      })
+      let worktree = selection.kind === 'missing' ? undefined : selection.worktree
+      if (selection.kind === 'legacy') {
+        worktree = await this.runtime.claimLegacyManagedWorktreeOwner(
+          selection.worktree.id,
+          member.key
         )
-        if (legacy) {
-          worktree = await this.runtime.claimLegacyManagedWorktreeOwner(legacy.id, member.key)
-        }
       }
       if (!worktree) {
         throw new Error('No Orca worktree owned by this Buzz user exists for the chat.')
