@@ -57,6 +57,7 @@ vi.mock('lucide-react', () => ({
   Columns2: () => null,
   ListX: () => null,
   MessageSquare: () => null,
+  Link2: () => null,
   PanelBottomClose: () => null,
   PanelLeftClose: () => null,
   PanelRightClose: () => null,
@@ -70,6 +71,8 @@ vi.mock('lucide-react', () => ({
 vi.mock('@/i18n/i18n', () => ({
   translate: (_key: string, fallback: string) => fallback
 }))
+
+vi.mock('@/lib/web-client-location', () => ({ isWebClientLocation: () => true }))
 
 vi.mock('../../store', () => ({
   useAppStore: Object.assign(
@@ -152,6 +155,14 @@ beforeEach(() => {
   storeMock.dropUnifiedTab.mockReset()
   storeMock.state = {
     keybindings: {},
+    worktreesByRepo: {
+      'repo-1': [
+        {
+          id: 'wt-1',
+          runtimeOwnerEnvironmentId: 'runtime-123'
+        }
+      ]
+    },
     dropUnifiedTab: storeMock.dropUnifiedTab,
     groupsByWorktree: {
       'wt-1': [
@@ -180,6 +191,10 @@ beforeEach(() => {
       ]
     }
   }
+  Object.assign(window, {
+    api: { ui: { writeClipboardText: vi.fn().mockResolvedValue(undefined) } }
+  })
+  window.history.replaceState(null, '', '/web-index.html')
 })
 
 afterEach(() => {
@@ -207,6 +222,27 @@ describe('requestActiveTerminalPaneSplit', () => {
 })
 
 describe('SortableTabContextMenu', () => {
+  it('copies a credential-free link to the exact terminal session', () => {
+    const { container } = renderMenu({
+      tab: {
+        id: 'web-terminal-host-tab-456',
+        ptyId: null,
+        worktreeId: 'wt-1',
+        title: 'Codex',
+        customTitle: null,
+        color: null,
+        sortOrder: 0,
+        createdAt: 0
+      }
+    })
+
+    act(() => getButton(container, 'Copy session link').click())
+
+    expect(window.api.ui.writeClipboardText).toHaveBeenCalledWith(
+      `${window.location.origin}/web-index.html?workspace=runtime-123&session=host-tab-456`
+    )
+  })
+
   it('dispatches split requests and activates inactive terminal tabs first', () => {
     const dispatchSpy = vi.spyOn(window, 'dispatchEvent')
     const { container, onActivate } = renderMenu({ isActive: false })

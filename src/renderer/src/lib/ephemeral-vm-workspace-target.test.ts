@@ -95,6 +95,16 @@ describe('prepareEphemeralVmWorkspaceTarget', () => {
       runtimeId: 'runtime-1',
       checkoutMode: 'orca-worktree',
       environmentId: 'env-1',
+      environment: {
+        id: 'env-1',
+        name: 'Repo VM',
+        createdAt: 1,
+        updatedAt: 1,
+        lastUsedAt: null,
+        runtimeId: null,
+        endpoints: [{ id: 'ws-env-1', kind: 'websocket', label: 'WebSocket', endpoint: 'wss://x' }],
+        preferredEndpointId: 'ws-env-1'
+      },
       stderr: 'creating sandbox',
       warnings: []
     })

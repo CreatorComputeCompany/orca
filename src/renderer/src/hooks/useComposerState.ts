@@ -58,6 +58,7 @@ import type { WorktreeMeta } from '../../../shared/worktree/meta-types'
 import type {
   GitHubPrStartPoint,
   GitPushTarget,
+  Worktree,
   WorkspaceStatus
 } from '../../../shared/worktree/types'
 import { githubRepoIdentityKey } from '../../../shared/github/repository-identity-key'
@@ -157,11 +158,13 @@ import {
   getRepoExecutionHostId,
   normalizeExecutionHostId,
   parseExecutionHostId,
+  toRuntimeExecutionHostId,
   type ExecutionHostId
 } from '../../../shared/execution-host'
 import { getHostDisplayLabelOverrides } from '../../../shared/host-setting-overrides'
 import { queueWorkspaceActivationTerminalFocus } from '@/lib/workspace-activation-terminal-focus'
 import { getSettingsForRepoRuntimeOwner } from '@/lib/repo-runtime-owner'
+import { isWebClientLocation } from '@/lib/web-client-location'
 import { getSuggestedCreatureName } from '@/components/sidebar/worktree-name-suggestions'
 import { useRetiredWorktreeNames } from '@/hooks/useRetiredWorktreeNames'
 import type { SmartWorkspaceNameSelection } from '@/components/new-workspace/SmartWorkspaceNameField'
@@ -257,7 +260,7 @@ export type UseComposerStateOptions = {
   /** The full-page composer persists drafts across navigation; the transient quick-composer modal must not clobber that draft. */
   persistDraft: boolean
   /** Invoked after a successful createWorktree; the caller usually closes its surface (palette modal, full page, etc.). */
-  onCreated?: () => void
+  onCreated?: (worktree?: Worktree) => void
   isSubmissionCancelled?: () => boolean
   /** External repoId override — used by TaskPage's work-item list, which drives repo selection from the page header, not the card. */
   repoIdOverride?: string
@@ -946,6 +949,10 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     repoIsGit: selectedRepoIsGit,
     repoConnectionId: selectedRecipeRepoConnectionId,
     repoExecutionHostId: selectedRepo ? getRepoExecutionHostId(selectedRepo) : null,
+    controllerExecutionHostId:
+      isWebClientLocation() && runtimeEnvironments[0]
+        ? toRuntimeExecutionHostId(runtimeEnvironments[0].id)
+        : null,
     projectGroupTarget: isProjectGroupTarget,
     initialRecipeId: initialEphemeralVmRecipeId
   })
@@ -3978,7 +3985,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
       if (persistDraft) {
         clearNewWorkspaceDraft()
       }
-      onCreated?.()
+      onCreated?.(worktree)
       queueWorkspaceActivationTerminalFocus(worktree.id, activation)
     } catch (error) {
       if (isSubmissionCancelled()) {

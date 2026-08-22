@@ -6,20 +6,14 @@ import {
 } from '../../shared/ephemeral-vm-recipes'
 import {
   getEphemeralVmRecipeResultWarnings,
-  redactEphemeralVmRecipeDiagnosticText,
-  type EphemeralVmRecipeResultWarning
+  redactEphemeralVmRecipeDiagnosticText
 } from '../../shared/ephemeral-vm-recipe-diagnostics'
 import { getProvisionedRootRecipeRepoUrl } from '../../shared/ephemeral-vm-recipe-repo-url'
 // Why: import directly from the doctor module (not the barrel) — it uses Node
 // fs/path and must stay out of the browser bundle that imports the barrel.
-import { doctorEphemeralVmRecipe } from '../../shared/ephemeral-vm-recipe-doctor'
 import { updateEphemeralVmRuntimeStatus } from '../../shared/ephemeral-vm-runtime-store'
-import type { EphemeralVmRuntimeRecord } from '../../shared/ephemeral-vm-runtimes'
 import { addEnvironmentFromPairingCode } from '../../shared/runtime-environment-store'
-import {
-  redactRuntimeEnvironment,
-  type PublicKnownRuntimeEnvironment
-} from '../../shared/runtime-environments'
+import { redactRuntimeEnvironment } from '../../shared/runtime-environments'
 import {
   cleanupEphemeralVmRuntime,
   provisionEphemeralVmRuntime
@@ -27,8 +21,6 @@ import {
 import { connectRuntimeOwnedSshTarget } from '../ephemeral-vm-runtime-ssh'
 import {
   getRecipeRepo,
-  listRecipeCatalog,
-  listRecipes,
   resolveRecipeForRepo,
   type EphemeralVmRecipeCatalogEntry
 } from './ephemeral-vm-recipe-context'
@@ -36,33 +28,14 @@ import { registerEphemeralVmRuntimeHandlers } from './ephemeral-vm-runtime-handl
 import type { PluginService } from '../plugins/plugin-service'
 import { getApprovedPluginVmRecipes } from '../plugins/plugin-approved-vm-recipes'
 import { resolveProvisionedRootSource } from '../ephemeral-vm-provisioned-root-source'
+import {
+  doctorEphemeralVm,
+  listEphemeralVmRecipeCatalog,
+  listEphemeralVmRecipes,
+  type EphemeralVmProvisionIpcResult
+} from '../ephemeral-vm-controller-service'
 
 const activeProvisionControllers = new Map<string, AbortController>()
-
-export type EphemeralVmProvisionIpcResult =
-  | {
-      ok: true
-      connectionType: 'orca-server'
-      runtime: EphemeralVmRuntimeRecord
-      environment: PublicKnownRuntimeEnvironment
-      stderr: string
-      warnings: EphemeralVmRecipeResultWarning[]
-    }
-  | {
-      ok: true
-      connectionType: 'ssh'
-      runtime: EphemeralVmRuntimeRecord
-      sshTargetId: string
-      expectedRefHead?: string
-      stderr: string
-      warnings: EphemeralVmRecipeResultWarning[]
-    }
-  | {
-      ok: false
-      error: string
-      stderr: string
-      stdout: string
-    }
 
 export function registerEphemeralVmHandlers(store: Store, pluginService?: PluginService): void {
   ipcMain.removeHandler('ephemeralVm:listRecipes')
@@ -73,13 +46,13 @@ export function registerEphemeralVmHandlers(store: Store, pluginService?: Plugin
   registerEphemeralVmRuntimeHandlers(store)
 
   ipcMain.handle('ephemeralVm:listRecipes', async (_event, args: { repoId: string }) => {
-    return listRecipes(store, args.repoId, await getApprovedPluginVmRecipes(pluginService))
+    return listEphemeralVmRecipes(store, pluginService, args)
   })
 
   ipcMain.handle(
     'ephemeralVm:listRecipeCatalog',
     async (): Promise<EphemeralVmRecipeCatalogEntry[]> => {
-      return listRecipeCatalog(store, await getApprovedPluginVmRecipes(pluginService))
+      return listEphemeralVmRecipeCatalog(store, pluginService)
     }
   )
 
@@ -89,17 +62,7 @@ export function registerEphemeralVmHandlers(store: Store, pluginService?: Plugin
       _event,
       args: { repoId: string; recipeId: string }
     ): Promise<EphemeralVmRecipeDoctorResult> => {
-      const repo = getRecipeRepo(store, args.repoId)
-      if (!repo.ok) {
-        return repo.doctor(args.recipeId)
-      }
-      const pluginRecipes = await getApprovedPluginVmRecipes(pluginService)
-      return doctorEphemeralVmRecipe({
-        repoPath: repo.repo.path,
-        recipeId: args.recipeId,
-        recipes: listRecipes(store, args.repoId, pluginRecipes).recipes,
-        localExecutionSupported: true
-      })
+      return doctorEphemeralVm(store, pluginService, args)
     }
   )
 
@@ -185,6 +148,7 @@ export function registerEphemeralVmHandlers(store: Store, pluginService?: Plugin
           projectId: args.projectId,
           workspaceId: args.workspaceId,
           workspaceName: args.workspaceName,
+          creatorProvenance: { kind: 'host' },
           ...(repoUrl ? { repoUrl } : {}),
           ...(args.branch ? { branch: args.branch } : {}),
           ...(sourceRef ? { ref: sourceRef } : {}),

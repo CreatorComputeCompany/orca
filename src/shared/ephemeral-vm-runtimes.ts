@@ -30,6 +30,13 @@ export const EphemeralVmCleanupStatusSchema = z.enum([
 export type EphemeralVmCleanupStatus = z.infer<typeof EphemeralVmCleanupStatusSchema>
 
 export const EphemeralVmRuntimeConnectionModeSchema = z.enum(['orca-server', 'ssh'])
+export const EphemeralVmWorkspaceSharingSchema = z.enum(['private', 'shared'])
+export type EphemeralVmWorkspaceSharing = z.infer<typeof EphemeralVmWorkspaceSharingSchema>
+
+const WorkspaceCreatorProvenanceSchema = z.union([
+  z.object({ kind: z.literal('host') }),
+  z.object({ kind: z.literal('paired-device'), deviceId: z.string().min(1) })
+])
 
 const EphemeralVmRuntimeRecipeSchema = z
   .object({
@@ -55,6 +62,29 @@ export const EphemeralVmRuntimeRecordSchema = z.object({
   projectId: z.string().min(1).optional(),
   workspaceId: z.string().min(1).optional(),
   workspaceName: z.string().min(1).optional(),
+  creatorProvenance: WorkspaceCreatorProvenanceSchema.optional(),
+  /** Stable multiplayer account that owns the workspace across devices. */
+  ownerMemberKey: z
+    .string()
+    .regex(/^[a-z0-9][a-z0-9-]{0,62}$/)
+    .optional(),
+  /** Transient members with a live connection to this workspace VM. */
+  liveMembers: z
+    .array(
+      z.object({
+        key: z.string().min(1),
+        displayName: z.string().min(1),
+        worktreeId: z.string().min(1),
+        activeTabId: z.string().min(1).optional(),
+        activeTabTitle: z.string().min(1).optional(),
+        activeTabType: z.enum(['terminal', 'markdown', 'file', 'browser']).optional()
+      })
+    )
+    .optional(),
+  /** The caller remains authorized, but the controller could not refresh its child credential.
+   * Clients must retain any previously issued credential and retry discovery later. */
+  viewerAccessUnavailable: z.boolean().optional(),
+  sharing: EphemeralVmWorkspaceSharingSchema.optional(),
   connectionMode: EphemeralVmRuntimeConnectionModeSchema.optional(),
   runtimeEnvironmentId: z.string().min(1).optional(),
   sshTargetId: z.string().min(1).optional(),

@@ -26,6 +26,8 @@ export type DeviceEntry = {
   // Why: STA-2370 — a grant minted for "This computer only" proves nothing about off-host reach when its
   // client connects, so the bind decision must be able to tell it apart from a LAN/phone grant.
   pairingReach?: RuntimePairingReach
+  pairingManagement?: boolean
+  managedRuntimeGrantKey?: string
 }
 
 function validRelayBinding(value: unknown, deviceId: string): RelayDeviceBinding | undefined {
@@ -69,11 +71,60 @@ export class DeviceRegistry {
     return this.createAndPersistDevice(this.devices, name, scope, pairingReach)
   }
 
+  replaceRuntimeDevicesWithPairingManager(
+    name: string,
+    pairingReach: RuntimePairingReach = 'network'
+  ): DeviceEntry {
+    const existing = this.devices.find(
+      (device) => device.scope === 'runtime' && device.pairingManagement === true
+    )
+    if (existing) {
+      return existing
+    }
+    return this.createAndPersistDevice(
+      this.devices.filter((device) => device.scope !== 'runtime'),
+      name,
+      'runtime',
+      pairingReach,
+      { pairingManagement: true }
+    )
+  }
+
+  getOrCreateManagedRuntimeDevice(grantKey: string, name: string): DeviceEntry {
+    const existing = this.devices.find(
+      (device) => device.scope === 'runtime' && device.managedRuntimeGrantKey === grantKey
+    )
+    return (
+      existing ??
+      this.createAndPersistDevice(this.devices, name, 'runtime', 'network', {
+        managedRuntimeGrantKey: grantKey
+      })
+    )
+  }
+
+  revokeManagedRuntimeDevicesExcept(retainGrantKeys: ReadonlySet<string>): DeviceEntry[] {
+    const revoked = this.devices.filter(
+      (device) =>
+        device.scope === 'runtime' &&
+        device.managedRuntimeGrantKey !== undefined &&
+        !retainGrantKeys.has(device.managedRuntimeGrantKey)
+    )
+    if (revoked.length === 0) {
+      return []
+    }
+    const revokedIds = new Set(revoked.map((device) => device.deviceId))
+    const retained = this.devices.filter((device) => !revokedIds.has(device.deviceId))
+    this.save(retained)
+    this.devices = retained
+    return revoked
+  }
+
   private createAndPersistDevice(
     existingDevices: DeviceEntry[],
     name: string,
     scope: DeviceScope,
-    pairingReach: RuntimePairingReach
+    pairingReach: RuntimePairingReach,
+    metadata: Pick<DeviceEntry, 'pairingManagement' | 'managedRuntimeGrantKey'> = {}
   ): DeviceEntry {
     const entry: DeviceEntry = {
       deviceId: randomUUID(),
@@ -82,7 +133,8 @@ export class DeviceRegistry {
       scope,
       pairedAt: Date.now(),
       lastSeenAt: 0,
-      pairingReach
+      pairingReach,
+      ...metadata
     }
     const nextDevices = [...existingDevices, entry]
     // Why: a credential is not valid until its durable registry write succeeds.
@@ -291,7 +343,12 @@ export class DeviceRegistry {
           device.mobilePairingConnectionMode === 'local-only' ? 'local-only' : 'automatic',
         // Why: registries written before this field existed only ever held network-reach grants (phones and
         // LAN links), so a missing value must keep binding every interface on reconnect.
-        pairingReach: device.pairingReach === 'this-computer' ? 'this-computer' : 'network'
+        pairingReach: device.pairingReach === 'this-computer' ? 'this-computer' : 'network',
+        pairingManagement: device.pairingManagement === true,
+        managedRuntimeGrantKey:
+          typeof device.managedRuntimeGrantKey === 'string'
+            ? device.managedRuntimeGrantKey
+            : undefined
       }))
     } catch {
       this.devices = []

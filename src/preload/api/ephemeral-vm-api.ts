@@ -56,6 +56,13 @@ export type EphemeralVmApi = {
     callback: (event: { provisionId: string; stream: 'stdout' | 'stderr'; chunk: string }) => void
   ) => () => void
   listRuntimes: () => Promise<EphemeralVmRuntimeRecord[]>
+  onRuntimesChanged?: (
+    callback: (environments: PublicKnownRuntimeEnvironment[]) => void
+  ) => () => void
+  setSharing: (args: {
+    runtimeEnvironmentId: string
+    sharing: NonNullable<EphemeralVmRuntimeRecord['sharing']>
+  }) => Promise<EphemeralVmRuntimeRecord>
   attachWorkspace: (args: {
     runtimeId: string
     workspaceId: string

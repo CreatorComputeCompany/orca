@@ -22,6 +22,10 @@ function addWorktreeOwner(
 
 export function getRuntimeSessionMirrorEnvironmentIds(state: WorktreeRuntimeOwnerState): string[] {
   const ids = new Set<string>()
+  // Why: a URL/sidebar activation can select a projected runtime worktree before that child host
+  // has landed in the canonical repo/worktree catalogs. The selected execution host is already
+  // authoritative; omitting it leaves the active workspace black with no session subscription.
+  addRuntimeExecutionHost(ids, state.activeWorkspaceExecutionHostId)
   const activeRuntimeEnvironmentId = state.settings?.activeRuntimeEnvironmentId?.trim()
   if (activeRuntimeEnvironmentId) {
     ids.add(activeRuntimeEnvironmentId)

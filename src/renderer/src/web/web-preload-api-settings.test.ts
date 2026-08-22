@@ -267,7 +267,15 @@ describe('web settings preload API', () => {
     )
     vi.doMock('./web-runtime-client', () => ({
       WebRuntimeClient: class {
-        call(): Promise<RuntimeRpcResponse<unknown>> {
+        call(method: string): Promise<RuntimeRpcResponse<unknown>> {
+          if (method === 'ephemeralVm.listRuntimes') {
+            return Promise.resolve({
+              id: method,
+              ok: true,
+              result: [],
+              _meta: { runtimeId: 'runtime-1' }
+            })
+          }
           return settingsRead
         }
 

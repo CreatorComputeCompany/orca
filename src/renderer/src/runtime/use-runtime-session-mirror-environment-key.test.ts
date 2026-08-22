@@ -167,6 +167,12 @@ describe('useRuntimeSessionMirrorEnvironmentKey', () => {
       })
     },
     {
+      source: 'selected workspace host',
+      change: (): Partial<AppState> => ({
+        activeWorkspaceExecutionHostId: 'runtime:env-b'
+      })
+    },
+    {
       source: 'repository host',
       change: (): Partial<AppState> => ({
         repos: [makeRepo('repo-b', 'runtime:env-b')]
@@ -317,6 +323,7 @@ describe('useRuntimeSessionMirrorEnvironmentKey', () => {
 
     const relevantChanges: Partial<AppState>[] = [
       { settings: { ...state.settings!, activeRuntimeEnvironmentId: 'env-b' } },
+      { activeWorkspaceExecutionHostId: 'runtime:env-b' },
       { repos: [...state.repos] },
       { worktreesByRepo: { ...state.worktreesByRepo } },
       { detectedWorktreesByRepo: { ...state.detectedWorktreesByRepo } },

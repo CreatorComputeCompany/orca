@@ -151,18 +151,25 @@ export const SESSION_TAB_METHODS: RpcAnyMethod[] = [
       subscribedWorktree = initial.worktree
       const cleanupPrefix = `session.tabs:${connectionId ?? 'local'}:${subscribedWorktree}`
       const subscriptionId = requestId ? `${cleanupPrefix}:${requestId}` : cleanupPrefix
+      let clearPresence = (): void => {}
       // Why: shared-control can carry multiple subscribers for one worktree on
       // one socket; include the RPC id so one subscriber cannot evict another.
       runtime.registerSubscriptionCleanup(
         subscriptionId,
         () => {
           closed = true
+          clearPresence()
           unsubscribe()
           if (initialized) {
             emit({ type: 'end' })
           }
         },
         connectionId
+      )
+      clearPresence = runtime.registerActiveWorktreePresence(
+        subscriptionId,
+        pairedDeviceId,
+        subscribedWorktree
       )
       if (closed) {
         return

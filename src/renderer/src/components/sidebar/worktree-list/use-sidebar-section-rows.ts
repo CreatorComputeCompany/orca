@@ -23,6 +23,9 @@ import { getEmptyProjectPlaceholderRepoIds } from '../empty-project-placeholder-
 import { addHostSectionRows } from '../host-section-rows'
 import { orderHostSectionOptions } from '../host-section-order'
 import { buildSidebarHostOptions } from '../sidebar-host-options'
+import { useMultiplayerPresenceRefresh } from './use-multiplayer-presence-refresh'
+
+const EMPTY_RUNTIME_ENVIRONMENTS: AppState['runtimeEnvironments'] = []
 
 type SectionRowsArgs = {
   groupBy: WorktreeGroupBy
@@ -76,7 +79,9 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
   const worktreesByRepo = useAppStore((s) => s.worktreesByRepo)
   const sshTargetLabels = useAppStore((s) => s.sshTargetLabels)
   const sshConnectionStates = useAppStore((s) => s.sshConnectionStates)
-  const runtimeEnvironments = useAppStore((s) => s.runtimeEnvironments)
+  const runtimeEnvironments = useAppStore(
+    (s) => s.runtimeEnvironments ?? EMPTY_RUNTIME_ENVIRONMENTS
+  )
   const runtimeStatusByEnvironmentId = useAppStore((s) => s.runtimeStatusByEnvironmentId)
   const workspaceHostOrder = useAppStore((s) => s.workspaceHostOrder)
   const setWorkspaceHostOrder = useAppStore((s) => s.setWorkspaceHostOrder)
@@ -145,6 +150,30 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
     () => new Map(hostOptions.map((host) => [host.id, host.label])),
     [hostOptions]
   )
+  const currentWorkspaceDeviceIds = useMemo(
+    () =>
+      new Set(
+        runtimeEnvironments.flatMap((environment) =>
+          environment.workspaceVisibilityDeviceId ? [environment.workspaceVisibilityDeviceId] : []
+        )
+      ),
+    [runtimeEnvironments]
+  )
+  const currentWorkspaceMemberKeys = useMemo(
+    () =>
+      new Set(
+        runtimeEnvironments.flatMap((environment) =>
+          environment.workspaceViewerMemberKey ? [environment.workspaceViewerMemberKey] : []
+        )
+      ),
+    [runtimeEnvironments]
+  )
+  // Why: a newly paired member can have no workspace environments yet. The live catalog must
+  // already be listening when their phone creates the first one, otherwise the browser cannot
+  // discover it without a page refresh. Desktop builds do not expose this web subscription.
+  useMultiplayerPresenceRefresh(
+    Boolean(window.api?.ephemeralVm?.onRuntimesChanged) || currentWorkspaceMemberKeys.size > 0
+  )
 
   const rows: Row[] = useMemo(
     () =>
@@ -170,7 +199,9 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
         args.visibleFolderWorkspacesForRows,
         hostLabelById,
         defaultHostId,
-        args.pinnedDisplayPolicy
+        args.pinnedDisplayPolicy,
+        currentWorkspaceDeviceIds,
+        currentWorkspaceMemberKeys
       ),
     [
       args.groupBy,
@@ -193,7 +224,9 @@ export function useSidebarSectionRows(args: SectionRowsArgs) {
       args.newExternalWorktreesInboxByRepo,
       pendingCreations,
       hostLabelById,
-      args.pinnedDisplayPolicy
+      args.pinnedDisplayPolicy,
+      currentWorkspaceDeviceIds,
+      currentWorkspaceMemberKeys
     ]
   )
   const orderedHostOptions = useMemo(

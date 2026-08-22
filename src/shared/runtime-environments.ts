@@ -27,6 +27,25 @@ export const KnownRuntimeEnvironmentSchema = z.object({
   updatedAt: z.number().finite(),
   pairingRevision: z.number().finite().optional(),
   pairedDeviceId: z.string().min(1).optional(),
+  /** The controller-side browser identity used to decide which workspaces belong
+   * to this client. Child VM transport credentials identify the controller, not
+   * the human browser that requested the VM. */
+  workspaceVisibilityDeviceId: z.string().min(1).optional(),
+  /** Stable account owner and the account viewing this child environment. */
+  workspaceOwnerMemberKey: z.string().min(1).optional(),
+  workspaceViewerMemberKey: z.string().min(1).optional(),
+  workspaceLiveMembers: z
+    .array(
+      z.object({
+        key: z.string().min(1),
+        displayName: z.string().min(1),
+        worktreeId: z.string().min(1),
+        activeTabId: z.string().min(1).optional(),
+        activeTabTitle: z.string().min(1).optional(),
+        activeTabType: z.enum(['terminal', 'markdown', 'file', 'browser']).optional()
+      })
+    )
+    .optional(),
   lastUsedAt: z.number().finite().nullable(),
   runtimeId: z.string().min(1).nullable(),
   source: RuntimeEnvironmentSourceSchema.optional(),

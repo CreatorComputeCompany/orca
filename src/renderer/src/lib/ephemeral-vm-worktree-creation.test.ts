@@ -5,6 +5,8 @@ const { prepareTargetMock } = vi.hoisted(() => ({ prepareTargetMock: vi.fn() }))
 
 const store = {
   repos: [{ id: 'repo-1' }],
+  runtimeEnvironments: [] as { id: string }[],
+  setRuntimeEnvironments: vi.fn(),
   pendingWorktreeCreations: {} as Record<string, PendingWorktreeCreation>,
   activePendingCreationId: 'creation-1',
   updatePendingWorktreeCreation: vi.fn(),
@@ -32,9 +34,53 @@ beforeEach(() => {
       request: {} as never
     }
   }
+  store.runtimeEnvironments = []
   globalThis.window = {
     api: { ephemeralVm: { onProvisionEvent: vi.fn(() => vi.fn()) } }
   } as never
+})
+
+it('publishes a newly provisioned VM before exposing its workspace', async () => {
+  prepareTargetMock.mockResolvedValue({
+    ok: true,
+    runtimeId: 'runtime-1',
+    checkoutMode: 'orca-worktree',
+    environmentId: 'environment-1',
+    environment: { id: 'environment-1', name: 'Steven VM' },
+    stderr: '',
+    warnings: [],
+    setup: {
+      project: { id: 'project-1' },
+      setup: {
+        id: 'setup-runtime',
+        projectId: 'project-1',
+        hostId: 'runtime:environment-1'
+      },
+      repo: { id: 'repo-runtime', path: '/workspace/repo' }
+    }
+  })
+
+  await prepareRequestForCreate('creation-1', {
+    repoId: 'repo-1',
+    name: 'steven-owner-proof',
+    setupDecision: 'inherit',
+    agent: null,
+    pendingFirstAgentMessageRename: false,
+    note: '',
+    startupPlan: null,
+    quickPrompt: '',
+    quickTelemetry: null,
+    ephemeralVmRecipe: {
+      sourceRepoId: 'repo-1',
+      recipeId: 'boxd',
+      projectId: 'github:creatorcomputecompany/emma',
+      checkoutMode: 'orca-worktree'
+    }
+  })
+
+  expect(store.setRuntimeEnvironments).toHaveBeenCalledWith([
+    { id: 'environment-1', name: 'Steven VM' }
+  ])
 })
 
 it('carries the captured provisioned-root ref identity into adoption', async () => {

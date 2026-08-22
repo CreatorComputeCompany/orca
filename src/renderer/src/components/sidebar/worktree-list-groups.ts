@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- Why: sidebar row construction keeps every grouping mode in one pure module so reveal, virtualized rendering, and tests share the same flat row contract. */
-import { CircleX, FolderTree, List, Pin } from 'lucide-react'
+import { CircleX, FolderTree, List, Pin, User, Users } from 'lucide-react'
 import type React from 'react'
 import type { FolderWorkspace } from '../../../../shared/folder-workspace-types'
 import type { ProjectGroup } from '../../../../shared/project-group-types'
@@ -50,6 +50,10 @@ import {
   getCyclicProjectedWorktreeLineageIds,
   getLineageRenderInfo
 } from './worktree-lineage-projection'
+import {
+  getWorkspaceCollaborationSection,
+  type WorkspaceCollaborationSection
+} from './workspace-collaboration-sections'
 
 export { getLineageRenderInfo } from './worktree-lineage-projection'
 
@@ -78,6 +82,7 @@ export type GroupHeaderRow = {
   hostWorktreeCounts?: ReadonlyMap<ExecutionHostId, number>
   hostWorktreeIds?: ReadonlyMap<ExecutionHostId, readonly string[]>
   worktreeIds?: readonly string[]
+  collaborationSection?: WorkspaceCollaborationSection
 }
 
 export type WorktreeRow = {
@@ -380,6 +385,16 @@ export const PINNED_GROUP_META = {
 
 export const ALL_GROUP_KEY = 'all'
 
+export const MULTIPLAYER_GROUP_KEY = 'multiplayer'
+
+export const MULTIPLAYER_GROUP_META = {
+  get label() {
+    return translate('auto.components.sidebar.worktree.list.groups.multiplayer', 'Multiplayer')
+  },
+  tone: 'text-foreground',
+  icon: Users
+} as const
+
 export const ALL_GROUP_META = {
   get label() {
     return translate('auto.components.sidebar.worktree.list.groups.0ed04075b8', 'All')
@@ -387,6 +402,39 @@ export const ALL_GROUP_META = {
   tone: 'text-foreground',
   icon: List
 } as const
+
+const COLLABORATION_GROUP_META = {
+  mine: {
+    get label() {
+      return translate('auto.components.sidebar.worktree.list.groups.collaboration.mine', 'Mine')
+    },
+    icon: User
+  },
+  teammate: {
+    get label() {
+      return translate(
+        'auto.components.sidebar.worktree.list.groups.collaboration.teammate',
+        'Teammate'
+      )
+    },
+    icon: User
+  },
+  shared: {
+    get label() {
+      return translate(
+        'auto.components.sidebar.worktree.list.groups.collaboration.shared',
+        'Shared'
+      )
+    },
+    icon: Users
+  }
+} as const
+
+const COLLABORATION_GROUP_ORDER: readonly WorkspaceCollaborationSection[] = [
+  'mine',
+  'teammate',
+  'shared'
+]
 
 export const LINEAGE_GROUP_PREFIX = 'lineage:'
 
@@ -529,6 +577,47 @@ function emitPinnedGroup(
         result.push(buildImportedWorktreesCardRow(candidate, 'pinned-fallback'))
       }
     }
+  }
+}
+
+function emitMultiplayerGroup(
+  worktrees: Worktree[],
+  repoMap: Map<string, Repo>,
+  defaultHostId: ExecutionHostId,
+  collapsedGroups: ReadonlySet<string>,
+  result: Row[]
+): void {
+  const shared = worktrees.filter((worktree) => worktree.ephemeralVmSharing === 'shared')
+  if (shared.length === 0) {
+    return
+  }
+  result.push({
+    type: 'header',
+    key: MULTIPLAYER_GROUP_KEY,
+    label: MULTIPLAYER_GROUP_META.label,
+    count: shared.length,
+    tone: MULTIPLAYER_GROUP_META.tone,
+    icon: MULTIPLAYER_GROUP_META.icon,
+    hostWorktreeCounts: getHostWorktreeCounts(shared, repoMap, defaultHostId),
+    hostWorktreeIds: getHostWorktreeIds(shared, repoMap, defaultHostId),
+    worktreeIds: shared.map((worktree) => worktree.id)
+  })
+  if (collapsedGroups.has(MULTIPLAYER_GROUP_KEY)) {
+    return
+  }
+  for (const worktree of shared) {
+    result.push(
+      buildWorktreeRow(worktree, repoMap, {
+        rowKey: `${MULTIPLAYER_GROUP_KEY}:${worktree.id}`,
+        sectionKey: MULTIPLAYER_GROUP_KEY,
+        depth: 0,
+        groupDepth: 0,
+        lineageTrail: [],
+        isLastLineageChild: false,
+        lineageChildCount: 0,
+        lineageCollapsed: false
+      })
+    )
   }
 }
 
@@ -1020,7 +1109,9 @@ export function buildRows(
   folderWorkspaces: readonly FolderWorkspace[] = [],
   hostLabelById?: ReadonlyMap<string, string>,
   defaultHostId: ExecutionHostId = LOCAL_EXECUTION_HOST_ID,
-  pinnedDisplayPolicy: PinnedWorktreeDisplayPolicy = getPinnedWorktreeDisplayPolicy(settings)
+  pinnedDisplayPolicy: PinnedWorktreeDisplayPolicy = getPinnedWorktreeDisplayPolicy(settings),
+  currentWorkspaceDeviceIds: ReadonlySet<string> = new Set(),
+  currentWorkspaceMemberKeys: ReadonlySet<string> = new Set()
 ): Row[] {
   const result: Row[] = []
   const projectIndex = buildProjectGroupingIndex(projectGrouping)
@@ -1044,10 +1135,13 @@ export function buildRows(
     }
   }
 
+  const nonMultiplayerWorktrees = worktrees.filter(
+    (worktree) => worktree.ephemeralVmSharing !== 'shared'
+  )
   const naturalWorktrees =
     pinnedDisplayPolicy === 'duplicate-in-groups'
-      ? worktrees
-      : worktrees.filter((worktree) => !worktree.isPinned)
+      ? nonMultiplayerWorktrees
+      : nonMultiplayerWorktrees.filter((worktree) => !worktree.isPinned)
   const mixedWorktreeHostContextLabels = getMixedWorktreeHostContextLabels(
     naturalWorktrees,
     repoMap,
@@ -1064,8 +1158,9 @@ export function buildRows(
     settings,
     projectGrouping
   })
+  emitMultiplayerGroup(worktrees, repoMap, defaultHostId, collapsedGroups, result)
   emitPinnedGroup(
-    worktrees,
+    nonMultiplayerWorktrees,
     repoMap,
     defaultHostId,
     collapsedGroups,
@@ -1334,26 +1429,62 @@ export function buildRows(
             : undefined
         const hostContextLabelByWorktreeId =
           groupBy === 'repo' ? undefined : mixedWorktreeHostContextLabels
-        if (groupBy === 'repo') {
-          appendWorktreeRows(result, items, repoMap, lineageById, worktreeMap, {
+        const appendItems = (
+          itemsToAppend: Worktree[],
+          sectionKey = key,
+          groupDepth = projectGroupDepth
+        ): void => {
+          appendWorktreeRows(result, itemsToAppend, repoMap, lineageById, worktreeMap, {
             nestLineage,
             collapsedGroups,
-            groupDepth: projectGroupDepth,
-            sectionKey: key,
+            groupDepth,
+            sectionKey,
             hostContextLabelByRepoId,
             hostContextLabelByWorktreeId,
             cyclicLineageIds
           })
-        } else {
-          appendWorktreeRows(result, items, repoMap, lineageById, worktreeMap, {
-            nestLineage,
-            collapsedGroups,
-            groupDepth: projectGroupDepth,
-            sectionKey: key,
-            hostContextLabelByRepoId,
-            hostContextLabelByWorktreeId,
-            cyclicLineageIds
+        }
+        if (groupBy !== 'repo') {
+          appendItems(items)
+          continue
+        }
+        const collaborativeItems = new Map<WorkspaceCollaborationSection, Worktree[]>()
+        const ordinaryItems: Worktree[] = []
+        for (const item of items) {
+          const section = getWorkspaceCollaborationSection(
+            item,
+            currentWorkspaceDeviceIds,
+            currentWorkspaceMemberKeys
+          )
+          if (!section) {
+            ordinaryItems.push(item)
+            continue
+          }
+          const sectionItems = collaborativeItems.get(section) ?? []
+          sectionItems.push(item)
+          collaborativeItems.set(section, sectionItems)
+        }
+        appendItems(ordinaryItems)
+        for (const section of COLLABORATION_GROUP_ORDER) {
+          const sectionItems = collaborativeItems.get(section)
+          if (!sectionItems?.length) {
+            continue
+          }
+          const sectionKey = `${key}:collaboration:${section}`
+          const meta = COLLABORATION_GROUP_META[section]
+          result.push({
+            type: 'header',
+            key: sectionKey,
+            label: meta.label,
+            count: sectionItems.length,
+            tone: 'text-muted-foreground',
+            icon: meta.icon,
+            projectGroupDepth: projectGroupDepth + 1,
+            collaborationSection: section
           })
+          if (!collapsedGroups.has(sectionKey)) {
+            appendItems(sectionItems, sectionKey, projectGroupDepth + 1)
+          }
         }
       }
     }

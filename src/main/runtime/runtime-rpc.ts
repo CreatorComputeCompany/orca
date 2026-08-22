@@ -53,8 +53,33 @@ import {
   decodeTerminalStreamFrame,
   type TerminalStreamFrame
 } from '../../shared/terminal-stream-protocol'
+import { encodeMobilePairingQr } from './mobile-pairing-qr'
+import { MobileRuntimeFederationGateway } from './mobile-runtime-federation-gateway'
+import { MultiplayerAccountStore } from './multiplayer-account-store'
+import { createMultiplayerAuthHttpHandler } from './multiplayer-auth-http'
+import { MultiplayerOidcController, type MultiplayerOidcIdentity } from './multiplayer-oidc'
+import { migrateEphemeralVmRuntimeMemberOwnership } from '../ephemeral-vm-runtime-member-ownership'
+import type { RuntimeWorktreePsResult } from '../../shared/runtime-types'
+import type {
+  MultiplayerAuthRegisterParams,
+  MultiplayerAuthResult
+} from '../../shared/multiplayer-auth-contract'
+import type {
+  GsdOrcaLaunchConsumeResult,
+  GsdOrcaLaunchLinkResult
+} from '../../shared/gsd-orca-launch-contract'
+import {
+  enrollMultiplayerDevice,
+  createMultiplayerMemberForExternalIdentity,
+  findMultiplayerMemberByDevice,
+  findMultiplayerMemberByExternalIdentity,
+  findMultiplayerMemberByKey,
+  linkMultiplayerMemberExternalIdentity,
+  type MultiplayerMember
+} from './multiplayer-identity-store'
 
 const DEFAULT_WS_PORT = 6768
+const GSD_LAUNCH_REQUEST_TIMEOUT_MS = 15_000
 
 // Why: STA-2370 — the WS listener defaults to loopback so a desktop with no paired device is not
 // reachable from the LAN; it widens to all interfaces only on explicit pairing (or `orca serve`).
@@ -139,6 +164,15 @@ type MobileRelayPairingProvider = {
     context: MobilePairingConnectionContext,
     params: PairingProvisionRelayParams
   ): Promise<DeviceCredentialInstalled>
+}
+
+function requirePairingProvider(
+  provider: MobileRelayPairingProvider | null
+): MobileRelayPairingProvider {
+  if (!provider) {
+    throw new Error('pairing_context_unavailable')
+  }
+  return provider
 }
 
 export type MobilePairingConnectionContext = Readonly<{
@@ -481,6 +515,11 @@ function injectDeviceScope(response: string, scope: DeviceScope): string {
 export class OrcaRuntimeRpcServer {
   private readonly runtime: OrcaRuntimeService
   private readonly dispatcher: RpcDispatcher
+  private readonly mobileRuntimeFederation: MobileRuntimeFederationGateway
+  private readonly multiplayerAccounts: MultiplayerAccountStore
+  private readonly multiplayerOidc: MultiplayerOidcController | null
+  private readonly multiplayerAuthHttpHandler: ReturnType<typeof createMultiplayerAuthHttpHandler>
+  private multiplayerRegistrationQueue: Promise<void> = Promise.resolve()
   private readonly userDataPath: string
   private readonly pid: number
   private readonly platform: NodeJS.Platform
@@ -505,6 +544,7 @@ export class OrcaRuntimeRpcServer {
   private deviceRegistry: DeviceRegistry | null = null
   private e2eeKeypair: E2EEKeypair | null = null
   private pairingInitializationFailure: PairingOfferUnavailable | null = null
+  private preferredPairingAddress: string | null = null
   private tlsFingerprint: string | null = null
   private activeTransports: RpcTransport[] = []
   private transports: RuntimeTransportMetadata[] = []
@@ -553,6 +593,18 @@ export class OrcaRuntimeRpcServer {
   }: OrcaRuntimeRpcServerOptions) {
     this.runtime = runtime
     this.dispatcher = new RpcDispatcher({ runtime })
+    this.mobileRuntimeFederation = MobileRuntimeFederationGateway.forUserDataPath(
+      runtime.getRuntimeId(),
+      userDataPath
+    )
+    this.multiplayerAccounts = new MultiplayerAccountStore(userDataPath)
+    this.multiplayerOidc = MultiplayerOidcController.fromEnvironment((identity, memberKey) =>
+      this.issueMultiplayerOidcLogin(identity, memberKey)
+    )
+    this.multiplayerAuthHttpHandler = createMultiplayerAuthHttpHandler(
+      (credentials) => this.issueMultiplayerLogin(credentials),
+      this.multiplayerOidc
+    )
     this.userDataPath = userDataPath
     this.pid = pid
     this.platform = platform
@@ -587,6 +639,121 @@ export class OrcaRuntimeRpcServer {
 
   getMobileSocketWiring(): MobileSocketWiring | null {
     return this.mobileSocketWiring
+  }
+
+  revokeMobileRuntimeEnvironmentAccess(
+    environmentId: string,
+    retainDeviceIds: ReadonlySet<string>
+  ): void {
+    this.mobileRuntimeFederation.revokeEnvironmentAccess(environmentId, retainDeviceIds)
+  }
+
+  private async issueMultiplayerLogin(credentials: {
+    email: string
+    password: string
+  }): Promise<MultiplayerAuthResult | null> {
+    const account = await this.multiplayerAccounts.authenticate(
+      credentials.email,
+      credentials.password
+    )
+    if (!account) {
+      return null
+    }
+    const member = findMultiplayerMemberByKey(this.userDataPath, account.memberKey)
+    return member ? this.issueMemberBrowserOffer(member, account.email) : null
+  }
+
+  private issueMultiplayerOidcLogin(
+    identity: MultiplayerOidcIdentity,
+    memberKey?: string
+  ): MultiplayerAuthResult {
+    let member = findMultiplayerMemberByExternalIdentity(this.userDataPath, {
+      issuer: identity.issuer,
+      subject: identity.sub
+    })
+    if (memberKey) {
+      member = linkMultiplayerMemberExternalIdentity({
+        userDataPath: this.userDataPath,
+        memberKey,
+        issuer: identity.issuer,
+        subject: identity.sub,
+        email: identity.email
+      })
+    } else if (!member) {
+      if (this.multiplayerAccounts.findByEmail(identity.email)) {
+        throw new Error(
+          'This email already has an Orca account. Sign in with its password once, then link GSD from Orca.'
+        )
+      }
+      member = createMultiplayerMemberForExternalIdentity({
+        userDataPath: this.userDataPath,
+        displayName: identity.name ?? identity.email.split('@')[0],
+        issuer: identity.issuer,
+        subject: identity.sub,
+        email: identity.email
+      })
+    }
+    migrateEphemeralVmRuntimeMemberOwnership(this.userDataPath)
+    return this.issueMemberBrowserOffer(member, identity.email)
+  }
+
+  private issueMemberBrowserOffer(member: MultiplayerMember, email: string): MultiplayerAuthResult {
+    const offer = this.createPairingOffer({
+      name: `${member.displayName} web`,
+      scope: 'runtime',
+      fresh: true
+    })
+    if (!offer.available) {
+      throw new Error(offer.guidance)
+    }
+    const enrolled = enrollMultiplayerDevice({
+      userDataPath: this.userDataPath,
+      memberKey: member.key,
+      displayName: member.displayName,
+      deviceId: offer.deviceId
+    })
+    migrateEphemeralVmRuntimeMemberOwnership(this.userDataPath)
+    return {
+      email,
+      member: {
+        key: enrolled.key,
+        displayName: enrolled.displayName,
+        deviceIds: enrolled.deviceIds
+      },
+      pairingUrl: offer.pairingUrl
+    }
+  }
+
+  private registerMultiplayerAccountForDevice(
+    params: MultiplayerAuthRegisterParams,
+    deviceId: string
+  ): Promise<MultiplayerAuthResult> {
+    const registration = this.multiplayerRegistrationQueue.then(async () => {
+      let member = findMultiplayerMemberByDevice(this.userDataPath, deviceId)
+      if (!member) {
+        if (this.multiplayerAccounts.hasAccounts()) {
+          throw new Error('Sign in with an existing account.')
+        }
+        member = enrollMultiplayerDevice({
+          userDataPath: this.userDataPath,
+          memberKey: params.displayName,
+          displayName: params.displayName,
+          deviceId
+        })
+      }
+      migrateEphemeralVmRuntimeMemberOwnership(this.userDataPath)
+      const account = await this.multiplayerAccounts.register({
+        email: params.email,
+        password: params.password,
+        member
+      })
+      return this.issueMemberBrowserOffer(member, account.email)
+    })
+    this.multiplayerRegistrationQueue = registration.then(
+      () => {},
+      () => {}
+    )
+    return registration
   }
 
   getRelayRevokeOutbox(): RelayRevokeOutbox {
@@ -669,6 +836,9 @@ export class OrcaRuntimeRpcServer {
     // Why: STA-2370 — recorded on the grant so a "This computer only" client reconnecting cannot make the
     // next launch bind every interface. Defaults to network reach, which is what every other caller means.
     reach?: RuntimePairingReach
+    fresh?: boolean
+    pairingManagement?: 'exclusive'
+    managedRuntimeGrantKey?: string
   }):
     | PairingOfferUnavailable
     | {
@@ -696,7 +866,13 @@ export class OrcaRuntimeRpcServer {
       return pairingUnavailable('e2ee_key_unavailable', E2EE_KEY_UNAVAILABLE_GUIDANCE)
     }
 
-    const advertised = resolveAdvertisedPairingEndpoint(rawEndpoint, args.address)
+    if (args.address) {
+      this.preferredPairingAddress = args.address
+    }
+    const advertised = resolveAdvertisedPairingEndpoint(
+      rawEndpoint,
+      args.address ?? this.preferredPairingAddress
+    )
     if (!advertised.ok) {
       return pairingUnavailable(advertised.reason, advertised.guidance)
     }
@@ -706,9 +882,19 @@ export class OrcaRuntimeRpcServer {
     let device: DeviceEntry
     try {
       const reach = args.reach ?? 'network'
-      device = args.rotate
-        ? this.deviceRegistry.rotatePendingDevice(deviceName, scope, reach)
-        : this.deviceRegistry.getOrCreatePendingDevice(deviceName, scope, reach)
+      device =
+        args.pairingManagement === 'exclusive'
+          ? this.deviceRegistry.replaceRuntimeDevicesWithPairingManager(deviceName, reach)
+          : args.managedRuntimeGrantKey
+            ? this.deviceRegistry.getOrCreateManagedRuntimeDevice(
+                args.managedRuntimeGrantKey,
+                deviceName
+              )
+            : args.fresh
+              ? this.deviceRegistry.addDevice(deviceName, scope, reach)
+              : args.rotate
+                ? this.deviceRegistry.rotatePendingDevice(deviceName, scope, reach)
+                : this.deviceRegistry.getOrCreatePendingDevice(deviceName, scope, reach)
     } catch (error) {
       console.error('[runtime] Failed to persist pairing credential:', error)
       return pairingUnavailable('device_registry_unavailable', DEVICE_REGISTRY_UNAVAILABLE_GUIDANCE)
@@ -1271,6 +1457,7 @@ export class OrcaRuntimeRpcServer {
       host: options.host,
       port: options.port,
       staticRoot: this.webClientRoot,
+      httpRequestHandler: this.multiplayerAuthHttpHandler,
       ...(options.fallbackPort !== undefined ? { fallbackPort: options.fallbackPort } : {}),
       ...(options.preferPinnedPort ? { preferPinnedPort: true } : {})
     })
@@ -1688,36 +1875,236 @@ export class OrcaRuntimeRpcServer {
 
     const connectionId = ws ? this.mobileSocketWiring?.getConnectionId(ws) : undefined
     const pairingProvider = this.mobileRelayPairingProvider
-    const pairingContext =
-      pairingProvider && authenticatedSocket
-        ? {
-            getEndpoints: (params: PairingGetEndpointsParams) =>
-              pairingProvider.getEndpoints(
-                {
-                  deviceId: authenticatedSocket.device.deviceId,
-                  connectionId: authenticatedSocket.connectionId,
-                  transport: authenticatedSocket.transport
+    const pairingContext = authenticatedSocket
+      ? {
+          getEndpoints: (params: PairingGetEndpointsParams) =>
+            requirePairingProvider(pairingProvider).getEndpoints(
+              {
+                deviceId: authenticatedSocket.device.deviceId,
+                connectionId: authenticatedSocket.connectionId,
+                transport: authenticatedSocket.transport
+              },
+              params
+            ),
+          provisionRelay: (params: PairingProvisionRelayParams) =>
+            requirePairingProvider(pairingProvider).provisionRelay(
+              {
+                deviceId: authenticatedSocket.device.deviceId,
+                connectionId: authenticatedSocket.connectionId,
+                transport: authenticatedSocket.transport
+              },
+              params
+            ),
+          createMobileOffer: async (params: {
+            address: string
+            connectionMode?: MobilePairingConnectionMode
+            rotate?: boolean
+          }) => {
+            const member = findMultiplayerMemberByDevice(
+              this.userDataPath,
+              authenticatedSocket.device.deviceId
+            )
+            const offer = await this.createMobilePairingOffer({
+              ...params,
+              name: `Mobile ${new Date().toLocaleDateString()}`,
+              // Why: a pending QR cannot move between members; each enrolled browser gets its own credential.
+              rotate: member ? true : params.rotate
+            })
+            if (!offer.available) {
+              return offer
+            }
+            if (member) {
+              enrollMultiplayerDevice({
+                userDataPath: this.userDataPath,
+                memberKey: member.key,
+                displayName: member.displayName,
+                deviceId: offer.deviceId
+              })
+            }
+            const qr = await encodeMobilePairingQr(offer.pairingUrl)
+            return {
+              available: true as const,
+              qrDataUrl: qr.ok ? qr.qrDataUrl : null,
+              ...(!qr.ok ? { qrError: qr.reason } : {}),
+              pairingUrl: offer.pairingUrl,
+              endpoint: offer.endpoint,
+              deviceId: offer.deviceId,
+              connectionMode: offer.connectionMode
+            }
+          },
+          enrollMultiplayerIdentity: async () => {
+            throw new Error('password_auth_required')
+          },
+          registerMultiplayerAccount: async (params: {
+            email: string
+            password: string
+            displayName: string
+          }) =>
+            this.registerMultiplayerAccountForDevice(params, authenticatedSocket.device.deviceId),
+          createMultiplayerSsoLink: async () => {
+            const member = findMultiplayerMemberByDevice(
+              this.userDataPath,
+              authenticatedSocket.device.deviceId
+            )
+            if (!member || !this.multiplayerOidc) {
+              throw new Error('multiplayer_sso_unavailable')
+            }
+            return {
+              authorizationUrl: await this.multiplayerOidc.createAuthorizationUrl(member.key)
+            }
+          },
+          consumeGsdOrcaLaunch: async (params: { token: string }) => {
+            const member = findMultiplayerMemberByDevice(
+              this.userDataPath,
+              authenticatedSocket.device.deviceId
+            )
+            return await callGsdLaunchApi<GsdOrcaLaunchConsumeResult>(member, {
+              action: 'consume',
+              token: params.token
+            })
+          },
+          linkGsdOrcaLaunch: async (params: {
+            token: string
+            runtimeEnvironmentId: string
+            worktreeId: string
+            url: string
+          }) => {
+            const member = findMultiplayerMemberByDevice(
+              this.userDataPath,
+              authenticatedSocket.device.deviceId
+            )
+            return await callGsdLaunchApi<GsdOrcaLaunchLinkResult>(member, {
+              action: 'link',
+              ...params
+            })
+          },
+          ...(device.pairingManagement
+            ? {
+                listManagedRuntimePresence: async () => {
+                  const connectedDeviceIds = new Set(
+                    this.mobileSocketWiring?.getConnectedDeviceIds() ?? []
+                  )
+                  const unique = new Map<
+                    string,
+                    {
+                      grantKey: string
+                      worktreeId: string
+                      activeTabId?: string
+                      activeTabTitle?: string
+                      activeTabType?: 'terminal' | 'markdown' | 'file' | 'browser'
+                    }
+                  >()
+                  for (const presence of this.runtime.listActiveWorktreePresence()) {
+                    if (!connectedDeviceIds.has(presence.deviceId)) {
+                      continue
+                    }
+                    const grantKey = this.deviceRegistry?.getDevice(
+                      presence.deviceId
+                    )?.managedRuntimeGrantKey
+                    if (grantKey) {
+                      const activeTab = await this.runtime
+                        .listMobileSessionTabs(presence.worktreeId, presence.deviceId)
+                        .then((snapshot) =>
+                          snapshot.tabs.find((tab) => tab.id === snapshot.activeTabId)
+                        )
+                        .catch(() => undefined)
+                      unique.set(`${grantKey}\0${presence.worktreeId}`, {
+                        grantKey,
+                        worktreeId: presence.worktreeId,
+                        ...(activeTab
+                          ? {
+                              activeTabId: activeTab.id,
+                              activeTabTitle: activeTab.title,
+                              activeTabType: activeTab.type
+                            }
+                          : {})
+                      })
+                    }
+                  }
+                  return { members: [...unique.values()] }
                 },
-                params
-              ),
-            provisionRelay: (params: PairingProvisionRelayParams) =>
-              pairingProvider.provisionRelay(
-                {
-                  deviceId: authenticatedSocket.device.deviceId,
-                  connectionId: authenticatedSocket.connectionId,
-                  transport: authenticatedSocket.transport
+                createManagedRuntimeOffer: async (params: { grantKey: string; name: string }) => {
+                  const offer = this.createPairingOffer({
+                    name: params.name,
+                    scope: 'runtime',
+                    managedRuntimeGrantKey: params.grantKey
+                  })
+                  if (!offer.available) {
+                    throw new Error(offer.guidance)
+                  }
+                  return { pairingUrl: offer.pairingUrl, deviceId: offer.deviceId }
                 },
-                params
-              )
-          }
-        : undefined
+                revokeManagedRuntimeAccess: async (params: { retainGrantKeys: string[] }) => {
+                  const revoked =
+                    this.deviceRegistry?.revokeManagedRuntimeDevicesExcept(
+                      new Set(params.retainGrantKeys)
+                    ) ?? []
+                  for (const entry of revoked) {
+                    this.runtime.forgetClientNavigationState(entry.deviceId)
+                    this.mobileSocketWiring?.terminateDeviceConnections(entry.token)
+                  }
+                  return { revoked: revoked.length }
+                }
+              }
+            : {})
+        }
+      : undefined
     try {
+      if (device.scope === 'mobile' && request.method === 'worktree.ps') {
+        const rawParams =
+          typeof request.params === 'object' && request.params !== null
+            ? (request.params as { limit?: number; afterSnapshotId?: string | null })
+            : {}
+        const localResponse = await this.dispatcher.dispatch(
+          {
+            ...request,
+            params: { ...rawParams, afterSnapshotId: undefined }
+          },
+          {
+            signal: abortRegistration?.signal,
+            authenticatedCallerFingerprint: fingerprintAuthenticatedPairingCredential(token)
+          }
+        )
+        if (!localResponse.ok) {
+          replyForRequest(JSON.stringify(localResponse))
+          return
+        }
+        const result = await this.mobileRuntimeFederation.mergeWorktreeCatalog(
+          localResponse.result as RuntimeWorktreePsResult,
+          rawParams,
+          device.deviceId
+        )
+        replyForRequest(
+          JSON.stringify({
+            id: request.id,
+            ok: true,
+            result,
+            _meta: { runtimeId: this.runtime.getRuntimeId() }
+          })
+        )
+        return
+      }
+      if (
+        device.scope === 'mobile' &&
+        (await this.mobileRuntimeFederation.tryForward(request, replyForRequest, {
+          connectionId,
+          pairedDeviceId: device.deviceId,
+          signal: abortRegistration?.signal,
+          sendBinary,
+          registerBinaryStreamHandler: (streamId, handler) =>
+            this.registerBinaryStreamHandler(connectionId, streamId, handler)
+        }))
+      ) {
+        return
+      }
       await this.dispatcher.dispatchStreaming(request, replyForRequest, {
         // Why: the validated credential preserves existing federation ownership without trusting request fields.
         authenticatedCallerFingerprint: fingerprintAuthenticatedPairingCredential(token),
         connectionId,
         clientId: token,
         pairedDeviceId: device.deviceId,
+        multiplayerMemberKey: findMultiplayerMemberByDevice(this.userDataPath, device.deviceId)
+          ?.key,
         // Why: gates the mobile-only payload diet so full-screen web/desktop clients aren't truncated.
         clientKind: device.scope,
         clientCapabilities: authenticatedSocket?.clientCapabilities,
@@ -1747,6 +2134,40 @@ export class OrcaRuntimeRpcServer {
     }
     writeRuntimeMetadata(this.userDataPath, metadata)
   }
+}
+
+async function callGsdLaunchApi<TResult>(
+  member: MultiplayerMember | null,
+  body:
+    | { action: 'consume'; token: string }
+    | {
+        action: 'link'
+        token: string
+        runtimeEnvironmentId: string
+        worktreeId: string
+        url: string
+      }
+): Promise<TResult> {
+  const issuer = process.env.ORCA_GSD_OIDC_ISSUER?.replace(/\/$/, '')
+  const endpoint = process.env.ORCA_GSD_LAUNCH_URL
+  const identity = member?.externalIdentities.find((candidate) => candidate.issuer === issuer)
+  if (!identity) {
+    throw new Error('Link this Orca member to GSD before opening card worktrees.')
+  }
+  if (!endpoint || new URL(endpoint).protocol !== 'https:') {
+    throw new Error('GSD card launches are not configured.')
+  }
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ...body, subject: identity.subject }),
+    signal: AbortSignal.timeout(GSD_LAUNCH_REQUEST_TIMEOUT_MS)
+  })
+  const result = (await response.json()) as { error?: unknown }
+  if (!response.ok) {
+    throw new Error(typeof result.error === 'string' ? result.error : 'GSD rejected this launch.')
+  }
+  return result as TResult
 }
 
 /** Why: MUST stay in lockstep with createRuntimeTransportMetadata()'s `o-${pid}-${suffix}.sock` shape (unit-test enforced). */

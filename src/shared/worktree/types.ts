@@ -4,6 +4,7 @@ import type { TaskSourceContext } from '../task-source-context'
 import type { TuiAgent } from '../tui-agent'
 import type { DiffComment, MobileDiffReviewState } from '../diff-comment-types'
 import type { EphemeralVmCheckoutMode } from '../orca-yaml-hook-types'
+import type { EphemeralVmWorkspaceSharing } from '../ephemeral-vm-runtimes'
 import type { BuiltInWorktreeVisibilitySourceId } from '../repo-types'
 
 export type WorkspaceLinkedItem = {
@@ -69,6 +70,18 @@ export type Worktree = {
   runtimeOwnerEnvironmentId?: string
   /** Authenticated client that created this workspace. Missing means unknown legacy origin. */
   creatorProvenance?: WorkspaceCreatorProvenance
+  /** Stable multiplayer account that owns the workspace across devices. */
+  ownerMemberKey?: string
+  /** Members currently viewing this worktree. */
+  liveMembers?: {
+    key: string
+    displayName: string
+    activeTabId?: string
+    activeTabTitle?: string
+    activeTabType?: 'terminal' | 'markdown' | 'file' | 'browser'
+  }[]
+  /** Team visibility projected from the controller-owned VM record. */
+  ephemeralVmSharing?: EphemeralVmWorkspaceSharing
   /** Host-specific setup used to create/run this workspace. */
   projectHostSetupId?: string
   /** Checkout ownership for a recipe-provisioned main workspace. */

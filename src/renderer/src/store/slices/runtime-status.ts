@@ -53,6 +53,8 @@ export type RuntimeStatusSlice = {
   /** Replaces the saved-environment list, trims stale status entries, and
    * retires state owned by any environment that just left the saved list. */
   setRuntimeEnvironments: (environments: readonly PublicKnownRuntimeEnvironment[]) => void
+  /** Records an authoritative external removal and retires all state owned by it. */
+  retireRuntimeEnvironmentIds: (environmentIds: Iterable<string>) => void
   /** Merges one environment's status. Replaces the prior entry for that id. */
   setRuntimeEnvironmentStatus: (
     environmentId: string,
@@ -195,6 +197,26 @@ export const createRuntimeStatusSlice: StateCreator<AppState, [], [], RuntimeSta
       get().purgeStaleRuntimeHostState?.(retiredEnvironmentIds)
       retiredEnvironmentIds.forEach(dismissRuntimeDisconnectedToast)
     }
+  },
+
+  retireRuntimeEnvironmentIds: (environmentIds) => {
+    const retired = [...new Set(environmentIds)]
+    if (retired.length === 0) {
+      return
+    }
+    set((state) => {
+      const nextRemoved = new Set(state.removedRuntimeEnvironmentIds)
+      let changed = false
+      for (const environmentId of retired) {
+        if (!nextRemoved.has(environmentId)) {
+          nextRemoved.add(environmentId)
+          changed = true
+        }
+      }
+      return changed ? { removedRuntimeEnvironmentIds: nextRemoved } : state
+    })
+    get().purgeStaleRuntimeHostState?.(retired)
+    retired.forEach(dismissRuntimeDisconnectedToast)
   },
 
   setRuntimeEnvironmentStatus: (environmentId, status, options) => {

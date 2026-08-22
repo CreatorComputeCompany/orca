@@ -2870,6 +2870,10 @@ export class OrcaRuntimeService {
     listener: (snapshot: RuntimeMobileSessionTabsResult) => void
     clientNavigationId?: string
   }>()
+  private readonly activeWorktreePresenceBySubscription = new Map<
+    string,
+    { deviceId: string; worktreeId: string }
+  >()
   // Why: one watermark per repo replaces per-closed-pane fences while preserving stale-write safety.
   private terminalTopologyRevisionByRepoId = new Map<string, number>()
   // Why: provider exit can beat surface registration; that exact dead incarnation must never publish.
@@ -9477,6 +9481,24 @@ export class OrcaRuntimeService {
         this.mobileSessionTabsAgentStatusHeartbeat.cancelPending()
       }
     }
+  }
+
+  registerActiveWorktreePresence(
+    subscriptionId: string,
+    deviceId: string | undefined,
+    worktreeId: string
+  ): () => void {
+    if (!deviceId) {
+      return () => undefined
+    }
+    this.activeWorktreePresenceBySubscription.set(subscriptionId, { deviceId, worktreeId })
+    return () => {
+      this.activeWorktreePresenceBySubscription.delete(subscriptionId)
+    }
+  }
+
+  listActiveWorktreePresence(): { deviceId: string; worktreeId: string }[] {
+    return [...this.activeWorktreePresenceBySubscription.values()]
   }
 
   forgetClientNavigationState(clientNavigationId: string): void {

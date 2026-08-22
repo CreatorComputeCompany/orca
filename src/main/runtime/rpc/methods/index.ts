@@ -37,9 +37,12 @@ import { CLIPBOARD_METHODS } from './clipboard'
 import { HOST_CAPABILITY_METHODS } from './host-capabilities'
 import { EMULATOR_METHODS } from './emulator'
 import { PAIRING_METHODS } from './pairing'
+import { RUNTIME_GRAPH_METHODS } from './runtime-graph'
 import { UPDATER_METHODS } from './updater'
 import { AGENT_SESSION_METHODS } from './agent-session'
 import { ARTIFACT_METHODS } from './artifacts'
+import { EPHEMERAL_VM_METHODS } from './ephemeral-vm'
+import { MULTIPLAYER_IDENTITY_METHODS } from './multiplayer-identity'
 
 // Why: a flat manifest keeps registration order explicit and provides one
 // grep-point for "what methods does the RPC server expose?" — useful when
@@ -48,6 +51,8 @@ export const ALL_RPC_METHODS: readonly RpcAnyMethod[] = [
   ...STATUS_METHODS,
   ...AI_VAULT_METHODS,
   ...ARTIFACT_METHODS,
+  ...EPHEMERAL_VM_METHODS,
+  ...MULTIPLAYER_IDENTITY_METHODS,
   ...AUTOMATION_METHODS,
   ...REPO_METHODS,
   ...WORKTREE_METHODS,
@@ -85,5 +90,6 @@ export const ALL_RPC_METHODS: readonly RpcAnyMethod[] = [
   ...CLIENT_UI_METHODS,
   ...EMULATOR_METHODS,
   ...PAIRING_METHODS,
+  ...RUNTIME_GRAPH_METHODS,
   ...UPDATER_METHODS
 ]

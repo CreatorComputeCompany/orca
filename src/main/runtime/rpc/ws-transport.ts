@@ -3,8 +3,11 @@ import { createServer as createHttpsServer, type Server as HttpsServer } from 'n
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http'
 import { WebSocketServer, type WebSocket } from 'ws'
 import type { RpcTransport } from './transport'
-import { createStaticWebClientHandler } from './static-web-client-handler'
 import { RemoteRuntimeServerHeartbeat } from './remote-runtime-server-heartbeat'
+import {
+  composeRuntimeHttpRequestHandler,
+  type RuntimeHttpRequestHandler
+} from './ws-http-request-handler'
 
 const MAX_WS_MESSAGE_BYTES = 1024 * 1024
 // Why: one desktop remote-host client can hold many concurrent streams, so keep the cap high enough that stale streams don't starve control RPCs.
@@ -37,6 +40,7 @@ export type WebSocketTransportOptions = {
   preAuthTimeoutMs?: number
   // Why: the pairing server can also serve the browser client, avoiding a second static server.
   staticRoot?: string
+  httpRequestHandler?: RuntimeHttpRequestHandler
   // Why: devices paired while the fallback port was active point at it, so it must bind first on later launches or those pairings strand (STA-1511).
   fallbackPort?: number
   // Why: serve --port clients dial the pinned port; prefer it first so a stale fallback can't steal the pin (issue #8535). Default keeps fallback-first (STA-1511).
@@ -50,7 +54,7 @@ export class WebSocketTransport implements RpcTransport {
   private readonly tlsKey: string | undefined
   private readonly heartbeat: RemoteRuntimeServerHeartbeat
   private readonly preAuthTimeoutMs: number
-  private readonly staticRoot: string | undefined
+  private readonly requestListener: ReturnType<typeof composeRuntimeHttpRequestHandler>
   private readonly fallbackPort: number | undefined
   private readonly preferPinnedPort: boolean
   private httpServer: HttpsServer | HttpServer | null = null
@@ -73,6 +77,7 @@ export class WebSocketTransport implements RpcTransport {
     heartbeatNow,
     preAuthTimeoutMs,
     staticRoot,
+    httpRequestHandler,
     fallbackPort,
     preferPinnedPort
   }: WebSocketTransportOptions) {
@@ -86,7 +91,7 @@ export class WebSocketTransport implements RpcTransport {
       MAX_WS_CONNECTIONS
     )
     this.preAuthTimeoutMs = preAuthTimeoutMs ?? PRE_AUTH_TIMEOUT_MS
-    this.staticRoot = staticRoot
+    this.requestListener = composeRuntimeHttpRequestHandler(staticRoot, httpRequestHandler)
     this.fallbackPort = fallbackPort
     this.preferPinnedPort = preferPinnedPort === true
   }
@@ -171,12 +176,9 @@ export class WebSocketTransport implements RpcTransport {
   }
 
   private createHttpServer(): HttpServer | HttpsServer {
-    const requestListener = this.staticRoot
-      ? createStaticWebClientHandler(this.staticRoot)
-      : undefined
     return this.tlsCert && this.tlsKey
-      ? createHttpsServer({ cert: this.tlsCert, key: this.tlsKey }, requestListener)
-      : createHttpServer(requestListener)
+      ? createHttpsServer({ cert: this.tlsCert, key: this.tlsKey }, this.requestListener)
+      : createHttpServer(this.requestListener)
   }
 
   // Why: attach the WSS only after listen succeeds; earlier it re-emits httpServer's EADDRINUSE as an uncatchable exception and breaks the fallback.

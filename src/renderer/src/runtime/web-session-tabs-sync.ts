@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- web session-tab sync reconciles terminal, unified-tab, group, and PTY maps atomically to avoid split-brain tab state */
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { AppState } from '../store'
 import { useAppStore } from '../store'
 import type { RuntimeRpcResponse } from '../../../shared/runtime-rpc-envelope'
@@ -75,6 +75,7 @@ import {
 import { isRuntimeSubscriptionReplayResponse } from '../../../shared/runtime-subscription-replay'
 import { queueAcceptedWebSessionTerminalSnapshot } from './web-session-terminal-handle-events'
 import { recoverWebSessionTerminalOrphansBeforeApply } from './web-session-terminal-orphan-recovery'
+import { shouldRestartRemoteSessionMirror } from './remote-session-repair'
 import {
   clearWebAgentSessionHandoff,
   clearWebAgentSessionHandoffsForEnvironment,
@@ -918,8 +919,10 @@ function shouldReplaceTerminalTab(
     return true
   }
   if (isMirroredTerminalSurfaceId(tab.id)) {
-    // Why: host snapshots are authoritative for mirrored tabs; replace old mirrors even when the next surface still awaits a stream handle, else parity drifts.
-    return true
+    // Why: several runtime environments can publish the same projected worktree. A host is
+    // authoritative only for its own mirrored PTYs; otherwise an empty controller snapshot
+    // deletes a child-VM terminal and the child snapshot recreates it forever.
+    return isRuntimeTerminalTabForEnvironment(tab, environmentId)
   }
   if (tab.pendingActivationSpawn && tab.ptyId === null && nextRemotePtyIds.size > 0) {
     return true
@@ -3548,6 +3551,7 @@ export function useWebSessionTabsSync(): void {
     )
     return environment ? (environment.pairingRevision ?? environment.createdAt) : undefined
   })
+  const [activeSessionRepairGeneration, setActiveSessionRepairGeneration] = useState(0)
   const workspaceSessionReady = useAppStore((state) => state.workspaceSessionReady)
   // Why: only resume callbacks read these refs, and resumes fire from visibilitychange or
   // stale-visibility recovery — outside React — so committing during layout leaves no window
@@ -3558,6 +3562,23 @@ export function useWebSessionTabsSync(): void {
       activeWorktreeRuntimeEnvironmentId && activeWorktreeId
         ? sessionTabsFreshnessKey(activeWorktreeRuntimeEnvironmentId, activeWorktreeId)
         : null
+  }, [activeWorktreeId, activeWorktreeRuntimeEnvironmentId])
+
+  useEffect(() => {
+    if (!activeWorktreeId || !activeWorktreeRuntimeEnvironmentId) {
+      return
+    }
+    return useAppStore.subscribe((state, previousState) => {
+      const previousTerminalCount = previousState.tabsByWorktree[activeWorktreeId]?.length ?? 0
+      const terminalCount = state.tabsByWorktree[activeWorktreeId]?.length ?? 0
+      if (shouldRestartRemoteSessionMirror({ previousTerminalCount, terminalCount })) {
+        // Why: browser-local hydration/reconciliation can erase a valid mirrored session without
+        // changing the host snapshot version. Restart the scoped stream so its initial snapshot
+        // immediately repairs the selected runtime workspace. A legitimately empty host snapshot
+        // crosses this boundary only once and therefore cannot create a restart loop.
+        setActiveSessionRepairGeneration((generation) => generation + 1)
+      }
+    })
   }, [activeWorktreeId, activeWorktreeRuntimeEnvironmentId])
 
   useEffect(
@@ -4401,6 +4422,7 @@ export function useWebSessionTabsSync(): void {
     activeWorktreeRuntimeConnectionGeneration,
     activeWorktreeRuntimeId,
     activeWorktreeRuntimePairingRevision,
+    activeSessionRepairGeneration,
     workspaceSessionReady
   ])
 }

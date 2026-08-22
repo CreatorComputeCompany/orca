@@ -2,6 +2,7 @@ import { folderWorkspaceToWorktree } from '../../../../shared/folder-workspace-w
 import type { Worktree } from '../../../../shared/worktree/types'
 import type { HostSectionRow } from './host-section-rows'
 import {
+  MULTIPLAYER_GROUP_KEY,
   PINNED_GROUP_KEY,
   type PinnedWorktreeDisplayPolicy,
   type WorktreeRow
@@ -15,19 +16,32 @@ export function getPreferredWorktreeRows(
   // Prefer its natural-group copy, falling back to Pinned when that copy is hidden.
   if (pinnedDisplayPolicy === 'single-location') {
     const seen = new Set<string>()
-    return rows.filter((row) => {
-      if (seen.has(row.worktree.id)) {
-        return false
+    const preferredRows: WorktreeRow[] = []
+    for (const row of rows) {
+      if (row.sectionKey === MULTIPLAYER_GROUP_KEY || seen.has(row.worktree.id)) {
+        continue
       }
+      preferredRows.push(row)
       seen.add(row.worktree.id)
-      return true
-    })
+    }
+    for (const row of rows) {
+      if (seen.has(row.worktree.id)) {
+        continue
+      }
+      preferredRows.push(row)
+      seen.add(row.worktree.id)
+    }
+    return preferredRows
   }
 
   const preferredRows: WorktreeRow[] = []
   const seen = new Set<string>()
   for (const row of rows) {
-    if (row.sectionKey === PINNED_GROUP_KEY || seen.has(row.worktree.id)) {
+    if (
+      row.sectionKey === PINNED_GROUP_KEY ||
+      row.sectionKey === MULTIPLAYER_GROUP_KEY ||
+      seen.has(row.worktree.id)
+    ) {
       continue
     }
     preferredRows.push(row)

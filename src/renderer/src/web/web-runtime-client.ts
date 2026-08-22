@@ -52,6 +52,7 @@ type RuntimeSubscription = {
   params: unknown
   callbacks: SubscriptionCallbacks
   needsReplay: boolean
+  remoteSubscriptionId?: string
 }
 
 export type WebRuntimeSubscriptionHandle = {
@@ -70,10 +71,50 @@ const CONNECT_TIMEOUT_MS = 12_000
 const HANDSHAKE_TIMEOUT_MS = 10_000
 const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000, 15_000]
 const SHARED_CONNECTION_SUBSCRIPTION_METHODS = new Set(['files.watch'])
+const SHARED_CONTROL_SUBSCRIPTION_METHODS = new Set([
+  'ephemeralVm.subscribeRuntimes',
+  'runtime.clientEvents.subscribe',
+  'session.tabs.subscribe',
+  'session.tabs.subscribeAll'
+])
 // Why: browser WebSockets hide pings/pongs, so a half-open socket stays OPEN with no onclose/onerror — poll liveness in-app.
 const HEARTBEAT_INTERVAL_MS = 10_000
 const HEARTBEAT_IDLE_MS = 25_000
 const HEARTBEAT_PROBE_GRACE_MS = 20_000
+// Why: reverse proxies such as Boxd may not preserve WebSocket ping/pong control frames. An
+// encrypted RPC frame proves liveness at the application layer even while terminal frames keep
+// arriving and the socket never appears idle to the browser.
+const HEARTBEAT_APPLICATION_KEEPALIVE_MS = 20_000
+
+function buildSharedControlSubscriptionTeardown(
+  method: string,
+  params: unknown,
+  subscriptionId: string,
+  remoteSubscriptionId?: string
+): { method: string; params: unknown } | null {
+  if (method === 'runtime.clientEvents.subscribe' && remoteSubscriptionId) {
+    return {
+      method: 'runtime.clientEvents.unsubscribe',
+      params: { subscriptionId: remoteSubscriptionId }
+    }
+  }
+  if (method === 'ephemeralVm.subscribeRuntimes') {
+    return { method: 'ephemeralVm.unsubscribeRuntimes', params: { subscriptionId } }
+  }
+  if (method === 'session.tabs.subscribe') {
+    return {
+      method: 'session.tabs.unsubscribe',
+      params:
+        typeof params === 'object' && params !== null
+          ? { ...params, subscriptionId }
+          : { subscriptionId }
+    }
+  }
+  if (method === 'session.tabs.subscribeAll') {
+    return { method: 'session.tabs.unsubscribeAll', params: { subscriptionId } }
+  }
+  return null
+}
 
 export class WebRuntimeClient {
   private ws: WebSocket | null = null
@@ -89,6 +130,7 @@ export class WebRuntimeClient {
   private lastInboundFrameAt = 0
   // Timestamp of an outstanding liveness probe (null = none); dead-close fires only on an unanswered sent probe.
   private heartbeatProbeSentAt: number | null = null
+  private lastApplicationHeartbeatAt = 0
   // Why: tracks last tick time to detect a suspended loop (frozen tab) so a long gap re-probes instead of closing.
   private lastHeartbeatTickAt = 0
   private readonly pending = new Map<string, PendingRequest>()
@@ -134,6 +176,14 @@ export class WebRuntimeClient {
     if (SHARED_CONNECTION_SUBSCRIPTION_METHODS.has(method)) {
       // Why: sharing the main socket for file watches avoids exhausting the server's WebSocket connection cap.
       return this.subscribeSharedFileWatch(params, callbacks, options)
+    }
+    if (SHARED_CONTROL_SUBSCRIPTION_METHODS.has(method)) {
+      // Why: every mirrored environment owns both an inventory and active-worktree subscription.
+      // Dedicated sockets multiply that fanout across multiplayer browsers and exhaust reverse
+      // proxy connection budgets, making unrelated workspaces disappear together. These streams
+      // are JSON-only, so safely multiplex them on the environment's existing control socket while
+      // binary terminal/screencast streams retain their dedicated routing socket.
+      return this.subscribeOnCurrentConnection(method, params, callbacks, options)
     }
     const client = new WebRuntimeClient(this.pairing)
     this.childClients.add(client)
@@ -242,7 +292,7 @@ export class WebRuntimeClient {
       ...callbacks,
       onResponse: (response) => {
         transportInterrupted = false
-        const nextSubscriptionId = getFileWatchSubscriptionId(response)
+        const nextSubscriptionId = getResponseSubscriptionId(response)
         if (nextSubscriptionId) {
           remoteSubscriptionId = nextSubscriptionId
           if (stopped) {
@@ -337,7 +387,14 @@ export class WebRuntimeClient {
       unsubscribe: () => {
         this.subscriptions.delete(subscription.id)
         // Tell the server to reap its keyed cleanup before the socket closes; best-effort (a closed socket already reaps).
-        const teardown = options?.buildUnsubscribe?.(params)
+        const teardown =
+          options?.buildUnsubscribe?.(params) ??
+          buildSharedControlSubscriptionTeardown(
+            method,
+            params,
+            subscription.id,
+            subscription.remoteSubscriptionId
+          )
         if (teardown) {
           this.sendEncrypted({
             id: this.nextId(),
@@ -551,6 +608,10 @@ export class WebRuntimeClient {
     const subscription = this.subscriptions.get(response.id)
     if (subscription) {
       const subscriptionResponse = response as RuntimeRpcResponse<unknown>
+      const remoteSubscriptionId = getResponseSubscriptionId(subscriptionResponse)
+      if (remoteSubscriptionId) {
+        subscription.remoteSubscriptionId = remoteSubscriptionId
+      }
       // Why: setup failures must be evicted before callbacks so reconnect cannot replay them.
       if (subscriptionResponse.ok === false) {
         this.subscriptions.delete(response.id)
@@ -704,12 +765,7 @@ export class WebRuntimeClient {
   }
 
   private handleInterruptedSubscriptions(): void {
-    for (const [id, subscription] of Array.from(this.subscriptions)) {
-      if (!SHARED_CONNECTION_SUBSCRIPTION_METHODS.has(subscription.method)) {
-        this.subscriptions.delete(id)
-        subscription.callbacks.onClose?.()
-        continue
-      }
+    for (const subscription of Array.from(this.subscriptions.values())) {
       subscription.callbacks.onTransportInterrupted?.()
       if (this.subscriptions.get(subscription.id) === subscription) {
         subscription.needsReplay = true
@@ -725,6 +781,7 @@ export class WebRuntimeClient {
       this.subscriptions.delete(subscription.id)
       subscription.id = this.nextId()
       subscription.needsReplay = false
+      subscription.remoteSubscriptionId = undefined
       this.subscriptions.set(subscription.id, subscription)
       if (
         this.sendEncrypted({
@@ -790,6 +847,7 @@ export class WebRuntimeClient {
     this.lastInboundFrameAt = now
     this.lastHeartbeatTickAt = now
     this.heartbeatProbeSentAt = null
+    this.lastApplicationHeartbeatAt = now
     this.heartbeatCleanup = installWindowVisibilityInterval({
       run: () => this.runHeartbeatTick(),
       runOnVisible: () => this.rebaselineHeartbeat(),
@@ -803,7 +861,9 @@ export class WebRuntimeClient {
     // hid. But PRESERVE lastInboundFrameAt: if the socket went silent while hidden, keeping the real
     // last-heard time lets the next tick detect the staleness and probe promptly, instead of masking a
     // dead connection for another full idle window (#9883 review).
-    this.lastHeartbeatTickAt = this.now()
+    const now = this.now()
+    this.lastHeartbeatTickAt = now
+    this.lastApplicationHeartbeatAt = now
     this.heartbeatProbeSentAt = null
   }
 
@@ -821,6 +881,7 @@ export class WebRuntimeClient {
     if (sinceLastTick >= HEARTBEAT_INTERVAL_MS * 2) {
       this.lastInboundFrameAt = now
       this.heartbeatProbeSentAt = null
+      this.lastApplicationHeartbeatAt = now
     }
     // Why: don't probe while hidden — no visible staleness to detect and it wastes battery; next visible tick re-checks.
     if (!this.isDocumentVisible()) {
@@ -839,7 +900,11 @@ export class WebRuntimeClient {
       this.handleSocketClosed(ws)
       return
     }
-    if (this.heartbeatProbeSentAt === null && now - this.lastInboundFrameAt >= HEARTBEAT_IDLE_MS) {
+    if (
+      this.heartbeatProbeSentAt === null &&
+      (now - this.lastInboundFrameAt >= HEARTBEAT_IDLE_MS ||
+        now - this.lastApplicationHeartbeatAt >= HEARTBEAT_APPLICATION_KEEPALIVE_MS)
+    ) {
       // Why: fire-and-forget liveness probe; its id is intentionally unmatched so it registers no pending request/timeout.
       if (
         this.sendEncrypted({
@@ -849,6 +914,7 @@ export class WebRuntimeClient {
         })
       ) {
         this.heartbeatProbeSentAt = now
+        this.lastApplicationHeartbeatAt = now
       }
     }
   }
@@ -867,7 +933,7 @@ function isRuntimeFailureResponse(
   )
 }
 
-function getFileWatchSubscriptionId(response: RuntimeRpcResponse<unknown>): string | null {
+function getResponseSubscriptionId(response: RuntimeRpcResponse<unknown>): string | null {
   if (!response.ok) {
     return null
   }

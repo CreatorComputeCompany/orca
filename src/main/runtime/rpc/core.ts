@@ -10,10 +10,49 @@ import type {
 } from '../../../shared/mobile-relay-credential-contract'
 import type { RuntimeCapability } from '../../../shared/protocol-version'
 import type { OrchestrationCompatibilityEvidence } from '../../../shared/orchestration-compatibility-evidence'
+import type {
+  MobilePairingOfferParams,
+  MobilePairingOfferResult
+} from '../../../shared/mobile-pairing-host-contract'
+import type {
+  MultiplayerIdentityEnrollParams,
+  MultiplayerIdentityEnrollResult
+} from '../../../shared/multiplayer-identity-contract'
+import type {
+  MultiplayerAuthRegisterParams,
+  MultiplayerAuthResult,
+  MultiplayerSsoLinkResult
+} from '../../../shared/multiplayer-auth-contract'
+import type {
+  ManagedRuntimeOfferParams,
+  ManagedRuntimeOfferResult,
+  ManagedRuntimePresenceResult,
+  ManagedRuntimeRevokeParams,
+  ManagedRuntimeRevokeResult
+} from '../../../shared/managed-runtime-access-contract'
+import type {
+  GsdOrcaLaunchConsumeParams,
+  GsdOrcaLaunchConsumeResult,
+  GsdOrcaLaunchLinkParams,
+  GsdOrcaLaunchLinkResult
+} from '../../../shared/gsd-orca-launch-contract'
 
 export type PairingRpcContext = {
   getEndpoints(params: PairingGetEndpointsParams): Promise<PairingGetEndpointsResult>
   provisionRelay(params: PairingProvisionRelayParams): Promise<DeviceCredentialInstalled>
+  createMobileOffer?(params: MobilePairingOfferParams): Promise<MobilePairingOfferResult>
+  enrollMultiplayerIdentity?(
+    params: MultiplayerIdentityEnrollParams
+  ): Promise<MultiplayerIdentityEnrollResult>
+  registerMultiplayerAccount?(params: MultiplayerAuthRegisterParams): Promise<MultiplayerAuthResult>
+  createMultiplayerSsoLink?(): Promise<MultiplayerSsoLinkResult>
+  consumeGsdOrcaLaunch?(params: GsdOrcaLaunchConsumeParams): Promise<GsdOrcaLaunchConsumeResult>
+  linkGsdOrcaLaunch?(params: GsdOrcaLaunchLinkParams): Promise<GsdOrcaLaunchLinkResult>
+  createManagedRuntimeOffer?(params: ManagedRuntimeOfferParams): Promise<ManagedRuntimeOfferResult>
+  revokeManagedRuntimeAccess?(
+    params: ManagedRuntimeRevokeParams
+  ): Promise<ManagedRuntimeRevokeResult>
+  listManagedRuntimePresence?(): Promise<ManagedRuntimePresenceResult>
 }
 
 export type RpcEnvelopeMeta = {
@@ -73,6 +112,9 @@ export type RpcContext = {
   clientId?: string
   // Why: navigation is keyed by revocable device identity, never by the bearer credential or transient socket id.
   pairedDeviceId?: string
+  // Why: trusted server-side enrollment for backward-compatible mobile multiplayer routing.
+  // Never accept this identity from request params.
+  multiplayerMemberKey?: string
   // Why: lets handlers gate mobile payload truncation to phones only; undefined for in-process callers → treat as full-class (no clip).
   clientKind?: 'mobile' | 'runtime'
   // Why: negotiation is bound to the authenticated socket, never asserted by a destructive request.

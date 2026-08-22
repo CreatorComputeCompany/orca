@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Why: one cohesive IPC lifecycle boundary for provision, attach, suspend, resume, and cleanup. */
 import { app, ipcMain } from 'electron'
 import type { Store } from '../persistence'
 import {
@@ -31,7 +32,9 @@ import {
 } from '../ephemeral-vm-runtime-ssh'
 import { getRuntimeRecipeContext } from './ephemeral-vm-recipe-context'
 import { invalidateRuntimeEnvironmentTransport } from './runtime-environments'
+import { getRuntimeEnvironmentStatus } from './runtime-environment-transport-routing'
 import { attachEphemeralVmRuntimeToWorkspace } from '../ephemeral-vm-runtime-attachment'
+import { setEphemeralVmRuntimeSharing } from '../ephemeral-vm-runtime-sharing'
 
 export type EphemeralVmCleanupCommandResult = {
   runtimeId: string
@@ -41,9 +44,14 @@ export type EphemeralVmCleanupCommandResult = {
   message?: string
 }
 
+export function listEphemeralVmRuntimeRecords(userDataPath: string): EphemeralVmRuntimeRecord[] {
+  return listEphemeralVmRuntimes(userDataPath)
+}
+
 export function registerEphemeralVmRuntimeHandlers(store: Store): void {
   ipcMain.removeHandler('ephemeralVm:attachWorkspace')
   ipcMain.removeHandler('ephemeralVm:listRuntimes')
+  ipcMain.removeHandler('ephemeralVm:setSharing')
   ipcMain.removeHandler('ephemeralVm:cleanup')
   ipcMain.removeHandler('ephemeralVm:stopCleanup')
   ipcMain.removeHandler('ephemeralVm:suspendWorkspace')
@@ -51,8 +59,24 @@ export function registerEphemeralVmRuntimeHandlers(store: Store): void {
   ipcMain.removeHandler('ephemeralVm:getCleanupCommand')
 
   ipcMain.handle('ephemeralVm:listRuntimes', (): EphemeralVmRuntimeRecord[] => {
-    return listEphemeralVmRuntimes(app.getPath('userData'))
+    return listEphemeralVmRuntimeRecords(app.getPath('userData'))
   })
+
+  ipcMain.handle(
+    'ephemeralVm:setSharing',
+    (
+      _event,
+      args: {
+        runtimeEnvironmentId: string
+        sharing: NonNullable<EphemeralVmRuntimeRecord['sharing']>
+      }
+    ): EphemeralVmRuntimeRecord =>
+      setEphemeralVmRuntimeSharing({
+        userDataPath: app.getPath('userData'),
+        ...args,
+        actor: { kind: 'host' }
+      })
+  )
 
   ipcMain.handle(
     'ephemeralVm:attachWorkspace',
@@ -191,60 +215,8 @@ export function registerEphemeralVmRuntimeHandlers(store: Store): void {
 
   ipcMain.handle(
     'ephemeralVm:resumeWorkspace',
-    async (_event, args: { workspaceId: string }): Promise<EphemeralVmRuntimeRecord | null> => {
-      const userDataPath = app.getPath('userData')
-      const runtime = listEphemeralVmRuntimes(userDataPath).find(
-        (entry) =>
-          entry.workspaceId === args.workspaceId &&
-          entry.status !== 'cleaned' &&
-          entry.status !== 'cleanup_pending'
-      )
-      if (!runtime?.repoId) {
-        return null
-      }
-      if (runtime.status !== 'suspended' && runtime.status !== 'resume_failed') {
-        return runtime
-      }
-      const recipeContext = getRuntimeRecipeContext(store, userDataPath, runtime.id)
-      const result = await resumeEphemeralVmRuntime({
-        userDataPath,
-        repoPath: recipeContext.repo.repo.path,
-        recipe: recipeContext.recipe,
-        runtimeId: runtime.id
-      })
-      if (!result.ok) {
-        throw new Error(result.error)
-      }
-      if (!result.skipped && runtime.runtimeEnvironmentId) {
-        const pairingCode = getEphemeralVmRecipeResultPairingCode(result.runtime.recipeResult)
-        if (!pairingCode) {
-          throw new Error('Resume result did not include an Orca Server pairing code.')
-        }
-        updateEnvironmentFromPairingCode(userDataPath, runtime.runtimeEnvironmentId, {
-          pairingCode
-        })
-        invalidateRuntimeEnvironmentTransport(runtime.runtimeEnvironmentId)
-      }
-      const connection = getEphemeralVmRecipeResultConnection(result.runtime.recipeResult)
-      if (!result.skipped && connection.type === 'ssh') {
-        try {
-          const ssh = await connectRuntimeOwnedSshTarget({
-            runtimeId: result.runtime.id,
-            connection
-          })
-          return updateEphemeralVmRuntimeStatus(userDataPath, result.runtime.id, {
-            connectionMode: 'ssh',
-            sshTargetId: ssh.targetId
-          })
-        } catch (error) {
-          updateEphemeralVmRuntimeStatus(userDataPath, result.runtime.id, {
-            status: 'resume_failed'
-          })
-          throw error
-        }
-      }
-      return result.runtime
-    }
+    (_event, args: { workspaceId: string }): Promise<EphemeralVmRuntimeRecord | null> =>
+      resumeEphemeralVmWorkspace(store, app.getPath('userData'), args)
   )
 
   ipcMain.handle(
@@ -285,4 +257,73 @@ export function registerEphemeralVmRuntimeHandlers(store: Store): void {
       }
     }
   )
+}
+
+export async function resumeEphemeralVmWorkspace(
+  store: Store,
+  userDataPath: string,
+  args: { workspaceId: string }
+): Promise<EphemeralVmRuntimeRecord | null> {
+  const runtime = listEphemeralVmRuntimes(userDataPath).find(
+    (entry) =>
+      entry.workspaceId === args.workspaceId &&
+      entry.status !== 'cleaned' &&
+      entry.status !== 'cleanup_pending'
+  )
+  if (!runtime?.repoId) {
+    return null
+  }
+  if (runtime.status === 'running' && runtime.runtimeEnvironmentId) {
+    const status = await getRuntimeEnvironmentStatus(
+      userDataPath,
+      runtime.runtimeEnvironmentId,
+      5_000
+    )
+    if (status.ok) {
+      return runtime
+    }
+    // A provider VM can disappear without Orca observing a suspend event. Treat an unreachable
+    // "running" child as stale and run the recipe's idempotent resume hook to recover it.
+  } else if (runtime.status !== 'suspended' && runtime.status !== 'resume_failed') {
+    return runtime
+  }
+  const recipeContext = getRuntimeRecipeContext(store, userDataPath, runtime.id)
+  const result = await resumeEphemeralVmRuntime({
+    userDataPath,
+    repoPath: recipeContext.repo.repo.path,
+    recipe: recipeContext.recipe,
+    runtimeId: runtime.id
+  })
+  if (!result.ok) {
+    throw new Error(result.error)
+  }
+  if (!result.skipped && runtime.runtimeEnvironmentId) {
+    const pairingCode = getEphemeralVmRecipeResultPairingCode(result.runtime.recipeResult)
+    if (!pairingCode) {
+      throw new Error('Resume result did not include an Orca Server pairing code.')
+    }
+    updateEnvironmentFromPairingCode(userDataPath, runtime.runtimeEnvironmentId, {
+      pairingCode
+    })
+    invalidateRuntimeEnvironmentTransport(runtime.runtimeEnvironmentId)
+  }
+  const connection = getEphemeralVmRecipeResultConnection(result.runtime.recipeResult)
+  if (!result.skipped && connection.type === 'ssh') {
+    try {
+      const ssh = await connectRuntimeOwnedSshTarget({
+        runtimeId: result.runtime.id,
+        connection
+      })
+      return updateEphemeralVmRuntimeStatus(userDataPath, result.runtime.id, {
+        connectionMode: 'ssh',
+        sshTargetId: ssh.targetId
+      })
+    } catch (error) {
+      updateEphemeralVmRuntimeStatus(userDataPath, result.runtime.id, {
+        status: 'resume_failed'
+      })
+      throw error
+    }
+  }
+  return result.runtime
 }

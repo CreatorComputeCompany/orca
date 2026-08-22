@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Why: shared end-to-end IPC fixture covers the complete ephemeral VM lifecycle contract. */
 import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -14,7 +15,8 @@ const {
   connectRuntimeOwnedSshTargetMock,
   disconnectRuntimeOwnedSshTargetMock,
   removeRuntimeOwnedSshTargetMock,
-  invalidateRuntimeEnvironmentTransportMock
+  invalidateRuntimeEnvironmentTransportMock,
+  getRuntimeEnvironmentStatusMock
 } = vi.hoisted(() => ({
   handleMock: vi.fn(),
   removeHandlerMock: vi.fn(),
@@ -22,7 +24,8 @@ const {
   connectRuntimeOwnedSshTargetMock: vi.fn(),
   disconnectRuntimeOwnedSshTargetMock: vi.fn(),
   removeRuntimeOwnedSshTargetMock: vi.fn(),
-  invalidateRuntimeEnvironmentTransportMock: vi.fn()
+  invalidateRuntimeEnvironmentTransportMock: vi.fn(),
+  getRuntimeEnvironmentStatusMock: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -45,7 +48,12 @@ vi.mock('./runtime-environments', () => ({
   invalidateRuntimeEnvironmentTransport: invalidateRuntimeEnvironmentTransportMock
 }))
 
+vi.mock('./runtime-environment-transport-routing', () => ({
+  getRuntimeEnvironmentStatus: getRuntimeEnvironmentStatusMock
+}))
+
 import { registerEphemeralVmHandlers } from './ephemeral-vm'
+import { getRuntimeRecipeContext } from './ephemeral-vm-recipe-context'
 
 const tempDirs: string[] = []
 
@@ -115,6 +123,13 @@ describe('registerEphemeralVmHandlers', () => {
     disconnectRuntimeOwnedSshTargetMock.mockReset()
     removeRuntimeOwnedSshTargetMock.mockReset()
     invalidateRuntimeEnvironmentTransportMock.mockReset()
+    getRuntimeEnvironmentStatusMock.mockReset()
+    getRuntimeEnvironmentStatusMock.mockResolvedValue({
+      id: 'status.get',
+      ok: true,
+      result: { runtimeId: 'runtime-1' },
+      _meta: { runtimeId: 'runtime-1' }
+    })
     connectRuntimeOwnedSshTargetMock.mockResolvedValue({
       targetId: 'runtime-ssh-orca-instance-1',
       target: {
@@ -285,6 +300,51 @@ describe('registerEphemeralVmHandlers', () => {
     expect(provisioned.runtime.recipe).toMatchObject({ id: 'plugin-cloud' })
     expect(cleaned).toEqual(expect.objectContaining({ status: 'cleaned' }))
     expect(readFileSync(join(repoPath, 'plugin-cleaned.txt'), 'utf8')).toBe('yes')
+  })
+
+  it('adopts a newly added repo resume hook for the same persisted recipe', () => {
+    const userDataPath = makeDir('orca-ephemeral-vm-ipc-user-data-')
+    const repoPath = makeDir('orca-ephemeral-vm-ipc-repo-')
+    writeFileSync(
+      join(repoPath, 'orca.yaml'),
+      [
+        'environmentRecipes:',
+        '  - id: cloud-sandbox',
+        '    name: Cloud Sandbox',
+        '    create: ./scripts/create.sh',
+        '    resume: ./scripts/resume.sh'
+      ].join('\n')
+    )
+    upsertEphemeralVmRuntime(userDataPath, {
+      id: 'runtime-with-old-snapshot',
+      recipeId: 'cloud-sandbox',
+      recipe: {
+        id: 'cloud-sandbox',
+        name: 'Cloud Sandbox',
+        create: './scripts/create.sh'
+      },
+      repoId: 'repo-1',
+      status: 'running',
+      cleanupStatus: 'not_started',
+      createdAt: 1,
+      updatedAt: 1,
+      recipeResult: {
+        schemaVersion: 1,
+        pairingCode: makePairingCode(),
+        projectRoot: '/workspace/repo'
+      }
+    })
+
+    const resolved = getRuntimeRecipeContext(
+      makeStore(repoPath) as never,
+      userDataPath,
+      'runtime-with-old-snapshot'
+    )
+
+    expect(resolved.recipe).toMatchObject({
+      create: './scripts/create.sh',
+      resume: './scripts/resume.sh'
+    })
   })
 
   it('never substitutes a later same-id plugin recipe for a legacy runtime', async () => {
@@ -706,6 +766,19 @@ describe('registerEphemeralVmHandlers', () => {
     expect(invalidateRuntimeEnvironmentTransportMock).toHaveBeenCalledWith(
       provisioned.environment.id
     )
+
+    rmSync(join(repoPath, 'resume-mode.txt'))
+    getRuntimeEnvironmentStatusMock.mockResolvedValueOnce({
+      id: 'status.get',
+      ok: false,
+      error: { code: 'runtime_unavailable', message: 'offline' },
+      _meta: { runtimeId: null }
+    })
+    const recovered = await handlers.get('ephemeralVm:resumeWorkspace')?.(null, {
+      workspaceId: 'workspace-1'
+    } as never)
+    expect(recovered).toEqual(expect.objectContaining({ status: 'running' }))
+    expect(readFileSync(join(repoPath, 'resume-mode.txt'), 'utf8')).toBe('resume')
   })
 
   it('returns a copyable cleanup command for a persisted runtime', async () => {

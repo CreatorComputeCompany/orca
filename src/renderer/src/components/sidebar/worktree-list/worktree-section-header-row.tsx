@@ -13,7 +13,7 @@ import type {
   WorkspaceStatusDefinition
 } from '../../../../../shared/worktree/types'
 import type { GroupHeaderRow, WorktreeGroupBy } from '../worktree-list-groups'
-import { PINNED_GROUP_KEY } from '../worktree-list-groups'
+import { MULTIPLAYER_GROUP_KEY, PINNED_GROUP_KEY } from '../worktree-list-groups'
 import { getWorkspaceStatusFromGroupKey } from '../workspace-status'
 import { getVirtualRowTransform } from '../worktree-list-virtual-rows'
 import { resolveProjectGroupHeaderColor } from '../project-header-color'
@@ -87,6 +87,7 @@ export function renderWorktreeSectionHeaderRow(args: {
   const { headerDrag } = ctx
   const isRepoHeader = ctx.groupBy === 'repo' && row.repo !== undefined
   const isProjectGroupHeader = ctx.groupBy === 'repo' && row.projectGroup !== undefined
+  const isCollaborationHeader = ctx.groupBy === 'repo' && row.collaborationSection !== undefined
   const projectIdForHeader = isRepoHeader ? row.repo!.id : undefined
   const projectGroupIdForHeader =
     isProjectGroupHeader && !row.repo && typeof row.projectGroup?.id === 'string'
@@ -135,6 +136,7 @@ export function renderWorktreeSectionHeaderRow(args: {
       ? getWorkspaceStatusFromGroupKey(row.key, ctx.workspaceStatuses)
       : null
   const isPinnedHeader = row.key === PINNED_GROUP_KEY
+  const isMultiplayerHeader = row.key === MULTIPLAYER_GROUP_KEY
   const repoHeaderColor = resolveProjectGroupHeaderColor({
     groupBy: ctx.groupBy,
     headerKey: row.key,
@@ -167,7 +169,12 @@ export function renderWorktreeSectionHeaderRow(args: {
   // Why: repo/project/status/pinned share compact section chrome; flat "All" stays a simple label.
   const showHeaderCollapseAffordance =
     row.count > 0 &&
-    (isRepoHeader || isProjectGroupHeader || headerWorkspaceStatus !== null || isPinnedHeader)
+    (isRepoHeader ||
+      isProjectGroupHeader ||
+      isCollaborationHeader ||
+      headerWorkspaceStatus !== null ||
+      isPinnedHeader ||
+      isMultiplayerHeader)
   return (
     <div
       key={vItem.key}
@@ -241,7 +248,7 @@ export function renderWorktreeSectionHeaderRow(args: {
         style={{
           // Why: non-project headers like "All" are flat-list labels; don't reserve project hierarchy indent.
           paddingLeft:
-            isRepoHeader || isProjectGroupHeader
+            isRepoHeader || isProjectGroupHeader || isCollaborationHeader
               ? getProjectGroupHeaderPaddingLeft(row.projectGroupDepth ?? 0)
               : WORKTREE_SECTION_HEADER_PADDING_LEFT
         }}

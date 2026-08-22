@@ -1,4 +1,4 @@
-import { ALL_GROUP_KEY, PINNED_GROUP_KEY } from '../worktree-list-groups'
+import { ALL_GROUP_KEY, MULTIPLAYER_GROUP_KEY, PINNED_GROUP_KEY } from '../worktree-list-groups'
 import type { HostSectionRow } from '../host-section-rows'
 import type { WorktreeDragGroup } from '../worktree-manual-order'
 
@@ -6,7 +6,11 @@ import type { WorktreeDragGroup } from '../worktree-manual-order'
 function getNaturalWorktreeIds(rows: readonly HostSectionRow[]): Set<string> {
   return new Set(
     rows.flatMap((row) =>
-      row.type === 'item' && row.sectionKey !== PINNED_GROUP_KEY ? [row.worktree.id] : []
+      row.type === 'item' &&
+      row.sectionKey !== PINNED_GROUP_KEY &&
+      row.sectionKey !== MULTIPLAYER_GROUP_KEY
+        ? [row.worktree.id]
+        : []
     )
   )
 }
@@ -31,7 +35,10 @@ export function getWorktreeDragGroups(rows: HostSectionRow[]): WorktreeDragGroup
     ) {
       continue
     }
-    if (row.sectionKey === PINNED_GROUP_KEY && naturalWorktreeIds.has(row.worktree.id)) {
+    if (
+      row.sectionKey === MULTIPLAYER_GROUP_KEY ||
+      (row.sectionKey === PINNED_GROUP_KEY && naturalWorktreeIds.has(row.worktree.id))
+    ) {
       continue
     }
     if (!current) {
@@ -60,7 +67,10 @@ export function getWorktreeDragIndexes(rows: readonly HostSectionRow[]): {
     if (row.type !== 'item') {
       continue
     }
-    if (row.sectionKey === PINNED_GROUP_KEY && naturalWorktreeIds.has(row.worktree.id)) {
+    if (
+      row.sectionKey === MULTIPLAYER_GROUP_KEY ||
+      (row.sectionKey === PINNED_GROUP_KEY && naturalWorktreeIds.has(row.worktree.id))
+    ) {
       continue
     }
     const index = groupIndexes.get(row.sectionKey) ?? 0

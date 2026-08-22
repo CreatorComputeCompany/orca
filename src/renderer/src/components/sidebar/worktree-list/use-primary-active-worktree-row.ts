@@ -2,7 +2,11 @@ import { useCallback, useLayoutEffect, useState } from 'react'
 import type { ActiveSurfaceVariant } from '../WorktreeCard'
 import type { HostSectionRow } from '../host-section-rows'
 import type { PinnedWorktreeDisplayPolicy } from '../worktree-list-groups'
-import { isPinnedWorktreeRow, type WorktreeItemRow } from './render-row-item-rows'
+import {
+  isMultiplayerWorktreeRow,
+  isPinnedWorktreeRow,
+  type WorktreeItemRow
+} from './render-row-item-rows'
 
 // A worktree can render in more than one section; the row the user actually clicked owns
 // the primary active surface so its duplicates stay visually secondary.
@@ -43,15 +47,21 @@ export function usePrimaryActiveWorktreeRow(args: {
         return primaryActiveWorktreeRow.rowKey === row.rowKey ? 'primary' : 'secondary'
       }
       if (
-        pinnedDisplayPolicy === 'duplicate-in-groups' &&
         activeWorktreeId === row.worktree.id &&
-        isPinnedWorktreeRow(row)
+        ((isMultiplayerWorktreeRow(row) &&
+          rows.some(
+            (candidate) =>
+              candidate.type === 'item' &&
+              candidate.worktree.id === row.worktree.id &&
+              !isMultiplayerWorktreeRow(candidate)
+          )) ||
+          (pinnedDisplayPolicy === 'duplicate-in-groups' && isPinnedWorktreeRow(row)))
       ) {
         return 'secondary'
       }
       return 'primary'
     },
-    [activeWorktreeId, pinnedDisplayPolicy, primaryActiveWorktreeRow]
+    [activeWorktreeId, pinnedDisplayPolicy, primaryActiveWorktreeRow, rows]
   )
 
   const handleImmediateWorktreeRowActivate = useCallback(

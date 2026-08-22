@@ -1,0 +1,192 @@
+import { useEffect, useMemo, useRef } from 'react'
+import { toast } from 'sonner'
+import { useAppStore } from '@/store'
+import { getAllWorktreesFromState, useAllWorktrees } from '@/store/selectors'
+import { activateWorktreeFromSidebar } from '@/lib/sidebar-worktree-activation'
+import { toRuntimeExecutionHostId } from '../../../shared/execution-host'
+import {
+  findWorktreeForWebWorkspaceReference,
+  readWebSessionReference,
+  toWebSessionTerminalTabId,
+  readWebWorkspaceReference
+} from '@/lib/web-workspace-link'
+import { isWebClientLocation } from '@/lib/web-client-location'
+import { translate } from '@/i18n/i18n'
+import type { Worktree } from '../../../shared/worktree/types'
+
+function showUnavailableWorkspaceToast(description?: string): void {
+  toast.error(translate('app.webWorkspaceLink.unavailable', 'Workspace is not available'), {
+    description:
+      description ??
+      translate(
+        'app.webWorkspaceLink.unavailableDescription',
+        'It may be private, deleted, or shared with a different account.'
+      )
+  })
+}
+
+const LINKED_SESSION_WAIT_MS = 5_000
+
+function findLinkedSessionTab(worktreeId: string, terminalTabId: string) {
+  return useAppStore.getState().tabsByWorktree[worktreeId]?.find((tab) => tab.id === terminalTabId)
+}
+
+async function waitForLinkedSessionTab(worktreeId: string, terminalTabId: string) {
+  const existing = findLinkedSessionTab(worktreeId, terminalTabId)
+  if (existing) {
+    return existing
+  }
+  return await new Promise<ReturnType<typeof findLinkedSessionTab>>((resolve) => {
+    const timeoutId = window.setTimeout(() => {
+      unsubscribe()
+      resolve(undefined)
+    }, LINKED_SESSION_WAIT_MS)
+    const unsubscribe = useAppStore.subscribe(() => {
+      const tab = findLinkedSessionTab(worktreeId, terminalTabId)
+      if (!tab) {
+        return
+      }
+      window.clearTimeout(timeoutId)
+      unsubscribe()
+      resolve(tab)
+    })
+    const racedTab = findLinkedSessionTab(worktreeId, terminalTabId)
+    if (racedTab) {
+      window.clearTimeout(timeoutId)
+      unsubscribe()
+      resolve(racedTab)
+    }
+  })
+}
+
+async function openLinkedWorktree(
+  worktree: Worktree,
+  runtimeEnvironmentId: string,
+  sessionReference: string | null
+): Promise<void> {
+  const executionHostId = toRuntimeExecutionHostId(runtimeEnvironmentId)
+  await activateWorktreeFromSidebar(worktree.id, executionHostId)
+  const state = useAppStore.getState()
+  if (
+    state.activeWorktreeId !== worktree.id ||
+    state.activeWorkspaceExecutionHostId !== executionHostId
+  ) {
+    showUnavailableWorkspaceToast(
+      translate(
+        'app.webWorkspaceLink.activationFailed',
+        'Orca found the workspace but could not open it.'
+      )
+    )
+    return
+  }
+  state.revealWorktreeInSidebar(worktree.id, { behavior: 'smooth' })
+  if (sessionReference) {
+    const terminalTabId = toWebSessionTerminalTabId(sessionReference)
+    const tab = await waitForLinkedSessionTab(worktree.id, terminalTabId)
+    if (!tab) {
+      toast.warning(
+        translate('app.webWorkspaceLink.sessionUnavailable', 'Session is no longer available'),
+        {
+          description: translate(
+            'app.webWorkspaceLink.sessionUnavailableDescription',
+            'Opened {{workspace}} instead.',
+            { workspace: worktree.displayName }
+          )
+        }
+      )
+      return
+    }
+    useAppStore.getState().setActiveTab(terminalTabId)
+    if (useAppStore.getState().activeTabIdByWorktree[worktree.id] !== terminalTabId) {
+      toast.warning(
+        translate('app.webWorkspaceLink.sessionUnavailable', 'Session is no longer available'),
+        {
+          description: translate(
+            'app.webWorkspaceLink.sessionUnavailableDescription',
+            'Opened {{workspace}} instead.',
+            { workspace: worktree.displayName }
+          )
+        }
+      )
+      return
+    }
+    toast.success(
+      translate('app.webWorkspaceLink.sessionOpened', 'Opened {{session}}', {
+        session: tab.customTitle ?? tab.title
+      })
+    )
+    return
+  }
+  toast.success(
+    translate('app.webWorkspaceLink.opened', 'Opened {{workspace}}', {
+      workspace: worktree.displayName
+    })
+  )
+}
+
+export function useWebWorkspaceLink(): void {
+  const targetEnvironmentId = useMemo(
+    () => (isWebClientLocation() ? readWebWorkspaceReference(window.location) : null),
+    []
+  )
+  const targetSessionReference = useMemo(
+    () => (isWebClientLocation() ? readWebSessionReference(window.location) : null),
+    []
+  )
+  const worktrees = useAllWorktrees()
+  const startupWorktreeRefreshCompleted = useAppStore(
+    (state) => state.startupWorktreeRefreshCompleted
+  )
+  const handledRef = useRef(false)
+  const resolvingRef = useRef(false)
+
+  useEffect(() => {
+    if (!targetEnvironmentId || handledRef.current) {
+      return
+    }
+    // Why: persisted rows can render before the authoritative runtime/worktree refresh. Activating
+    // one during that window is immediately overwritten by hydration, leaving the URL resolved but
+    // the workspace blank. Wait for the same startup barrier used by the unavailable fallback.
+    if (!startupWorktreeRefreshCompleted) {
+      return
+    }
+    const worktree = findWorktreeForWebWorkspaceReference(worktrees, targetEnvironmentId)
+    if (worktree) {
+      handledRef.current = true
+      void openLinkedWorktree(worktree, targetEnvironmentId, targetSessionReference)
+      return
+    }
+    if (resolvingRef.current) {
+      return
+    }
+    resolvingRef.current = true
+    void (async () => {
+      try {
+        const runtimes = await window.api.ephemeralVm.listRuntimes()
+        const runtime = runtimes.find((entry) => entry.runtimeEnvironmentId === targetEnvironmentId)
+        if (!runtime?.workspaceId) {
+          handledRef.current = true
+          showUnavailableWorkspaceToast()
+          return
+        }
+        await window.api.ephemeralVm.resumeWorkspace({ workspaceId: runtime.workspaceId })
+        const state = useAppStore.getState()
+        state.setRuntimeEnvironments(await window.api.runtimeEnvironments.list())
+        await state.fetchAllWorktrees()
+        const refreshedWorktree = findWorktreeForWebWorkspaceReference(
+          getAllWorktreesFromState(useAppStore.getState()),
+          targetEnvironmentId
+        )
+        handledRef.current = true
+        if (!refreshedWorktree) {
+          showUnavailableWorkspaceToast()
+          return
+        }
+        await openLinkedWorktree(refreshedWorktree, targetEnvironmentId, targetSessionReference)
+      } catch (error) {
+        handledRef.current = true
+        showUnavailableWorkspaceToast(error instanceof Error ? error.message : String(error))
+      }
+    })()
+  }, [startupWorktreeRefreshCompleted, targetEnvironmentId, targetSessionReference, worktrees])
+}

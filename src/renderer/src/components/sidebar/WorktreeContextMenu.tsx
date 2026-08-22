@@ -28,7 +28,8 @@ import {
   Workflow,
   FolderInput,
   FolderPlus,
-  FolderTree
+  FolderTree,
+  Link2
 } from 'lucide-react'
 import { useAppStore } from '@/store'
 import type { AppState } from '@/store/types'
@@ -63,9 +64,12 @@ import {
   useWorkspaceLineageMenuActions
 } from './workspace-lineage-menu-actions'
 import { WorkspaceSleepMenuItems } from './WorkspaceSleepMenuItems'
+import { EphemeralVmSharingMenuItem } from './EphemeralVmSharingMenuItem'
 import { isEventTargetInsideCurrentTarget } from './worktree-card-dom-events'
 import { translate } from '@/i18n/i18n'
 import { parseWorkspaceKey, worktreeWorkspaceKey } from '../../../../shared/workspace-scope'
+import { isWebClientLocation } from '@/lib/web-client-location'
+import { createWebWorkspaceLink } from '@/lib/web-workspace-link'
 
 type Props = {
   worktree: Worktree
@@ -550,6 +554,15 @@ const WorktreeContextMenu = React.memo(function WorktreeContextMenu({
     window.api.ui.writeClipboardText(worktree.path)
   }, [worktree.path])
 
+  const handleCopyWorkspaceLink = useCallback(() => {
+    if (!worktree.runtimeOwnerEnvironmentId) {
+      return
+    }
+    void window.api.ui.writeClipboardText(
+      createWebWorkspaceLink(window.location, worktree.runtimeOwnerEnvironmentId)
+    )
+  }, [worktree.runtimeOwnerEnvironmentId])
+
   const handleToggleRead = useCallback(() => {
     updateWorktreeMeta(worktree.id, { isUnread: !worktree.isUnread })
   }, [worktree.id, worktree.isUnread, updateWorktreeMeta])
@@ -893,10 +906,20 @@ const WorktreeContextMenu = React.memo(function WorktreeContextMenu({
                 connectionId={repo?.connectionId ?? null}
                 disabled={isDeleting}
               />
+              {isWebClientLocation() && worktree.runtimeOwnerEnvironmentId && (
+                <DropdownMenuItem onSelect={handleCopyWorkspaceLink} disabled={isDeleting}>
+                  <Link2 className="size-3.5" />
+                  {translate(
+                    'auto.components.sidebar.WorktreeContextMenu.copyWorkspaceLink',
+                    'Copy workspace link'
+                  )}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem onSelect={handleCopyPath} disabled={isDeleting}>
                 <Copy className="size-3.5" />
                 {translate('auto.components.sidebar.WorktreeContextMenu.3350101edb', 'Copy Path')}
               </DropdownMenuItem>
+              <EphemeralVmSharingMenuItem worktree={worktree} disabled={isDeleting} />
               <DropdownMenuSeparator />
               <DropdownMenuItem onSelect={handleTogglePin} disabled={isDeleting}>
                 {worktree.isPinned ? <PinOff className="size-3.5" /> : <Pin className="size-3.5" />}

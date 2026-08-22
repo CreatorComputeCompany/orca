@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest'
 import { encodePairingOffer, PAIRING_OFFER_VERSION } from './pairing'
 import {
   EPHEMERAL_VM_RECIPE_JSON_STRUCTURE_LIMITS,
-  parseEphemeralVmRecipeResult
+  parseEphemeralVmRecipeResult,
+  withEphemeralVmRecipeResultPairingCode
 } from './ephemeral-vm-recipes'
 import {
   getEphemeralVmRecipeResultWarnings,
@@ -20,6 +21,44 @@ function makePairingCode(endpoint = 'wss://sandbox.example.com'): string {
 }
 
 describe('parseEphemeralVmRecipeResult', () => {
+  it('replaces the Orca-server pairing credential without changing recipe metadata', () => {
+    const replacement = makePairingCode('wss://current.example.com')
+    expect(
+      withEphemeralVmRecipeResultPairingCode(
+        {
+          schemaVersion: 1,
+          connection: {
+            type: 'orca-server',
+            pairingCode: makePairingCode('wss://stale.example.com'),
+            projectRoot: '/workspace/repo'
+          },
+          userData: { providerResourceId: 'sandbox-123' }
+        },
+        replacement
+      )
+    ).toEqual({
+      schemaVersion: 1,
+      connection: {
+        type: 'orca-server',
+        pairingCode: replacement,
+        projectRoot: '/workspace/repo'
+      },
+      userData: { providerResourceId: 'sandbox-123' }
+    })
+  })
+
+  it('leaves SSH recipe results unchanged', () => {
+    const result = {
+      schemaVersion: 1 as const,
+      connection: {
+        type: 'ssh' as const,
+        target: { label: 'VM', host: 'vm.example.com', port: 22, username: 'boxd' },
+        projectRoot: '/workspace/repo'
+      }
+    }
+    expect(withEphemeralVmRecipeResultPairingCode(result, makePairingCode())).toBe(result)
+  })
+
   it('parses the minimum recipe result', () => {
     const result = parseEphemeralVmRecipeResult(
       JSON.stringify({

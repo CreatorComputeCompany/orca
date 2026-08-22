@@ -45,4 +45,25 @@ describe('filterFolderWorkspacesFromOtherDevices', () => {
 
     expect(result.map((workspace) => workspace.id)).toEqual(['own', 'legacy'])
   })
+
+  it('recognizes a controller identity on a child VM environment', () => {
+    const own = makeFolderWorkspace('own', {
+      kind: 'paired-device',
+      deviceId: 'controller-device-jake'
+    })
+    const other = makeFolderWorkspace('other', {
+      kind: 'paired-device',
+      deviceId: 'controller-device-niall'
+    })
+
+    const result = filterFolderWorkspacesFromOtherDevices(
+      [own, other],
+      new Map([
+        ['controller', 'controller-device-jake'],
+        ['env-1', 'shared-child-device']
+      ])
+    )
+
+    expect(result.map((workspace) => workspace.id)).toEqual(['own'])
+  })
 })

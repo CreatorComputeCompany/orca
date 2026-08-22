@@ -78,6 +78,8 @@ import {
   type OrchestrationEnvironmentTransport
 } from './runtime/orchestration/environment-transport'
 import { callRuntimeEnvironment } from './ipc/runtime-environment-transport-routing'
+import { withEphemeralVmRecipeResultPairingCode } from '../shared/ephemeral-vm-recipes'
+import { resolveBundledWebClientRoot } from './runtime/bundled-web-client-root'
 import { resolveEnvironment } from '../shared/runtime-environment-store'
 import { getPreferredPairingOffer } from '../shared/runtime-environments'
 import { OrcaRuntimeRpcServer } from './runtime/runtime-rpc'
@@ -296,6 +298,41 @@ import { resolveBundledPluginRoot } from './plugins/plugin-bundled-bootstrap'
 import { resolvePluginHostEntryPath } from './plugins/plugin-host-process'
 import { applyPluginConsent, applyPluginEnablement } from './plugins/plugin-enablement'
 import { setPluginServiceForRpc } from './runtime/rpc/methods/plugins'
+import { setEphemeralVmRpcReadService } from './runtime/rpc/methods/ephemeral-vm'
+import {
+  cancelEphemeralVmProvision,
+  doctorEphemeralVm,
+  listEphemeralVmRecipeCatalog,
+  listEphemeralVmRecipes,
+  provisionEphemeralVmForRpc
+} from './ephemeral-vm-controller-service'
+import {
+  listEphemeralVmRuntimeRecords,
+  resumeEphemeralVmWorkspace
+} from './ipc/ephemeral-vm-runtime-handlers'
+import { cleanupEphemeralVmRuntimeRecord } from './ephemeral-vm-runtime-cleanup-service'
+import { attachEphemeralVmRuntimeToWorkspace } from './ephemeral-vm-runtime-attachment'
+import {
+  assertEphemeralVmRuntimeSharingActor,
+  setEphemeralVmRuntimeSharing
+} from './ephemeral-vm-runtime-sharing'
+import {
+  canDeviceAccessEphemeralVmRuntime,
+  findMultiplayerMemberByDevice,
+  findMultiplayerMemberByKey,
+  resolveEphemeralVmRuntimeOwnerMemberKey
+} from './runtime/multiplayer-identity-store'
+import { migrateEphemeralVmRuntimeMemberOwnership } from './ephemeral-vm-runtime-member-ownership'
+import { assertEphemeralVmRuntimeAccess } from './ephemeral-vm-runtime-access'
+import {
+  createViewerPairingCode,
+  preserveEphemeralVmViewerCatalogEntry,
+  projectEphemeralVmLiveMembers,
+  projectEphemeralVmViewerAccess,
+  revokeNonOwnerViewerAccess
+} from './ephemeral-vm-viewer-access'
+import { EphemeralVmRuntimeCatalogPublisher } from './ephemeral-vm-runtime-catalog-publisher'
+import type { WorkspaceCreatorProvenance } from '../shared/worktree/types'
 import {
   normalizePluginConsents,
   normalizePluginIdList
@@ -1853,13 +1890,10 @@ function getServeOptions(argv = process.argv): ServeOptions {
 }
 
 function getBundledWebClientRoot(): string | undefined {
-  const appPath = app.getAppPath()
-  const roots = [
-    join(appPath, 'out', 'web'),
-    // Why: unpacked electron-vite entrypoints set appPath to out/main, next to the web bundle.
-    join(appPath, '..', 'web')
-  ]
-  return roots.find((root) => existsSync(join(root, 'web-index.html')))
+  return resolveBundledWebClientRoot({
+    appPath: app.getAppPath(),
+    resourcesPath: process.resourcesPath
+  })
 }
 
 async function renderTerminalPairingQr(pairingUrl: string): Promise<string | null> {
@@ -1906,7 +1940,8 @@ async function printServeReady(options: ServeOptions): Promise<void> {
     : runtimeRpc.createPairingOffer({
         address: options.pairingAddress,
         name: `${options.mobilePairing ? 'Mobile' : 'CLI'} ${new Date().toLocaleDateString()}`,
-        scope: options.mobilePairing ? 'mobile' : 'runtime'
+        scope: options.mobilePairing ? 'mobile' : 'runtime',
+        ...(options.recipeJson ? { pairingManagement: 'exclusive' as const } : {})
       })
   const pairingQr =
     pairing.available && options.mobilePairing
@@ -2752,6 +2787,152 @@ void app.whenReady().then(async () => {
     applyEnablement: (pluginKey, enabled) =>
       applyPluginEnablement({ store: store!, pluginService: pluginService!, pluginKey, enabled })
   })
+  migrateEphemeralVmRuntimeMemberOwnership(app.getPath('userData'))
+  const listEphemeralVmRuntimesForActor = async (actor: WorkspaceCreatorProvenance) => {
+    const runtimes = listEphemeralVmRuntimeRecords(app.getPath('userData'))
+    const accessibleRuntimes =
+      actor.kind === 'host'
+        ? runtimes
+        : runtimes.filter((runtime) =>
+            canDeviceAccessEphemeralVmRuntime(app.getPath('userData'), actor.deviceId, runtime)
+          )
+    return await Promise.all(
+      accessibleRuntimes.map(async (runtime) => {
+        try {
+          const projected = await projectEphemeralVmViewerAccess({
+            userDataPath: app.getPath('userData'),
+            runtime,
+            actor
+          })
+          try {
+            return await projectEphemeralVmLiveMembers({
+              userDataPath: app.getPath('userData'),
+              runtime: projected
+            })
+          } catch (error) {
+            console.warn(`[ephemeral-vm] Failed to read live members for ${runtime.id}:`, error)
+            return { ...projected, liveMembers: [] }
+          }
+        } catch (error) {
+          console.warn(`[ephemeral-vm] Failed to project current access for ${runtime.id}:`, error)
+          return preserveEphemeralVmViewerCatalogEntry(runtime)
+        }
+      })
+    )
+  }
+  const ephemeralVmCatalogPublisher = new EphemeralVmRuntimeCatalogPublisher(
+    listEphemeralVmRuntimesForActor
+  )
+  setEphemeralVmRpcReadService({
+    listRecipes: (args) => listEphemeralVmRecipes(store!, pluginService ?? undefined, args),
+    listRecipeCatalog: () => listEphemeralVmRecipeCatalog(store!, pluginService ?? undefined),
+    doctor: (args) => doctorEphemeralVm(store!, pluginService ?? undefined, args),
+    listRuntimes: listEphemeralVmRuntimesForActor,
+    subscribeRuntimes: (actor, emit) => ephemeralVmCatalogPublisher.subscribe(actor, emit),
+    setSharing: async (args) => {
+      const runtime = assertEphemeralVmRuntimeSharingActor({
+        userDataPath: app.getPath('userData'),
+        runtimeEnvironmentId: args.runtimeEnvironmentId,
+        actor: args.actor
+      })
+      if (args.sharing === 'private') {
+        await revokeNonOwnerViewerAccess({ userDataPath: app.getPath('userData'), runtime })
+      }
+      const updated = setEphemeralVmRuntimeSharing({
+        userDataPath: app.getPath('userData'),
+        ...args
+      })
+      if (args.sharing === 'private') {
+        const ownerMemberKey = resolveEphemeralVmRuntimeOwnerMemberKey(
+          app.getPath('userData'),
+          runtime
+        )
+        const owner = ownerMemberKey
+          ? findMultiplayerMemberByKey(app.getPath('userData'), ownerMemberKey)
+          : null
+        runtimeRpc?.revokeMobileRuntimeEnvironmentAccess(
+          args.runtimeEnvironmentId,
+          new Set(owner?.deviceIds ?? [])
+        )
+      }
+      ephemeralVmCatalogPublisher.notifyChanged()
+      return updated
+    },
+    provision: async (args) => {
+      const ownerMemberKey =
+        args.creatorProvenance?.kind === 'paired-device'
+          ? findMultiplayerMemberByDevice(app.getPath('userData'), args.creatorProvenance.deviceId)
+              ?.key
+          : undefined
+      const result = await provisionEphemeralVmForRpc(
+        store!,
+        pluginService ?? undefined,
+        app.getPath('userData'),
+        { ...args, ...(ownerMemberKey ? { ownerMemberKey } : {}) }
+      )
+      if (result.ok) {
+        ephemeralVmCatalogPublisher.notifyChanged()
+      }
+      if (
+        !result.ok ||
+        result.connectionType !== 'orca-server' ||
+        args.creatorProvenance?.kind !== 'paired-device'
+      ) {
+        return result
+      }
+      const pairingCode = await createViewerPairingCode({
+        userDataPath: app.getPath('userData'),
+        runtime: result.runtime,
+        actor: args.creatorProvenance
+      })
+      return {
+        ...result,
+        runtime: {
+          ...result.runtime,
+          recipeResult: withEphemeralVmRecipeResultPairingCode(
+            result.runtime.recipeResult,
+            pairingCode
+          )
+        },
+        pairingCode
+      }
+    },
+    cancelProvision: async (args) => cancelEphemeralVmProvision(args),
+    attachWorkspace: async (args) => {
+      assertEphemeralVmRuntimeAccess({
+        userDataPath: app.getPath('userData'),
+        actor: args.actor,
+        runtimeId: args.runtimeId
+      })
+      const runtime = attachEphemeralVmRuntimeToWorkspace({
+        userDataPath: app.getPath('userData'),
+        runtimeId: args.runtimeId,
+        workspaceId: args.workspaceId
+      })
+      ephemeralVmCatalogPublisher.notifyChanged()
+      return runtime
+    },
+    cleanup: async (args) => {
+      assertEphemeralVmRuntimeAccess({
+        userDataPath: app.getPath('userData'),
+        actor: args.actor,
+        runtimeId: args.runtimeId
+      })
+      const runtime = await cleanupEphemeralVmRuntimeRecord(store!, app.getPath('userData'), args)
+      ephemeralVmCatalogPublisher.notifyChanged()
+      return runtime
+    },
+    resumeWorkspace: async (args) => {
+      assertEphemeralVmRuntimeAccess({
+        userDataPath: app.getPath('userData'),
+        actor: args.actor,
+        workspaceId: args.workspaceId
+      })
+      const runtime = await resumeEphemeralVmWorkspace(store!, app.getPath('userData'), args)
+      ephemeralVmCatalogPublisher.notifyChanged()
+      return runtime
+    }
+  })
   // Lazy kernel: initialize() only discovers manifests — no worker forks, no
   // panel reads. Zero plugin code runs before an explicit trigger.
   void pluginService
@@ -3228,6 +3409,7 @@ app.on('will-quit', (e) => {
   // the teardown barrier below — quitting before it resolves would let
   // Electron exit first and orphan the hosts.
   setPluginServiceForRpc(null)
+  setEphemeralVmRpcReadService(null)
   pluginKillListService = null
   pluginMarketplaceService = null
   pluginMarketplaceInstaller = null

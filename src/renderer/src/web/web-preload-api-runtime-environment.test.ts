@@ -58,6 +58,352 @@ describe('web runtime environment identity', () => {
     await expect(globals.window.api.runtimeEnvironments.list()).resolves.toEqual([])
   })
 
+  it('lists and routes additional runtime environments without replacing the controller', async () => {
+    const calls: string[] = []
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        constructor(offer: { endpoint: string }) {
+          calls.push(`connect:${offer.endpoint}`)
+        }
+
+        call(method: string): Promise<RuntimeRpcResponse<unknown>> {
+          calls.push(method)
+          return Promise.resolve({
+            id: method,
+            ok: true,
+            result: method === 'ephemeralVm.listRuntimes' ? [] : {},
+            _meta: { runtimeId: 'runtime' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage, 'controller')
+    globals.storage.setItem(
+      'orca.web.runtimeEnvironments.additional.v1',
+      JSON.stringify([
+        {
+          id: 'child-vm',
+          name: 'Shared VM',
+          createdAt: 2,
+          updatedAt: 2,
+          lastUsedAt: null,
+          runtimeId: null,
+          source: 'manual',
+          preferredEndpointId: 'ws-child-vm',
+          endpoints: [
+            {
+              id: 'ws-child-vm',
+              kind: 'websocket',
+              label: 'WebSocket',
+              endpoint: 'wss://child.example',
+              deviceToken: 'child-token',
+              publicKeyB64: 'child-key'
+            }
+          ]
+        }
+      ])
+    )
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    await expect(globals.window.api.runtimeEnvironments.list()).resolves.toMatchObject([
+      { id: 'controller' },
+      { id: 'child-vm', source: 'manual' }
+    ])
+    await globals.window.api.runtimeEnvironments.getStatus({ selector: 'controller' })
+    await globals.window.api.runtimeEnvironments.getStatus({ selector: 'child-vm' })
+
+    expect(calls).toEqual([
+      'connect:ws://127.0.0.1:1234',
+      'ephemeralVm.listRuntimes',
+      'status.get',
+      'connect:wss://child.example',
+      'status.get'
+    ])
+  })
+
+  it('stores a provisioned VM as an additional routable environment', async () => {
+    const childPairingCode = encodePairingCode({
+      endpoint: 'wss://child.example',
+      deviceToken: 'child-token',
+      publicKeyB64: 'child-key'
+    })
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string): Promise<RuntimeRpcResponse<unknown>> {
+          if (method === 'ephemeralVm.provision') {
+            return Promise.resolve({
+              id: method,
+              ok: true,
+              result: {
+                ok: true,
+                connectionType: 'orca-server',
+                runtime: { id: 'vm-runtime-1', recipeResult: {} },
+                environment: { id: 'controller-child-id', name: 'Emma VM' },
+                pairingCode: childPairingCode,
+                stderr: '',
+                warnings: []
+              },
+              _meta: { runtimeId: 'controller-runtime' }
+            })
+          }
+          return Promise.resolve({
+            id: method,
+            ok: true,
+            result: {},
+            _meta: { runtimeId: 'runtime' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage, 'controller')
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    const result = await globals.window.api.ephemeralVm.provision({
+      repoId: 'repo-1',
+      recipeId: 'boxd'
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      connectionType: 'orca-server',
+      environment: { name: 'Emma VM', source: 'ephemeral-vm' }
+    })
+    expect(result).not.toHaveProperty('pairingCode')
+    await expect(globals.window.api.runtimeEnvironments.list()).resolves.toMatchObject([
+      { id: 'controller' },
+      { name: 'Emma VM', source: 'ephemeral-vm' }
+    ])
+  })
+
+  it('discovers an existing controller VM in a second browser', async () => {
+    const childPairingCode = encodePairingCode({
+      endpoint: 'wss://shared-child.example',
+      deviceToken: 'shared-child-token',
+      publicKeyB64: 'shared-child-key'
+    })
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string): Promise<RuntimeRpcResponse<unknown>> {
+          return Promise.resolve({
+            id: method,
+            ok: true,
+            result:
+              method === 'ephemeralVm.listRuntimes'
+                ? [
+                    {
+                      id: 'vm-runtime-1',
+                      runtimeEnvironmentId: 'shared-child-environment',
+                      workspaceName: 'Shared task',
+                      recipeResult: {
+                        schemaVersion: 1,
+                        pairingCode: childPairingCode,
+                        projectRoot: '/workspace/emma'
+                      }
+                    }
+                  ]
+                : {},
+            _meta: { runtimeId: 'controller-runtime' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage, 'controller')
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    const first = (await globals.window.api.runtimeEnvironments.list())[1]
+    const second = (await globals.window.api.runtimeEnvironments.list())[1]
+    expect(second).toMatchObject({
+      id: 'shared-child-environment',
+      createdAt: first?.createdAt,
+      preferredEndpointId: first?.preferredEndpointId,
+      endpoints: [{ id: first?.endpoints[0]?.id }]
+    })
+  })
+
+  it('refreshes controller VM discovery after another browser provisions a workspace', async () => {
+    const firstPairingCode = encodePairingCode({
+      endpoint: 'wss://first-child.example',
+      deviceToken: 'first-child-token',
+      publicKeyB64: 'first-child-key'
+    })
+    const secondPairingCode = encodePairingCode({
+      endpoint: 'wss://second-child.example',
+      deviceToken: 'second-child-token',
+      publicKeyB64: 'second-child-key'
+    })
+    const runtimes = [
+      {
+        id: 'vm-runtime-1',
+        runtimeEnvironmentId: 'first-child-environment',
+        recipeResult: {
+          pairingCode: firstPairingCode,
+          projectRoot: '/workspace/emma'
+        }
+      }
+    ]
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string): Promise<RuntimeRpcResponse<unknown>> {
+          return Promise.resolve({
+            id: method,
+            ok: true,
+            result: method === 'ephemeralVm.listRuntimes' ? runtimes : {},
+            _meta: { runtimeId: 'controller-runtime' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage, 'controller')
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    await expect(globals.window.api.runtimeEnvironments.list()).resolves.toHaveLength(2)
+
+    runtimes.push({
+      id: 'vm-runtime-2',
+      runtimeEnvironmentId: 'second-child-environment',
+      recipeResult: {
+        pairingCode: secondPairingCode,
+        projectRoot: '/workspace/emma'
+      }
+    })
+
+    await expect(globals.window.api.runtimeEnvironments.list()).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'first-child-environment' }),
+        expect.objectContaining({ id: 'second-child-environment' })
+      ])
+    )
+  })
+
+  it('projects the controller creator onto a child VM workspace catalog', async () => {
+    const childPairingCode = encodePairingCode({
+      endpoint: 'wss://shared-child.example',
+      deviceToken: 'shared-child-token',
+      publicKeyB64: 'shared-child-key'
+    })
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        constructor(private readonly offer: { endpoint: string }) {}
+
+        call(method: string): Promise<RuntimeRpcResponse<unknown>> {
+          const result =
+            this.offer.endpoint === 'ws://127.0.0.1:1234'
+              ? [
+                  {
+                    id: 'vm-runtime-1',
+                    runtimeEnvironmentId: 'shared-child-environment',
+                    creatorProvenance: {
+                      kind: 'paired-device',
+                      deviceId: 'controller-device-jake'
+                    },
+                    recipeResult: {
+                      schemaVersion: 1,
+                      pairingCode: childPairingCode,
+                      projectRoot: '/workspace/emma'
+                    }
+                  }
+                ]
+              : {
+                  worktrees: [
+                    {
+                      id: 'workspace-1',
+                      creatorProvenance: {
+                        kind: 'paired-device',
+                        deviceId: 'controller-to-child-device'
+                      }
+                    }
+                  ]
+                }
+          return Promise.resolve({
+            id: method,
+            ok: true,
+            result,
+            _meta: { runtimeId: 'runtime' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage, 'controller')
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    await globals.window.api.runtimeEnvironments.list()
+    const response = await globals.window.api.runtimeEnvironments.call({
+      selector: 'shared-child-environment',
+      method: 'worktree.list'
+    })
+
+    expect(response).toMatchObject({
+      ok: true,
+      result: {
+        worktrees: [
+          {
+            id: 'workspace-1',
+            creatorProvenance: {
+              kind: 'paired-device',
+              deviceId: 'controller-device-jake'
+            }
+          }
+        ]
+      }
+    })
+  })
+
+  it('resumes a controller VM through the web runtime', async () => {
+    const calls: { method: string; params: unknown }[] = []
+    vi.doMock('./web-runtime-client', () => ({
+      WebRuntimeClient: class {
+        call(method: string, params: unknown): Promise<RuntimeRpcResponse<unknown>> {
+          calls.push({ method, params })
+          return Promise.resolve({
+            id: method,
+            ok: true,
+            result: { id: 'vm-runtime-1', runtimeEnvironmentId: 'child-environment' },
+            _meta: { runtimeId: 'controller-runtime' }
+          })
+        }
+
+        close(): void {}
+      }
+    }))
+    const globals = installBrowserGlobals('Linux')
+    writeStoredRuntimeEnvironment(globals.storage, 'controller')
+    const { installWebPreloadApi } = await import('./web-preload-api')
+    installWebPreloadApi()
+
+    await expect(
+      globals.window.api.ephemeralVm.resumeWorkspace({ workspaceId: 'workspace-1' })
+    ).resolves.toMatchObject({
+      id: 'vm-runtime-1',
+      runtimeEnvironmentId: 'child-environment'
+    })
+    expect(calls).toEqual([
+      {
+        method: 'ephemeralVm.resumeWorkspace',
+        params: { workspaceId: 'workspace-1' }
+      }
+    ])
+  })
+
   it('stores paired device identity from a web access link', async () => {
     const globals = installBrowserGlobals('Linux')
     const { installWebPreloadApi } = await import('./web-preload-api')

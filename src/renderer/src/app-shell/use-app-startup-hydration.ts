@@ -33,6 +33,7 @@ import {
 } from '../../../shared/execution-host'
 import { mapWithConcurrency } from '../../../shared/map-with-concurrency'
 import type { OnboardingState } from '../../../shared/onboarding-state-types'
+import { purgeOrphanedBrowserRuntimeEnvironments } from '../lib/orphaned-browser-runtime-environments'
 
 async function listRuntimeSessionHostIdsForStartup(): Promise<ExecutionHostId[]> {
   try {
@@ -73,7 +74,8 @@ function useStartupActions() {
       hydratePersistedUI: s.hydratePersistedUI,
       setHydrationSucceeded: s.setHydrationSucceeded,
       pruneLastVisitedTimestamps: s.pruneLastVisitedTimestamps,
-      seedActiveWorktreeLastVisitedIfMissing: s.seedActiveWorktreeLastVisitedIfMissing
+      seedActiveWorktreeLastVisitedIfMissing: s.seedActiveWorktreeLastVisitedIfMissing,
+      retireRuntimeEnvironmentIds: s.retireRuntimeEnvironmentIds
     }))
   )
 }
@@ -225,6 +227,11 @@ export function useAppStartupHydration(onOnboardingLoaded: (state: OnboardingSta
             actions.hydrateTabsSession(sessionRead.session, sessionHydrationOptions)
             actions.hydrateEditorSession(sessionRead.session, sessionHydrationOptions)
             actions.hydrateBrowserSession(sessionRead.session, sessionHydrationOptions)
+          })
+          await purgeOrphanedBrowserRuntimeEnvironments({
+            runtimeEnvironmentsApi: window.api.runtimeEnvironments,
+            state: useAppStore.getState(),
+            retire: actions.retireRuntimeEnvironmentIds
           })
           // Why: prune visit timestamps AFTER hydration (earlier, worktreesByRepo may be empty and prune would drop entries for worktrees about to appear); seed the active worktree if missing.
           // See docs/cmd-j-empty-query-ordering.md.

@@ -68,7 +68,11 @@ describe('subscribeRemoteRuntimeRequest', () => {
 
     await vi.waitFor(() =>
       expect(onResponse).toHaveBeenCalledWith(
-        expect.objectContaining({ ok: true, result: { type: 'subscribed' } })
+        expect.objectContaining({
+          ok: true,
+          streaming: true,
+          result: { type: 'subscribed' }
+        })
       )
     )
     await expect(server.nextAuth).resolves.toEqual({

@@ -1,5 +1,6 @@
 import {
   MessageSquare,
+  Link2,
   PanelLeftClose,
   PanelRightClose,
   Pin,
@@ -23,6 +24,9 @@ import { formatShortcutLabel, useOptionalShortcutLabel } from '@/hooks/useShortc
 import { translate } from '@/i18n/i18n'
 import { TerminalTabSplitMenuSection } from './TerminalTabSplitMenuSection'
 import { TAB_CONTEXT_MENU_CONTENT_CLASS } from './tab-context-menu-sizing'
+import { getIndexedWorktreeById } from '@/store/worktree-repo-index'
+import { isWebClientLocation } from '@/lib/web-client-location'
+import { createWebSessionLink } from '@/lib/web-workspace-link'
 
 const TAB_COLORS = [
   {
@@ -142,6 +146,11 @@ export function SortableTabContextMenu({
   onToggleViewMode
 }: SortableTabContextMenuProps): React.JSX.Element {
   const keybindings = useAppStore((state) => state.keybindings)
+  const runtimeEnvironmentId = useAppStore(
+    (state) =>
+      getIndexedWorktreeById(state.worktreesByRepo, tab.worktreeId)?.runtimeOwnerEnvironmentId ??
+      null
+  )
   const splitRightShortcut = formatShortcutLabel('terminal.splitRight', keybindings)
   const splitDownShortcut = formatShortcutLabel('terminal.splitDown', keybindings)
 
@@ -186,6 +195,24 @@ export function SortableTabContextMenu({
                     'components.tab.bar.SortableTabContextMenu.switchToChatView',
                     'Switch to chat view'
                   )}
+            </DropdownMenuItem>
+          </>
+        ) : null}
+        {isWebClientLocation() && runtimeEnvironmentId ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => {
+                void window.api.ui.writeClipboardText(
+                  createWebSessionLink(window.location, runtimeEnvironmentId, tab.id)
+                )
+              }}
+            >
+              <Link2 className="size-3.5 shrink-0" />
+              {translate(
+                'components.tab.bar.SortableTabContextMenu.copySessionLink',
+                'Copy session link'
+              )}
             </DropdownMenuItem>
           </>
         ) : null}

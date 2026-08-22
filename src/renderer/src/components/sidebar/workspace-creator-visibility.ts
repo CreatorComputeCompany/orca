@@ -16,7 +16,9 @@ export function getPairedDeviceIdsByEnvironment(
   const result = new Map<string, string>()
   for (const environment of environments) {
     const deviceId =
-      statuses.get(environment.id)?.status?.pairedDeviceId ?? environment.pairedDeviceId
+      environment.workspaceVisibilityDeviceId ??
+      statuses.get(environment.id)?.status?.pairedDeviceId ??
+      environment.pairedDeviceId
     if (deviceId) {
       result.set(environment.id, deviceId)
     }
@@ -28,6 +30,9 @@ export function isWorkspaceFromOtherDevice(
   worktree: Worktree,
   pairedDeviceIdsByEnvironment: ReadonlyMap<string, string>
 ): boolean {
+  if (worktree.ephemeralVmSharing === 'shared') {
+    return false
+  }
   const creator = normalizeWorkspaceCreatorProvenance(worktree.creatorProvenance)
   if (!creator) {
     return false
@@ -40,7 +45,10 @@ export function isWorkspaceFromOtherDevice(
   if (!pairedDeviceId) {
     return false
   }
-  return creator.kind !== 'paired-device' || creator.deviceId !== pairedDeviceId
+  if (creator.kind !== 'paired-device') {
+    return true
+  }
+  return ![...pairedDeviceIdsByEnvironment.values()].includes(creator.deviceId)
 }
 
 export function isFolderWorkspaceFromOtherDevice(

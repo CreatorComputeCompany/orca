@@ -89,6 +89,16 @@ describe('getCyclableWorktreeIds', () => {
     expect(getCyclableWorktreeIds(rows, 'duplicate-in-groups')).toEqual(['dup', 'plain-b'])
   })
 
+  it('uses the natural row order instead of Multiplayer shortcuts', () => {
+    const rows: HostSectionRow[] = [
+      { ...worktree('shared'), rowKey: 'multiplayer:shared', sectionKey: 'multiplayer' },
+      worktree('private'),
+      { ...worktree('shared'), rowKey: 'repo:shared' }
+    ]
+
+    expect(getCyclableWorktreeIds(rows, 'single-location')).toEqual(['private', 'shared'])
+  })
+
   it('leaves folder workspaces out of the rotation', () => {
     // Why: their synthetic `folder:` id is not activatable through
     // activateAndRevealWorktree, so arrowing onto one would be a dead keypress.

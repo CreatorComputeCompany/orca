@@ -3047,6 +3047,7 @@ const api = {
       return () => ipcRenderer.removeListener('ephemeralVm:provisionEvent', listener)
     },
     listRuntimes: () => ipcRenderer.invoke('ephemeralVm:listRuntimes'),
+    setSharing: (args) => ipcRenderer.invoke('ephemeralVm:setSharing', args),
     attachWorkspace: (args) => ipcRenderer.invoke('ephemeralVm:attachWorkspace', args),
     suspendWorkspace: (args) => ipcRenderer.invoke('ephemeralVm:suspendWorkspace', args),
     resumeWorkspace: (args) => ipcRenderer.invoke('ephemeralVm:resumeWorkspace', args),

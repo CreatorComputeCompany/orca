@@ -8,6 +8,8 @@ import { defineMethod, type RpcMethod } from '../core'
 import { buildManagedWorktreeCreateArgs } from './worktree-create-args'
 import { resolveRuntimeNavigationTarget } from '../../../../shared/runtime-navigation'
 import { resolveRpcWorkspaceCreatorProvenance } from '../workspace-creator-context'
+import { createMobileMemberWorktree } from '../../mobile-member-worktree-create'
+import { getEphemeralVmRpcReadService } from './ephemeral-vm'
 import {
   WorktreeCreate,
   WorktreeActivate,
@@ -79,6 +81,19 @@ export const WORKTREE_METHODS: RpcMethod[] = [
       // the same clientMutationId; dedupe so the host returns the in-flight/created
       // worktree instead of spawning a duplicate. No key (desktop/CLI) runs plainly.
       context.runtime.dedupeWorktreeCreate(params.repo, params.clientMutationId, async () => {
+        const ephemeralVmService = getEphemeralVmRpcReadService()
+        if (
+          context.clientKind === 'mobile' &&
+          context.multiplayerMemberKey &&
+          context.pairedDeviceId &&
+          ephemeralVmService
+        ) {
+          return await createMobileMemberWorktree({
+            params,
+            actor: resolveRpcWorkspaceCreatorProvenance(context),
+            service: ephemeralVmService
+          })
+        }
         const { runtime } = context
         const repo = await runtime.showRepo(params.repo)
         const automationProvenance = resolveAutomationWorkspaceProvenance({

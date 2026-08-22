@@ -60,12 +60,14 @@ function Harness({
   repoId,
   initialRecipeId,
   enabled = true,
-  repoExecutionHostId = 'local'
+  repoExecutionHostId = 'local',
+  controllerExecutionHostId = null
 }: {
   repoId: string
   initialRecipeId?: string
   enabled?: boolean
   repoExecutionHostId?: 'local' | `runtime:${string}`
+  controllerExecutionHostId?: `runtime:${string}` | null
 }): React.JSX.Element {
   const state = useEphemeralVmRecipeOptions({
     enabled,
@@ -73,6 +75,7 @@ function Harness({
     repoIsGit: true,
     repoConnectionId: null,
     repoExecutionHostId,
+    controllerExecutionHostId,
     projectGroupTarget: false,
     initialRecipeId
   })
@@ -166,5 +169,21 @@ describe('useEphemeralVmRecipeOptions', () => {
 
     expect(listRecipes).not.toHaveBeenCalled()
     expect(container.querySelector('[data-testid="error"]')?.textContent).toBe('none')
+  })
+
+  it('loads recipes for the web controller runtime', async () => {
+    const listRecipes = vi.fn().mockResolvedValue(result(['boxd-fork']))
+    installApi(listRecipes)
+
+    const { container } = await render(
+      <Harness
+        repoId="repo-controller"
+        repoExecutionHostId="runtime:controller"
+        controllerExecutionHostId="runtime:controller"
+      />
+    )
+
+    await vi.waitFor(() => expect(listRecipes).toHaveBeenCalledWith({ repoId: 'repo-controller' }))
+    expect(container.querySelector('[data-testid="recipes"]')?.textContent).toBe('boxd-fork')
   })
 })

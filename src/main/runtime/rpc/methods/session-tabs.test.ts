@@ -733,6 +733,7 @@ describe('session tab RPC methods', () => {
         tabs: []
       }),
       onMobileSessionTabsChanged: vi.fn(() => vi.fn()),
+      registerActiveWorktreePresence: vi.fn(() => vi.fn()),
       registerSubscriptionCleanup: vi.fn()
     } as unknown as OrcaRuntimeService
     const dispatcher = new RpcDispatcher({ runtime, methods: SESSION_TAB_METHODS })
@@ -740,13 +741,18 @@ describe('session tab RPC methods', () => {
     await dispatcher.dispatchStreaming(
       makeRequest('session.tabs.subscribe', { worktree: 'id:wt-1' }),
       vi.fn(),
-      { connectionId: 'conn-1' }
+      { connectionId: 'conn-1', pairedDeviceId: 'device-a' }
     )
 
     expect(runtime.registerSubscriptionCleanup).toHaveBeenCalledWith(
       'session.tabs:conn-1:wt-1:req-1',
       expect.any(Function),
       'conn-1'
+    )
+    expect(runtime.registerActiveWorktreePresence).toHaveBeenCalledWith(
+      'session.tabs:conn-1:wt-1:req-1',
+      'device-a',
+      'wt-1'
     )
     expect(runtime.registerSubscriptionCleanup).not.toHaveBeenCalledWith(
       'session.tabs:conn-1:id:wt-1',
@@ -768,6 +774,7 @@ describe('session tab RPC methods', () => {
         tabs: []
       }),
       onMobileSessionTabsChanged: vi.fn(() => vi.fn()),
+      registerActiveWorktreePresence: vi.fn(() => vi.fn()),
       registerSubscriptionCleanup: vi.fn()
     } as unknown as OrcaRuntimeService
     const dispatcher = new RpcDispatcher({ runtime, methods: SESSION_TAB_METHODS })

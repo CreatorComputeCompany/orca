@@ -5,6 +5,10 @@ import { translate } from '@/i18n/i18n'
 
 export type StoredWebRuntimeEnvironment = Omit<PublicKnownRuntimeEnvironment, 'endpoints'> & {
   compatibleEnvironmentIds?: string[]
+  multiplayerMemberKey?: string
+  multiplayerDisplayName?: string
+  multiplayerAuthEmail?: string
+  multiplayerOriginalEnvironmentId?: string
   endpoints: {
     id: string
     kind: 'websocket'
@@ -16,6 +20,7 @@ export type StoredWebRuntimeEnvironment = Omit<PublicKnownRuntimeEnvironment, 'e
 }
 
 const ENVIRONMENT_STORAGE_KEY = 'orca.web.runtimeEnvironment.v1'
+const ADDITIONAL_ENVIRONMENTS_STORAGE_KEY = 'orca.web.runtimeEnvironments.additional.v1'
 
 export function readStoredWebRuntimeEnvironment(): StoredWebRuntimeEnvironment | null {
   const raw = window.localStorage.getItem(ENVIRONMENT_STORAGE_KEY)
@@ -46,11 +51,12 @@ export function readStoredWebRuntimeEnvironment(): StoredWebRuntimeEnvironment |
       pairedDeviceId: _unvalidatedDeviceId,
       ...environment
     } = parsed
-    return {
+    const normalized = {
       ...environment,
       ...(pairedDeviceId ? { pairedDeviceId } : {}),
       ...(compatibleEnvironmentIds.length > 0 ? { compatibleEnvironmentIds } : {})
     }
+    return repairMultiplayerEnvironment(normalized)
   } catch {
     return null
   }
@@ -62,6 +68,38 @@ export function saveStoredWebRuntimeEnvironment(environment: StoredWebRuntimeEnv
 
 export function clearStoredWebRuntimeEnvironment(): void {
   window.localStorage.removeItem(ENVIRONMENT_STORAGE_KEY)
+}
+
+export function readAdditionalWebRuntimeEnvironments(): StoredWebRuntimeEnvironment[] {
+  try {
+    const parsed = JSON.parse(
+      window.localStorage.getItem(ADDITIONAL_ENVIRONMENTS_STORAGE_KEY) ?? '[]'
+    ) as unknown
+    return Array.isArray(parsed)
+      ? parsed.filter(isStoredWebRuntimeEnvironment).map(normalizeStoredWebRuntimeEnvironment)
+      : []
+  } catch {
+    return []
+  }
+}
+
+export function saveAdditionalWebRuntimeEnvironment(
+  environment: StoredWebRuntimeEnvironment
+): void {
+  const environments = readAdditionalWebRuntimeEnvironments().filter(
+    (entry) => entry.id !== environment.id
+  )
+  window.localStorage.setItem(
+    ADDITIONAL_ENVIRONMENTS_STORAGE_KEY,
+    JSON.stringify([...environments, environment])
+  )
+}
+
+export function removeAdditionalWebRuntimeEnvironment(environmentId: string): void {
+  const environments = readAdditionalWebRuntimeEnvironments().filter(
+    (entry) => entry.id !== environmentId
+  )
+  window.localStorage.setItem(ADDITIONAL_ENVIRONMENTS_STORAGE_KEY, JSON.stringify(environments))
 }
 
 export function createStoredWebRuntimeEnvironment(args: {
@@ -97,6 +135,91 @@ export function createStoredWebRuntimeEnvironment(args: {
   }
 }
 
+export function withWebMultiplayerIdentity(
+  environment: StoredWebRuntimeEnvironment,
+  identity: {
+    memberKey: string
+    displayName: string
+    originalEnvironmentId: string
+    email?: string
+  }
+): StoredWebRuntimeEnvironment {
+  return {
+    ...environment,
+    multiplayerMemberKey: identity.memberKey,
+    multiplayerDisplayName: identity.displayName,
+    ...(identity.email ? { multiplayerAuthEmail: identity.email } : {}),
+    multiplayerOriginalEnvironmentId: identity.originalEnvironmentId,
+    updatedAt: Date.now()
+  }
+}
+
+function repairMultiplayerEnvironment(
+  environment: StoredWebRuntimeEnvironment
+): StoredWebRuntimeEnvironment {
+  const inferredOriginalId = environment.compatibleEnvironmentIds?.at(-1)
+  const originalId = environment.multiplayerOriginalEnvironmentId ?? inferredOriginalId
+  if (!environment.multiplayerMemberKey) {
+    return environment
+  }
+
+  const repairedId = originalId ?? environment.id
+  const preferredEndpointId = `ws-${repairedId}`
+  const sameOriginEndpoint = getBoxdSameOriginEndpoint()
+  const repaired = {
+    ...environment,
+    id: repairedId,
+    ...(originalId ? { multiplayerOriginalEnvironmentId: originalId } : {}),
+    preferredEndpointId,
+    compatibleEnvironmentIds: environment.compatibleEnvironmentIds?.filter(
+      (environmentId) => environmentId !== repairedId
+    ),
+    endpoints: environment.endpoints.map((endpoint, index) => ({
+      ...endpoint,
+      id: index === 0 ? preferredEndpointId : endpoint.id,
+      // Existing spike enrollments saved the runtime's private advertised endpoint. The web app
+      // and runtime are co-hosted behind Boxd, so the page origin is the known-reachable route.
+      ...(index === 0 && sameOriginEndpoint ? { endpoint: sameOriginEndpoint } : {})
+    }))
+  }
+  if (JSON.stringify(repaired) !== JSON.stringify(environment)) {
+    window.localStorage.setItem(ENVIRONMENT_STORAGE_KEY, JSON.stringify(repaired))
+  }
+  return repaired
+}
+
+function getBoxdSameOriginEndpoint(): string | null {
+  if (!window.location.hostname.endsWith('.boxd.sh')) {
+    return null
+  }
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${protocol}//${window.location.host}`
+}
+
+function isStoredWebRuntimeEnvironment(value: unknown): value is StoredWebRuntimeEnvironment {
+  if (!value || typeof value !== 'object') {
+    return false
+  }
+  const candidate = value as Partial<StoredWebRuntimeEnvironment>
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.name === 'string' &&
+    Array.isArray(candidate.endpoints) &&
+    candidate.endpoints.length > 0
+  )
+}
+
+function normalizeStoredWebRuntimeEnvironment(
+  environment: StoredWebRuntimeEnvironment
+): StoredWebRuntimeEnvironment {
+  return {
+    ...environment,
+    compatibleEnvironmentIds: environment.compatibleEnvironmentIds?.filter(
+      (environmentId): environmentId is string => typeof environmentId === 'string'
+    )
+  }
+}
+
 function getCompatibleEnvironmentIds(
   previous: StoredWebRuntimeEnvironment | null | undefined,
   offer: WebPairingOffer
@@ -110,9 +233,16 @@ function getCompatibleEnvironmentIds(
 export function redactStoredWebRuntimeEnvironment(
   environment: StoredWebRuntimeEnvironment
 ): PublicKnownRuntimeEnvironment {
-  const { compatibleEnvironmentIds: _compatibleEnvironmentIds, ...publicEnvironment } = environment
+  const {
+    compatibleEnvironmentIds: _compatibleEnvironmentIds,
+    multiplayerAuthEmail: _multiplayerAuthEmail,
+    ...publicEnvironment
+  } = environment
   return {
     ...publicEnvironment,
+    ...(environment.multiplayerMemberKey
+      ? { workspaceViewerMemberKey: environment.multiplayerMemberKey }
+      : {}),
     endpoints: environment.endpoints.map(
       ({ deviceToken: _token, publicKeyB64: _key, ...rest }) => ({
         ...rest

@@ -1,4 +1,4 @@
-import { PINNED_GROUP_KEY } from '../worktree-list-groups'
+import { MULTIPLAYER_GROUP_KEY, PINNED_GROUP_KEY } from '../worktree-list-groups'
 import type { HostSectionRow } from '../host-section-rows'
 
 export type WorktreeItemRow = Extract<HostSectionRow, { type: 'item' }>
@@ -10,4 +10,8 @@ export function isWorktreeItemRow(row: HostSectionRow): row is WorktreeItemRow {
 
 export function isPinnedWorktreeRow(row: WorktreeItemRow): boolean {
   return row.sectionKey === PINNED_GROUP_KEY
+}
+
+export function isMultiplayerWorktreeRow(row: WorktreeItemRow): boolean {
+  return row.sectionKey === MULTIPLAYER_GROUP_KEY
 }
