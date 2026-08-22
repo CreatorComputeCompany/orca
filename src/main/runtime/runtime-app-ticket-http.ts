@@ -9,6 +9,12 @@ export type RuntimeAppTicket = {
   pairingUrl: string
   expiresAt: string
   worktreeId?: string
+  email?: string
+  member?: {
+    key: string
+    displayName: string
+    deviceIds: string[]
+  }
 }
 
 export function createRuntimeAppTicketHttpHandler(

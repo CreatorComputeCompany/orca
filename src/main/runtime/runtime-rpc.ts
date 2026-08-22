@@ -57,7 +57,7 @@ import { encodeMobilePairingQr } from './mobile-pairing-qr'
 import { MobileRuntimeFederationGateway } from './mobile-runtime-federation-gateway'
 import { MultiplayerAccountStore } from './multiplayer-account-store'
 import { createMultiplayerAuthHttpHandler } from './multiplayer-auth-http'
-import { createRuntimeAppTicketHttpHandler } from './runtime-app-ticket-http'
+import { createRuntimeAppTicketHttpHandler, type RuntimeAppTicket } from './runtime-app-ticket-http'
 import { MultiplayerOidcController, type MultiplayerOidcIdentity } from './multiplayer-oidc'
 import { migrateEphemeralVmRuntimeMemberOwnership } from '../ephemeral-vm-runtime-member-ownership'
 import type { RuntimeWorktreePsResult } from '../../shared/runtime-types'
@@ -662,11 +662,7 @@ export class OrcaRuntimeRpcServer {
     issuer?: string
     channelId?: string
     expiresAt: number
-  }): Promise<{
-    pairingUrl: string
-    expiresAt: string
-    worktreeId?: string
-  }> {
+  }): Promise<RuntimeAppTicket> {
     const rawEndpoint = this.getWebSocketEndpoint()
     const registry = this.deviceRegistry
     const publicKeyB64 = this.getE2EEPublicKey()
@@ -679,6 +675,7 @@ export class OrcaRuntimeRpcServer {
     }
     let restrictedWorktreeId: string | undefined
     let multiplayerMemberKey: string | undefined
+    let multiplayerMember: MultiplayerMember | undefined
     if (args.email && args.issuer && args.channelId) {
       const memberKey = buzzMemberKey(args.subject)
       const member =
@@ -725,6 +722,7 @@ export class OrcaRuntimeRpcServer {
       }
       restrictedWorktreeId = worktree.id
       multiplayerMemberKey = member.key
+      multiplayerMember = member
     }
     const device = registry.addTransientRuntimeDevice(
       `${args.name} (${args.subject})`,
@@ -744,7 +742,17 @@ export class OrcaRuntimeRpcServer {
         scope: 'runtime'
       }),
       expiresAt: new Date(args.expiresAt).toISOString(),
-      ...(restrictedWorktreeId ? { worktreeId: restrictedWorktreeId } : {})
+      ...(restrictedWorktreeId ? { worktreeId: restrictedWorktreeId } : {}),
+      ...(args.email && multiplayerMember
+        ? {
+            email: args.email,
+            member: {
+              key: multiplayerMember.key,
+              displayName: multiplayerMember.displayName,
+              deviceIds: multiplayerMember.deviceIds
+            }
+          }
+        : {})
     }
   }
 
