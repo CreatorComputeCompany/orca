@@ -27,6 +27,8 @@ export type WorktreeMeta = {
   ephemeralVmCheckoutMode?: EphemeralVmCheckoutMode
   /** See Worktree.creatorProvenance. */
   creatorProvenance?: WorkspaceCreatorProvenance
+  /** Stable multiplayer member allowed to open this workspace remotely. */
+  ownerMemberKey?: string
   displayName: string
   comment: string
   linkedIssue: number | null

@@ -3,6 +3,7 @@ import { CheckIcon, ChevronRightIcon, CircleIcon } from 'lucide-react'
 import { DropdownMenu as DropdownMenuPrimitive } from 'radix-ui'
 
 import { cn } from '@/lib/utils'
+import { defaultOrcaPortalContainer } from '@/web/web-embed-portal'
 
 function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrimitive.Root>) {
   return <DropdownMenuPrimitive.Root data-slot="dropdown-menu" {...props} />
@@ -11,7 +12,13 @@ function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrim
 function DropdownMenuPortal({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Portal>) {
-  return <DropdownMenuPrimitive.Portal data-slot="dropdown-menu-portal" {...props} />
+  return (
+    <DropdownMenuPrimitive.Portal
+      container={defaultOrcaPortalContainer()}
+      data-slot="dropdown-menu-portal"
+      {...props}
+    />
+  )
 }
 
 function DropdownMenuTrigger({
@@ -27,7 +34,7 @@ function DropdownMenuContent({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Content>) {
   return (
-    <DropdownMenuPrimitive.Portal>
+    <DropdownMenuPrimitive.Portal container={defaultOrcaPortalContainer()}>
       <DropdownMenuPrimitive.Content
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}

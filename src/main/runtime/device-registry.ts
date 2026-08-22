@@ -1,3 +1,4 @@
+/* eslint-disable max-lines -- Why: persisted and transient device credential lifecycles share one registry boundary. */
 // Why: per-device tokens replace the shared runtime auth token for WebSocket
 // (mobile) connections. Each paired device gets its own revocable token so
 // compromising one device doesn't expose others. The registry is a simple
@@ -11,6 +12,7 @@ import { DEVICE_REGISTRY_FILENAME } from './mobile-pairing-files'
 import type { RelayDeviceBinding } from './relay/relay-revoke-outbox'
 import type { MobilePairingConnectionMode } from '../../shared/mobile-pairing-connection-mode'
 import type { RuntimePairingReach } from '../../shared/runtime-pairing-reach'
+import { TransientRuntimeDeviceRegistry } from './transient-runtime-device-registry'
 
 export type { DeviceScope }
 
@@ -28,6 +30,10 @@ export type DeviceEntry = {
   pairingReach?: RuntimePairingReach
   pairingManagement?: boolean
   managedRuntimeGrantKey?: string
+  /** Server-minted browser grant restricted to worktrees owned by its member. */
+  memberWorkspaceOnly?: boolean
+  /** Member identity carried by a transient browser grant after it is consumed. */
+  multiplayerMemberKey?: string
 }
 
 function validRelayBinding(value: unknown, deviceId: string): RelayDeviceBinding | undefined {
@@ -56,6 +62,7 @@ const LAST_SEEN_FLUSH_DELAY_MS = 250
 export class DeviceRegistry {
   private readonly registryPath: string
   private devices: DeviceEntry[] = []
+  private transientDevices = new TransientRuntimeDeviceRegistry()
   private pendingLastSeenFlush: NodeJS.Timeout | null = null
 
   constructor(userDataPath: string) {
@@ -69,6 +76,19 @@ export class DeviceRegistry {
     pairingReach: RuntimePairingReach = 'network'
   ): DeviceEntry {
     return this.createAndPersistDevice(this.devices, name, scope, pairingReach)
+  }
+
+  // Why: browser app tickets stay in memory and are consumed by the first E2EE socket.
+  addTransientRuntimeDevice(
+    name: string,
+    expiresAt: number,
+    metadata: Pick<DeviceEntry, 'memberWorkspaceOnly' | 'multiplayerMemberKey'> = {}
+  ): DeviceEntry {
+    return this.transientDevices.add(name, expiresAt, metadata)
+  }
+
+  consumeTransientDevice(deviceId: string): boolean {
+    return this.transientDevices.consume(deviceId)
   }
 
   replaceRuntimeDevicesWithPairingManager(
@@ -255,7 +275,7 @@ export class DeviceRegistry {
   }
 
   validateToken(token: string): DeviceEntry | null {
-    return this.devices.find((d) => d.token === token) ?? null
+    return this.devices.find((d) => d.token === token) ?? this.transientDevices.validate(token)
   }
 
   updateLastSeen(deviceId: string): void {

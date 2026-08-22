@@ -6,7 +6,7 @@ type WorktreeCreateParams = z.infer<typeof WorktreeCreate>
 type ManagedWorktreeCreateArgs = Parameters<OrcaRuntimeService['createManagedWorktree']>[0]
 type CreateProvenance = Pick<
   ManagedWorktreeCreateArgs,
-  'automationProvenance' | 'cliProvenance' | 'creatorProvenance'
+  'automationProvenance' | 'cliProvenance' | 'creatorProvenance' | 'ownerMemberKey'
 >
 
 /** Wire params → runtime create args. Kept out of the method table so the mapping can grow with
@@ -58,6 +58,9 @@ export function buildManagedWorktreeCreateArgs(
         }
       : undefined,
     ...(params.startupAgent ? { startupAgent: params.startupAgent } : {}),
+    ...(params.startupLaunchPreferences
+      ? { startupLaunchPreferences: params.startupLaunchPreferences }
+      : {}),
     ...(params.startupPrompt !== undefined ? { startupPrompt: params.startupPrompt } : {}),
     startupDraft: params.startupDraft,
     lineage: {

@@ -26,4 +26,28 @@ describe('buildManagedWorktreeCreateArgs', () => {
       nameWasGenerated: true
     })
   })
+
+  it('forwards startup launch preferences to the runtime', () => {
+    expect(
+      build({
+        repo: 'id:repo-1',
+        name: 'nautilus',
+        startupAgent: 'codex',
+        startupLaunchPreferences: { model: 'gpt-5.2-codex', effort: 'high' }
+      })
+    ).toMatchObject({
+      startupAgent: 'codex',
+      startupLaunchPreferences: { model: 'gpt-5.2-codex', effort: 'high' }
+    })
+  })
+
+  it('rejects startup launch preferences without an agent', () => {
+    expect(() =>
+      WorktreeCreate.parse({
+        repo: 'id:repo-1',
+        name: 'nautilus',
+        startupLaunchPreferences: { model: 'gpt-5.2-codex' }
+      })
+    ).toThrow('startupLaunchPreferences requires startupAgent')
+  })
 })

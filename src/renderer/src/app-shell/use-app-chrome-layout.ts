@@ -12,6 +12,8 @@ import {
   hasRequestedBackgroundTerminalWorktreeMount,
   subscribeBackgroundTerminalWorktreeMountRequests
 } from '../components/terminal/background-terminal-worktree-mount'
+import { readOrcaWebEmbedBootstrap } from '../web/web-embed-bootstrap'
+import { resolveWebEmbedChromeLayout } from './web-embed-chrome-layout'
 
 export type AppChromeLayout = ReturnType<typeof useAppChromeLayout>
 
@@ -20,9 +22,10 @@ export type AppChromeLayout = ReturnType<typeof useAppChromeLayout>
  * workspace owns the tab strip, and which surfaces stay mounted — from store state.
  */
 export function useAppChromeLayout() {
+  const focusedWebEmbed = readOrcaWebEmbedBootstrap(window) !== null
   const activeView = useAppStore((s) => s.activeView)
-  const sidebarOpen = useAppStore((s) => s.sidebarOpen)
-  const rightSidebarOpen = useAppStore((s) => s.rightSidebarOpen)
+  const storedSidebarOpen = useAppStore((s) => s.sidebarOpen)
+  const storedRightSidebarOpen = useAppStore((s) => s.rightSidebarOpen)
   const rightSidebarTab = useAppStore((s) => s.rightSidebarTab)
   const rightSidebarExplorerView = useAppStore((s) => s.rightSidebarExplorerView)
   const isFullScreen = useAppStore((s) => s.isFullScreen)
@@ -72,15 +75,23 @@ export function useAppChromeLayout() {
   const workspaceChromeActive =
     activeView === 'terminal' && activeWorktreeId !== null && !creationLayoutActive
   const hasTabBar = tabCount >= 2
-  // Activity/Space are full-page navigation surfaces (like Settings), so the worktree sidebar is hidden there.
-  const showSidebar =
+  const defaultShowSidebar =
     activeView !== 'settings' && activeView !== 'activity' && activeView !== 'space'
+  const chrome = resolveWebEmbedChromeLayout({
+    focusedWebEmbed,
+    storedSidebarOpen,
+    storedRightSidebarOpen,
+    defaultShowSidebar,
+    workspaceChromeActive,
+    defaultShowRightSidebarControls: !creationLayoutActive && canShowRightSidebarForView(activeView)
+  })
+  const { sidebarOpen, rightSidebarOpen, showSidebar } = chrome
   // Tasks/Landing show the full titlebar only when the sidebar is collapsed; open, they mirror workspace view (creation suppresses it).
   const stackedSidebarOpen =
     !workspaceChromeActive && !creationLayoutActive && showSidebar && sidebarOpen
   // Visible creation keeps only the top-left window chrome; tabs and right-sidebar chrome stay gated by workspaceChromeActive.
   const leftTitlebarChromeLayout = resolveLeftTitlebarChromeLayout({
-    workspaceChromeActive,
+    workspaceChromeActive: chrome.workspaceChromeForTitlebar,
     stackedSidebarOpen,
     creationLayoutActive,
     sidebarOpen
@@ -133,8 +144,7 @@ export function useAppChromeLayout() {
     rightSidebarTab,
     shouldMountTerminalWorkbench,
     showSidebar,
-    // Full-page navigation surfaces own the whole content area, so suppress right-sidebar controls.
-    showRightSidebarControls: !creationLayoutActive && canShowRightSidebarForView(activeView),
+    showRightSidebarControls: chrome.showRightSidebarControls,
     showTitlebarAppName: settings?.showTitlebarAppName !== false,
     showTitlebarExpandButton: workspaceChromeActive && !hasTabBar && effectiveActiveTabExpanded,
     sidebarOpen,

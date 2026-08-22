@@ -18170,6 +18170,7 @@ export class OrcaRuntimeService {
         lastActivityAt: worktree.lastActivityAt,
         ...(worktree.createdAt !== undefined ? { createdAt: worktree.createdAt } : {}),
         ...(worktree.creatorProvenance ? { creatorProvenance: worktree.creatorProvenance } : {}),
+        ...(worktree.ownerMemberKey ? { ownerMemberKey: worktree.ownerMemberKey } : {}),
         linkedIssue: worktree.linkedIssue,
         linkedPR,
         linkedLinearIssue: meta?.linkedLinearIssue ?? null,
@@ -18219,6 +18220,7 @@ export class OrcaRuntimeService {
         lastActivityAt: worktree.lastActivityAt,
         ...(worktree.createdAt !== undefined ? { createdAt: worktree.createdAt } : {}),
         ...(worktree.creatorProvenance ? { creatorProvenance: worktree.creatorProvenance } : {}),
+        ...(worktree.ownerMemberKey ? { ownerMemberKey: worktree.ownerMemberKey } : {}),
         linkedIssue: worktree.linkedIssue ?? null,
         linkedPR: null,
         linkedLinearIssue: worktree.linkedLinearIssue ?? null,
@@ -21432,6 +21434,17 @@ export class OrcaRuntimeService {
     }
   }
 
+  async claimLegacyManagedWorktreeOwner(worktreeSelector: string, ownerMemberKey: string) {
+    const worktree = await this.showManagedWorktree(worktreeSelector)
+    if (worktree.ownerMemberKey && worktree.ownerMemberKey !== ownerMemberKey) {
+      throw new Error('workspace_access_denied')
+    }
+    if (!worktree.ownerMemberKey) {
+      this.requireStore().setWorktreeMeta(worktree.id, { ownerMemberKey })
+    }
+    return { ...worktree, ownerMemberKey }
+  }
+
   /** Keyed by repo id on the wire even though one repo is requested: the caller asked by selector
    *  and needs to know which repo answered.
    *
@@ -22364,6 +22377,7 @@ export class OrcaRuntimeService {
     automationProvenance?: AutomationWorkspaceProvenance
     cliProvenance?: CliWorkspaceProvenance
     creatorProvenance?: Worktree['creatorProvenance']
+    ownerMemberKey?: string
     startup?: WorktreeStartupLaunch
     startupDraft?: string
     startupDraftPaste?: WorktreeStartupDraftPaste
@@ -22431,6 +22445,7 @@ export class OrcaRuntimeService {
         ...(args.automationProvenance ? { automationProvenance: args.automationProvenance } : {}),
         ...(args.cliProvenance ? { cliProvenance: args.cliProvenance } : {}),
         creatorProvenance: args.creatorProvenance ?? { kind: 'host' },
+        ...(args.ownerMemberKey ? { ownerMemberKey: args.ownerMemberKey } : {}),
         ...(args.linkedIssue !== undefined ? { linkedIssue: args.linkedIssue } : {}),
         ...(args.linkedPR !== undefined ? { linkedPR: args.linkedPR } : {}),
         ...(args.linkedLinearIssue !== undefined
@@ -23095,6 +23110,7 @@ export class OrcaRuntimeService {
       ...(args.automationProvenance ? { automationProvenance: args.automationProvenance } : {}),
       ...(args.cliProvenance ? { cliProvenance: args.cliProvenance } : {}),
       creatorProvenance: args.creatorProvenance ?? { kind: 'host' },
+      ...(args.ownerMemberKey ? { ownerMemberKey: args.ownerMemberKey } : {}),
       ...(args.comment !== undefined ? { comment: args.comment } : {}),
       ...(args.manualOrder !== undefined ? { manualOrder: args.manualOrder } : {}),
       ...(args.workspaceStatus !== undefined ? { workspaceStatus: args.workspaceStatus } : {})

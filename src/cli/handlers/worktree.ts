@@ -104,8 +104,9 @@ function getPresentStringFlag(
 function getOptionalStartupAgent(flags: Map<string, string | boolean>): string | undefined {
   const agent = getPresentStringFlag(flags, 'agent')
   if (agent === undefined) {
-    if (flags.has('prompt')) {
-      throw new RuntimeClientError('invalid_argument', '--prompt requires --agent')
+    const dependentFlag = ['prompt', 'model', 'effort'].find((name) => flags.has(name))
+    if (dependentFlag) {
+      throw new RuntimeClientError('invalid_argument', `--${dependentFlag} requires --agent`)
     }
     return undefined
   }
@@ -207,6 +208,8 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
     const explicitParentWorktree = explicitParent.parentWorktree
     const explicitParentWorkspace = explicitParent.parentWorkspace
     const startupAgent = getOptionalStartupAgent(flags)
+    const startupModel = getOptionalStringFlag(flags, 'model')
+    const startupEffort = getOptionalStringFlag(flags, 'effort')
     const setupDecision = getOptionalSetupDecision(flags)
     const noParent = flags.get('no-parent') === true
     const envParentWorkspace =
@@ -229,6 +232,7 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
       }
     }
     const linearIssueLink = getOptionalLinearIssueLinkFlag(flags, 'linear-issue')
+    const ownerMemberKey = getOptionalStringFlag(flags, 'owner-member-key')
     const result = await client.call<RuntimeWorktreeCreateResult>('worktree.create', {
       repo: await getCreateRepoSelector(flags, cwdParentWorktree, client),
       name: getRequiredStringFlag(flags, 'name'),
@@ -236,6 +240,7 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
       linkedIssue: getOptionalNumberFlag(flags, 'issue'),
       ...linearIssueLink,
       comment: getOptionalStringFlag(flags, 'comment'),
+      ...(ownerMemberKey ? { ownerMemberKey } : {}),
       runHooks: flags.get('run-hooks') === true,
       activate: flags.get('activate') === true || flags.get('run-hooks') === true,
       ...(setupDecision ? { setupDecision } : {}),
@@ -251,7 +256,15 @@ export const WORKTREE_HANDLERS: Record<string, CommandHandler> = {
       ...(startupAgent
         ? {
             startupAgent,
-            startupPrompt: getPresentStringFlag(flags, 'prompt', { allowEmpty: true }) ?? ''
+            startupPrompt: getPresentStringFlag(flags, 'prompt', { allowEmpty: true }) ?? '',
+            ...(startupModel || startupEffort
+              ? {
+                  startupLaunchPreferences: {
+                    ...(startupModel ? { model: startupModel } : {}),
+                    ...(startupEffort ? { effort: startupEffort } : {})
+                  }
+                }
+              : {})
           }
         : {})
     })

@@ -3,6 +3,7 @@ import { ChevronRightIcon, CircleIcon } from 'lucide-react'
 import { ContextMenu as ContextMenuPrimitive } from 'radix-ui'
 
 import { cn } from '@/lib/utils'
+import { defaultOrcaPortalContainer } from '@/web/web-embed-portal'
 
 function ContextMenu({ ...props }: React.ComponentProps<typeof ContextMenuPrimitive.Root>) {
   return <ContextMenuPrimitive.Root data-slot="context-menu" modal={false} {...props} />
@@ -54,7 +55,7 @@ function ContextMenuSubContent({
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.SubContent>) {
   return (
-    <ContextMenuPrimitive.Portal>
+    <ContextMenuPrimitive.Portal container={defaultOrcaPortalContainer()}>
       <ContextMenuPrimitive.SubContent
         data-slot="context-menu-sub-content"
         className={cn(
@@ -76,7 +77,7 @@ function ContextMenuContent({
   ...props
 }: React.ComponentProps<typeof ContextMenuPrimitive.Content>) {
   return (
-    <ContextMenuPrimitive.Portal>
+    <ContextMenuPrimitive.Portal container={defaultOrcaPortalContainer()}>
       <ContextMenuPrimitive.Content
         data-slot="context-menu-content"
         className={cn(

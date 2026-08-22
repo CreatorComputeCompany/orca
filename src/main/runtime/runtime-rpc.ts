@@ -57,8 +57,10 @@ import { encodeMobilePairingQr } from './mobile-pairing-qr'
 import { MobileRuntimeFederationGateway } from './mobile-runtime-federation-gateway'
 import { MultiplayerAccountStore } from './multiplayer-account-store'
 import { createMultiplayerAuthHttpHandler } from './multiplayer-auth-http'
+import { createRuntimeAppTicketHttpHandler, type RuntimeAppTicket } from './runtime-app-ticket-http'
 import { MultiplayerOidcController, type MultiplayerOidcIdentity } from './multiplayer-oidc'
 import { migrateEphemeralVmRuntimeMemberOwnership } from '../ephemeral-vm-runtime-member-ownership'
+import { selectBuzzWorktree } from './buzz-worktree-selection'
 import type { RuntimeWorktreePsResult } from '../../shared/runtime-types'
 import type {
   MultiplayerAuthRegisterParams,
@@ -80,6 +82,13 @@ import {
 
 const DEFAULT_WS_PORT = 6768
 const GSD_LAUNCH_REQUEST_TIMEOUT_MS = 15_000
+
+function buzzMemberKey(subject: string): string {
+  if (!/^[0-9a-f]{64}$/i.test(subject)) {
+    throw new Error('Invalid Buzz identity.')
+  }
+  return `buzz-${subject.toLowerCase().slice(0, 48)}`
+}
 
 // Why: STA-2370 — the WS listener defaults to loopback so a desktop with no paired device is not
 // reachable from the LAN; it widens to all interfaces only on explicit pairing (or `orca serve`).
@@ -519,6 +528,7 @@ export class OrcaRuntimeRpcServer {
   private readonly multiplayerAccounts: MultiplayerAccountStore
   private readonly multiplayerOidc: MultiplayerOidcController | null
   private readonly multiplayerAuthHttpHandler: ReturnType<typeof createMultiplayerAuthHttpHandler>
+  private readonly runtimeHttpRequestHandler: ReturnType<typeof createMultiplayerAuthHttpHandler>
   private multiplayerRegistrationQueue: Promise<void> = Promise.resolve()
   private readonly userDataPath: string
   private readonly pid: number
@@ -605,6 +615,11 @@ export class OrcaRuntimeRpcServer {
       (credentials) => this.issueMultiplayerLogin(credentials),
       this.multiplayerOidc
     )
+    const appTicketHandler = createRuntimeAppTicketHttpHandler((args) =>
+      this.issueRuntimeAppTicket(args)
+    )
+    this.runtimeHttpRequestHandler = (request, response) =>
+      appTicketHandler(request, response) || this.multiplayerAuthHttpHandler(request, response)
     this.userDataPath = userDataPath
     this.pid = pid
     this.platform = platform
@@ -639,6 +654,113 @@ export class OrcaRuntimeRpcServer {
 
   getMobileSocketWiring(): MobileSocketWiring | null {
     return this.mobileSocketWiring
+  }
+
+  private async issueRuntimeAppTicket(args: {
+    subject: string
+    name: string
+    email?: string
+    issuer?: string
+    channelId?: string
+    expiresAt: number
+  }): Promise<RuntimeAppTicket> {
+    const rawEndpoint = this.getWebSocketEndpoint()
+    const registry = this.deviceRegistry
+    const publicKeyB64 = this.getE2EEPublicKey()
+    if (!rawEndpoint || !registry || !publicKeyB64) {
+      throw new Error('Runtime app tickets are unavailable')
+    }
+    const advertised = resolveAdvertisedPairingEndpoint(rawEndpoint, this.preferredPairingAddress)
+    if (!advertised.ok) {
+      throw new Error(advertised.guidance)
+    }
+    let restrictedWorktreeId: string | undefined
+    let multiplayerMemberKey: string | undefined
+    let multiplayerMember: MultiplayerMember | undefined
+    if (args.email && args.issuer && args.channelId) {
+      const memberKey = buzzMemberKey(args.subject)
+      const member =
+        findMultiplayerMemberByExternalIdentity(this.userDataPath, {
+          issuer: args.issuer,
+          subject: args.subject
+        }) ??
+        createMultiplayerMemberForExternalIdentity({
+          userDataPath: this.userDataPath,
+          displayName: args.name,
+          issuer: args.issuer,
+          subject: args.subject,
+          email: args.email,
+          memberKey
+        })
+      const normalizedChannelId = args.channelId.replace(/[^a-zA-Z0-9]/g, '').toLowerCase()
+      // Buzz's established worktree names use the first 12 channel characters.
+      // Keep the trailing form too so tickets can resolve worktrees created by
+      // short-lived identity builds that used the opposite truncation.
+      const channelTokens = new Set([
+        normalizedChannelId.slice(0, 12),
+        normalizedChannelId.slice(-12)
+      ])
+      const listed = await this.runtime.listManagedWorktrees(undefined, 1000, true)
+      const matchesChannel = (candidate: (typeof listed.worktrees)[number]): boolean =>
+        [candidate.id, candidate.displayName, candidate.path, candidate.branch].some((value) =>
+          [...channelTokens].some(
+            (token) => token.length > 0 && value.toLowerCase().includes(token)
+          )
+        )
+      const selection = selectBuzzWorktree({
+        worktrees: listed.worktrees,
+        memberKey: member.key,
+        matchesChannel,
+        allowLegacyClaim: process.env.ORCA_BUZZ_LEGACY_CLAIM_ENABLED === '1'
+      })
+      let worktree = selection.kind === 'missing' ? undefined : selection.worktree
+      if (selection.kind === 'legacy') {
+        worktree = await this.runtime.claimLegacyManagedWorktreeOwner(
+          selection.worktree.id,
+          member.key
+        )
+      }
+      if (!worktree) {
+        throw new Error('No Orca worktree owned by this Buzz user exists for the chat.')
+      }
+      restrictedWorktreeId = worktree.id
+      multiplayerMemberKey = member.key
+      multiplayerMember = member
+    }
+    const device = registry.addTransientRuntimeDevice(
+      `${args.name} (${args.subject})`,
+      args.expiresAt,
+      {
+        ...(restrictedWorktreeId ? { memberWorkspaceOnly: true } : {}),
+        ...(multiplayerMemberKey ? { multiplayerMemberKey } : {})
+      }
+    )
+    // Why: the transient app ticket is consumed by the bootstrap connection.
+    // The browser must install a separate member-enrolled credential before
+    // starting Orca's real runtime client, or its second connection gets a 401.
+    const memberAuth =
+      args.email && multiplayerMember
+        ? this.issueMemberBrowserOffer(multiplayerMember, args.email)
+        : undefined
+    return {
+      pairingUrl: encodePairingOffer({
+        v: PAIRING_OFFER_VERSION,
+        endpoint: advertised.endpoint,
+        deviceToken: device.token,
+        publicKeyB64,
+        pairedDeviceId: device.deviceId,
+        scope: 'runtime'
+      }),
+      expiresAt: new Date(args.expiresAt).toISOString(),
+      ...(restrictedWorktreeId ? { worktreeId: restrictedWorktreeId } : {}),
+      ...(memberAuth
+        ? {
+            authPairingUrl: memberAuth.pairingUrl,
+            email: memberAuth.email,
+            member: memberAuth.member
+          }
+        : {})
+    }
   }
 
   revokeMobileRuntimeEnvironmentAccess(
@@ -1457,7 +1579,7 @@ export class OrcaRuntimeRpcServer {
       host: options.host,
       port: options.port,
       staticRoot: this.webClientRoot,
-      httpRequestHandler: this.multiplayerAuthHttpHandler,
+      httpRequestHandler: this.runtimeHttpRequestHandler,
       ...(options.fallbackPort !== undefined ? { fallbackPort: options.fallbackPort } : {}),
       ...(options.preferPinnedPort ? { preferPinnedPort: true } : {})
     })
@@ -1835,7 +1957,18 @@ export class OrcaRuntimeRpcServer {
       reply(JSON.stringify(this.buildError(request.id, 'unauthorized', 'Missing device token')))
       return
     }
-    const device = this.deviceRegistry?.validateToken(token)
+    const device = authenticatedSocket
+      ? {
+          deviceId: authenticatedSocket.device.deviceId,
+          token: authenticatedSocket.device.deviceToken,
+          scope: authenticatedSocket.device.scope,
+          pairingManagement: false,
+          ...(authenticatedSocket.device.memberWorkspaceOnly ? { memberWorkspaceOnly: true } : {}),
+          ...(authenticatedSocket.device.multiplayerMemberKey
+            ? { multiplayerMemberKey: authenticatedSocket.device.multiplayerMemberKey }
+            : {})
+        }
+      : this.deviceRegistry?.validateToken(token)
     if (!device) {
       reply(JSON.stringify(this.buildError(request.id, 'unauthorized', 'Invalid device token')))
       return
@@ -2103,8 +2236,15 @@ export class OrcaRuntimeRpcServer {
         connectionId,
         clientId: token,
         pairedDeviceId: device.deviceId,
-        multiplayerMemberKey: findMultiplayerMemberByDevice(this.userDataPath, device.deviceId)
-          ?.key,
+        multiplayerMemberKey:
+          ('multiplayerMemberKey' in device ? device.multiplayerMemberKey : undefined) ??
+          findMultiplayerMemberByDevice(this.userDataPath, device.deviceId)?.key,
+        workspaceOwnerMemberKey:
+          'memberWorkspaceOnly' in device && device.memberWorkspaceOnly
+            ? 'multiplayerMemberKey' in device
+              ? device.multiplayerMemberKey
+              : undefined
+            : undefined,
         // Why: gates the mobile-only payload diet so full-screen web/desktop clients aren't truncated.
         clientKind: device.scope,
         clientCapabilities: authenticatedSocket?.clientCapabilities,

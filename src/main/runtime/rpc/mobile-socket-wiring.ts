@@ -61,7 +61,9 @@ function toAuthenticatedDevice(device: DeviceEntry): E2EEAuthenticatedDevice {
   return {
     deviceId: device.deviceId,
     deviceToken: device.token,
-    scope: device.scope
+    scope: device.scope,
+    ...(device.memberWorkspaceOnly ? { memberWorkspaceOnly: true } : {}),
+    ...(device.multiplayerMemberKey ? { multiplayerMemberKey: device.multiplayerMemberKey } : {})
   }
 }
 
@@ -176,6 +178,10 @@ export class MobileSocketWiring {
           }
           this.authenticatedSockets.set(ws, socket)
           transport.setClientId(ws, device.deviceToken)
+          // Why: an app ticket is a one-shot bootstrap credential. The
+          // authenticated socket keeps its bound identity, while reconnects
+          // must obtain a new ticket from the app backend.
+          this.deviceRegistry.consumeTransientDevice(device.deviceId)
           // Why: deferred — the client's e2ee_authenticated must not wait on a secure-file rewrite.
           this.deviceRegistry.updateLastSeenDeferred(device.deviceId)
           this.onReady?.(socket)

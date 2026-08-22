@@ -86,7 +86,7 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
     path: ['worktree', 'create'],
     summary: 'Create a new Orca-managed worktree',
     usage:
-      'orca worktree create --name <name> [--repo <selector>|--project <id> [--host <host-id>]|--project-host-setup <id>] [--agent <id>] [--prompt <text>] [--setup run|skip|inherit] [--base-branch <ref>] [--issue <number>] [--linear-issue <identifier-or-url>] [--comment <text>] [--parent-worktree <selector>] [--no-parent] [--run-hooks] [--activate] [--json]',
+      'orca worktree create --name <name> [--repo <selector>|--project <id> [--host <host-id>]|--project-host-setup <id>] [--agent <id>] [--model <id>] [--effort <level>] [--prompt <text>] [--setup run|skip|inherit] [--base-branch <ref>] [--issue <number>] [--linear-issue <identifier-or-url>] [--comment <text>] [--parent-worktree <selector>] [--no-parent] [--run-hooks] [--activate] [--json]',
     allowedFlags: [
       ...GLOBAL_FLAGS,
       'repo',
@@ -95,11 +95,14 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
       'project-host-setup',
       'name',
       'agent',
+      'model',
+      'effort',
       'prompt',
       'base-branch',
       'issue',
       'linear-issue',
       'comment',
+      'owner-member-key',
       'setup',
       'parent-worktree',
       'no-parent',
@@ -116,6 +119,7 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
       '--no-parent only affects Orca lineage; omit --base-branch to use the repo default base, or pass the default base ref explicitly for independent top-level work.',
       'By default this creates the worktree and its first terminal without switching the active Orca view.',
       'Pass --agent to launch an agent in the first terminal; --prompt sends initial work to that agent.',
+      'Pass --model and optionally --effort with --agent to select launch-time agent settings.',
       'With --agent --json, read the new agent handle from result.agentTerminalHandle; older runtimes return only result.startupTerminal.handle, and may return neither for folder-based repos.',
       'Repo-defined setup hooks follow the repository setup policy; pass --setup run to force them.',
       'Pass --activate when the CLI caller intentionally wants to reveal the new worktree in the app.',
@@ -213,8 +217,11 @@ export const CORE_COMMAND_SPECS: CommandSpec[] = [
     path: ['terminal', 'send'],
     summary: 'Send input to a live terminal',
     usage:
-      'orca terminal send [--terminal <handle>] [--text <text>] [--enter] [--interrupt] [--json]',
-    allowedFlags: [...GLOBAL_FLAGS, 'terminal', 'text', 'enter', 'interrupt']
+      'orca terminal send [--terminal <handle>] [--text <text>] [--agent-prompt] [--enter] [--interrupt] [--json]',
+    allowedFlags: [...GLOBAL_FLAGS, 'terminal', 'text', 'agent-prompt', 'enter', 'interrupt'],
+    notes: [
+      'Use --agent-prompt to paste and submit one prompt atomically to a supported agent TUI.'
+    ]
   },
   {
     path: ['terminal', 'wait'],

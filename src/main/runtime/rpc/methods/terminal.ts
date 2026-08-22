@@ -921,6 +921,16 @@ const TerminalSend = TerminalHandle.extend({
   claimViewport: z.literal(true).optional()
 })
 
+const TerminalSendAgentPrompt = TerminalHandle.extend({
+  text: requiredString('Missing agent prompt'),
+  client: z
+    .object({
+      id: requiredString('Missing client ID'),
+      type: z.enum(['mobile', 'desktop']).default('desktop').optional()
+    })
+    .optional()
+})
+
 const TerminalViewport = z.object({
   cols: z.number().int().min(1).max(1000),
   rows: z.number().int().min(1).max(500)
@@ -1415,6 +1425,65 @@ export const TERMINAL_METHODS: RpcAnyMethod[] = [
       }
       // Why: deliberate mobile input takes the floor (drives `* → mobile{clientId}`); clientless sends fall back to the current mobile driver.
       return { send: result }
+    }
+  }),
+  defineMethod({
+    name: 'terminal.sendAgentPrompt',
+    params: TerminalSendAgentPrompt,
+    handler: async (params, { runtime }) => {
+      await assertTerminalSendTextWithinLimit(params.text)
+      const leaf = runtime.resolveLiveLeafForHandle(params.terminal)
+      if (leaf?.ptyId && isTerminalInputLockedForClient(runtime, leaf.ptyId, params.client)) {
+        return {
+          send: {
+            handle: params.terminal,
+            accepted: false,
+            bytesWritten: 0
+          }
+        }
+      }
+      const assertSendPreconditions = async (ptyId?: string): Promise<void> => {
+        await assertTerminalAgentSendable({
+          runtime,
+          handle: params.terminal,
+          assertWritable: () => {
+            assertTerminalSendExactPtyBinding(runtime, params.terminal, ptyId)
+            if (ptyId && isTerminalInputLockedForClient(runtime, ptyId, params.client)) {
+              throw new Error('terminal_guard_not_writable')
+            }
+          }
+        })
+      }
+      try {
+        await assertSendPreconditions(leaf?.ptyId ?? undefined)
+        return {
+          send: await runtime.sendTerminalAgentPrompt(params.terminal, params.text, {
+            beforeWrite: assertSendPreconditions
+          })
+        }
+      } catch (error) {
+        const refusedReason = getTerminalSendGuardRefusedReason(error)
+        if (refusedReason) {
+          return {
+            send: {
+              handle: params.terminal,
+              accepted: false,
+              bytesWritten: 0,
+              refusedReason
+            }
+          }
+        }
+        if (isTerminalSendGuardNotWritable(error)) {
+          return {
+            send: {
+              handle: params.terminal,
+              accepted: false,
+              bytesWritten: 0
+            }
+          }
+        }
+        throw error
+      }
     }
   }),
   defineMethod({
