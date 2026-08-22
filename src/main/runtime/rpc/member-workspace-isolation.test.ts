@@ -55,6 +55,36 @@ describe('member workspace isolation', () => {
       }
     })
   })
+
+  it('filters the process catalog to the authenticated member', async () => {
+    const runtime = {
+      getRuntimeId: () => 'runtime',
+      getWorktreePs: vi.fn().mockResolvedValue({
+        worktrees: [
+          { id: 'owned', ownerMemberKey: 'member-a' },
+          { id: 'other', ownerMemberKey: 'member-b' },
+          { id: 'legacy' }
+        ],
+        totalCount: 3,
+        truncated: false,
+        snapshotId: 'snapshot-1'
+      })
+    } as unknown as OrcaRuntimeService
+    const result = await dispatch(
+      new RpcDispatcher({ runtime, methods: WORKTREE_METHODS }),
+      request('worktree.ps', { limit: 50 })
+    )
+
+    expect(result).toMatchObject({
+      ok: true,
+      result: {
+        worktrees: [{ id: 'owned', ownerMemberKey: 'member-a' }],
+        totalCount: 1,
+        truncated: false,
+        snapshotId: 'snapshot-1'
+      }
+    })
+  })
 })
 
 async function dispatch(dispatcher: RpcDispatcher, rpcRequest: RpcRequest): Promise<unknown> {
