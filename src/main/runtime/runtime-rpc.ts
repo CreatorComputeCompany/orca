@@ -81,6 +81,7 @@ import {
 import {
   bootstrapUserChat,
   getUserChatHistory,
+  openUserChatDm,
   sendUserChatMessage,
   type UserChatActor
 } from './user-chat-bridge'
@@ -2020,6 +2021,11 @@ export class OrcaRuntimeRpcServer {
             bootstrapUserChat(this.userChatActorForDevice(authenticatedSocket.device.deviceId)),
           getUserChatHistory: (params) =>
             getUserChatHistory(
+              this.userChatActorForDevice(authenticatedSocket.device.deviceId),
+              params
+            ),
+          openUserChatDm: (params) =>
+            openUserChatDm(
               this.userChatActorForDevice(authenticatedSocket.device.deviceId),
               params
             ),

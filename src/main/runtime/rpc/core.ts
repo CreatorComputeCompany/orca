@@ -40,15 +40,18 @@ import type {
 } from '../../../shared/gsd-orca-launch-contract'
 import type {
   UserChatBootstrap,
+  UserChatChannel,
   UserChatEvent,
   UserChatHistory,
   UserChatHistoryParams,
+  UserChatOpenDmParams,
   UserChatSendParams
 } from '../../../shared/user-chat-contract'
 
 export type PairingRpcContext = {
   bootstrapUserChat?(): Promise<UserChatBootstrap>
   getUserChatHistory?(params: UserChatHistoryParams): Promise<UserChatHistory>
+  openUserChatDm?(params: UserChatOpenDmParams): Promise<UserChatChannel>
   sendUserChatMessage?(params: UserChatSendParams): Promise<UserChatEvent>
   getEndpoints(params: PairingGetEndpointsParams): Promise<PairingGetEndpointsResult>
   provisionRelay(params: PairingProvisionRelayParams): Promise<DeviceCredentialInstalled>

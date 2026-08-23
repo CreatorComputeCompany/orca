@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { bootstrapUserChat, sendUserChatMessage, type UserChatActor } from './user-chat-bridge'
+import {
+  bootstrapUserChat,
+  openUserChatDm,
+  sendUserChatMessage,
+  type UserChatActor
+} from './user-chat-bridge'
 
 const actor: UserChatActor = {
   controllerId: 'rt_controller',
@@ -34,7 +39,8 @@ describe('user chat bridge', () => {
             participantPubkeys: []
           }
         ],
-        profiles: []
+        profiles: [],
+        members: []
       })
     )
     vi.stubGlobal('fetch', fetchMock)
@@ -57,5 +63,28 @@ describe('user chat bridge', () => {
         content: 'hello'
       })
     ).rejects.toThrow()
+  })
+
+  it('opens a DM through the Buzz bridge and validates its channel', async () => {
+    vi.stubEnv('ORCA_CHAT_BRIDGE_SECRET', 'shared-secret')
+    const channel = {
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      name: '',
+      type: 'dm',
+      visibility: 'private',
+      participantPubkeys: ['a'.repeat(64), 'b'.repeat(64)]
+    }
+    const fetchMock = vi.fn().mockResolvedValue(Response.json(channel))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(openUserChatDm(actor, { participantPubkeys: ['b'.repeat(64)] })).resolves.toEqual(
+      channel
+    )
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('https://imabird-buzz-web-api.fly.dev/api/internal/orca-chat/open-dm')
+    expect(JSON.parse(String(init.body))).toEqual({
+      actor,
+      participantPubkeys: ['b'.repeat(64)]
+    })
   })
 })

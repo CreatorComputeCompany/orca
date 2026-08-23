@@ -1017,6 +1017,7 @@ function createUserChatApi(): UserChatApi {
   return {
     bootstrap: () => callRuntimeResult('userChat.bootstrap'),
     history: (params) => callRuntimeResult('userChat.history', params),
+    openDm: (params) => callRuntimeResult('userChat.openDm', params),
     send: (params) => callRuntimeResult('userChat.send', params)
   }
 }

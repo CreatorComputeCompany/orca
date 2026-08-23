@@ -1,9 +1,11 @@
 import type { z } from 'zod'
 import {
   UserChatBootstrapSchema,
+  UserChatChannelSchema,
   UserChatEventSchema,
   UserChatHistorySchema,
   type UserChatHistoryParams,
+  type UserChatOpenDmParams,
   type UserChatSendParams
 } from '../../shared/user-chat-contract'
 
@@ -24,7 +26,7 @@ type UserChatEnvironment = Pick<
 
 async function callUserChatBridge<TSchema extends z.ZodType>(args: {
   actor: UserChatActor
-  path: 'bootstrap' | 'history' | 'send'
+  path: 'bootstrap' | 'history' | 'open-dm' | 'send'
   payload?: Record<string, unknown>
   schema: TSchema
   environment?: UserChatEnvironment
@@ -73,5 +75,14 @@ export function sendUserChatMessage(actor: UserChatActor, params: UserChatSendPa
     path: 'send',
     payload: params,
     schema: UserChatEventSchema
+  })
+}
+
+export function openUserChatDm(actor: UserChatActor, params: UserChatOpenDmParams) {
+  return callUserChatBridge({
+    actor,
+    path: 'open-dm',
+    payload: params,
+    schema: UserChatChannelSchema
   })
 }

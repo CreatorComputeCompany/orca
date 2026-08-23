@@ -2,6 +2,7 @@ import { useSyncExternalStore } from 'react'
 import type {
   UserChatChannel,
   UserChatEvent,
+  UserChatMember,
   UserChatProfile
 } from '../../../../shared/user-chat-contract'
 
@@ -10,10 +11,12 @@ type UserChatState = {
   error: string | null
   pubkey: string | null
   channels: UserChatChannel[]
+  members: UserChatMember[]
   profiles: Record<string, UserChatProfile>
   selectedChannelId: string | null
   eventsByChannel: Record<string, UserChatEvent[]>
   sending: boolean
+  openingDm: boolean
 }
 
 let state: UserChatState = {
@@ -21,10 +24,12 @@ let state: UserChatState = {
   error: null,
   pubkey: null,
   channels: [],
+  members: [],
   profiles: {},
   selectedChannelId: null,
   eventsByChannel: {},
-  sending: false
+  sending: false,
+  openingDm: false
 }
 
 const listeners = new Set<() => void>()
@@ -73,6 +78,7 @@ export async function ensureUserChatBootstrap(force = false): Promise<void> {
         status: 'ready',
         pubkey: result.pubkey,
         channels: result.channels,
+        members: result.members,
         profiles: mergeProfiles(result.profiles),
         selectedChannelId:
           state.selectedChannelId &&
@@ -94,6 +100,27 @@ export async function ensureUserChatBootstrap(force = false): Promise<void> {
     })
   bootstrapPromise = request
   return request
+}
+
+export async function openUserChatDm(participantPubkey: string): Promise<UserChatChannel | null> {
+  if (!window.api.userChat || state.openingDm) {
+    return null
+  }
+  update({ openingDm: true, error: null })
+  try {
+    const channel = await window.api.userChat.openDm({ participantPubkeys: [participantPubkey] })
+    update({
+      channels: [channel, ...state.channels.filter((candidate) => candidate.id !== channel.id)],
+      selectedChannelId: channel.id
+    })
+    void loadUserChatHistory(channel.id)
+    return channel
+  } catch (error) {
+    update({ error: error instanceof Error ? error.message : 'Unable to open direct message.' })
+    return null
+  } finally {
+    update({ openingDm: false })
+  }
 }
 
 export function selectUserChatChannel(channelId: string): void {

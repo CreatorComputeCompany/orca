@@ -4,10 +4,12 @@ import { cn } from '@/lib/utils'
 import { useAppStore } from '@/store'
 import {
   ensureUserChatBootstrap,
+  openUserChatDm,
   selectUserChatChannel,
   useUserChatState,
   userChatChannelLabel
 } from './user-chat-store'
+import { UserChatNewDmPopover } from './UserChatNewDmPopover'
 import { SidebarCollapseReveal, SidebarSectionTrigger } from '../sidebar/SidebarSectionDisclosure'
 
 type UserChatSidebarProps = {
@@ -42,6 +44,15 @@ export function UserChatSidebar({
   const open = (channelId: string): void => {
     selectUserChatChannel(channelId)
     setActiveView('user-chat')
+  }
+  const openDm = async (pubkey: string): Promise<boolean> => {
+    const channel = await openUserChatDm(pubkey)
+    if (!channel) {
+      return false
+    }
+    onDirectMessagesOpenChange(true)
+    setActiveView('user-chat')
+    return true
   }
   const channels = chat.channels.filter((channel) => channel.type === 'channel')
   const directMessages = chat.channels.filter((channel) => channel.type === 'dm')
@@ -96,14 +107,22 @@ export function UserChatSidebar({
           })}
         </div>
       </SidebarCollapseReveal>
-      <SidebarSectionTrigger
-        label="Direct messages"
-        open={directMessagesOpen}
-        onOpenChange={onDirectMessagesOpenChange}
-        controls="sidebar-direct-messages-section"
-        className="mx-2 mt-1 w-[calc(100%-1rem)] px-2"
-        titleDataValue="direct-messages"
-      />
+      <div className="mx-2 mt-1 flex items-center gap-1">
+        <SidebarSectionTrigger
+          label="Direct messages"
+          open={directMessagesOpen}
+          onOpenChange={onDirectMessagesOpenChange}
+          controls="sidebar-direct-messages-section"
+          className="flex-1 px-2"
+          titleDataValue="direct-messages"
+        />
+        <UserChatNewDmPopover
+          members={chat.members}
+          currentPubkey={chat.pubkey}
+          pending={chat.openingDm}
+          onSelect={openDm}
+        />
+      </div>
       <SidebarCollapseReveal
         id="sidebar-direct-messages-section"
         open={directMessagesOpen}
