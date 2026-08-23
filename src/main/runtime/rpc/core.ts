@@ -45,7 +45,9 @@ import type {
   UserChatHistory,
   UserChatHistoryParams,
   UserChatOpenDmParams,
-  UserChatSendParams
+  UserChatSendParams,
+  UserChatSurface,
+  UserChatSurfaceParams
 } from '../../../shared/user-chat-contract'
 
 export type PairingRpcContext = {
@@ -53,6 +55,7 @@ export type PairingRpcContext = {
   getUserChatHistory?(params: UserChatHistoryParams): Promise<UserChatHistory>
   openUserChatDm?(params: UserChatOpenDmParams): Promise<UserChatChannel>
   sendUserChatMessage?(params: UserChatSendParams): Promise<UserChatEvent>
+  getUserChatSurface?(params: UserChatSurfaceParams): Promise<UserChatSurface>
   getEndpoints(params: PairingGetEndpointsParams): Promise<PairingGetEndpointsResult>
   provisionRelay(params: PairingProvisionRelayParams): Promise<DeviceCredentialInstalled>
   createMobileOffer?(params: MobilePairingOfferParams): Promise<MobilePairingOfferResult>

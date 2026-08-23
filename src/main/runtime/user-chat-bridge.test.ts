@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   bootstrapUserChat,
+  getUserChatSurface,
   openUserChatDm,
   sendUserChatMessage,
   type UserChatActor
@@ -86,5 +87,21 @@ describe('user chat bridge', () => {
       actor,
       participantPubkeys: ['b'.repeat(64)]
     })
+  })
+
+  it('requests a focused Buzz surface for an accessible channel', async () => {
+    vi.stubEnv('ORCA_CHAT_BRIDGE_SECRET', 'shared-secret')
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(Response.json({ url: 'https://buzz.example.test/?orcaFocused=1' }))
+    vi.stubGlobal('fetch', fetchMock)
+    const channelId = '550e8400-e29b-41d4-a716-446655440000'
+
+    await expect(getUserChatSurface(actor, { channelId })).resolves.toEqual({
+      url: 'https://buzz.example.test/?orcaFocused=1'
+    })
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('https://imabird-buzz-web-api.fly.dev/api/internal/orca-chat/surface')
+    expect(JSON.parse(String(init.body))).toEqual({ actor, channelId })
   })
 })

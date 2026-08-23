@@ -1,7 +1,8 @@
 import {
   UserChatHistoryParamsSchema,
   UserChatOpenDmParamsSchema,
-  UserChatSendParamsSchema
+  UserChatSendParamsSchema,
+  UserChatSurfaceParamsSchema
 } from '../../../../shared/user-chat-contract'
 import { defineMethod, type RpcAnyMethod } from '../core'
 
@@ -24,6 +25,16 @@ export const USER_CHAT_METHODS: readonly RpcAnyMethod[] = [
         throw new Error('user_chat_unavailable')
       }
       return await context.pairing.openUserChatDm(params)
+    }
+  }),
+  defineMethod({
+    name: 'userChat.surface',
+    params: UserChatSurfaceParamsSchema,
+    handler: async (params, context) => {
+      if (!context.pairing?.getUserChatSurface) {
+        throw new Error('user_chat_unavailable')
+      }
+      return await context.pairing.getUserChatSurface(params)
     }
   }),
   defineMethod({

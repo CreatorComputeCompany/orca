@@ -5,7 +5,9 @@ import type {
   UserChatHistory,
   UserChatHistoryParams,
   UserChatOpenDmParams,
-  UserChatSendParams
+  UserChatSendParams,
+  UserChatSurface,
+  UserChatSurfaceParams
 } from '../../shared/user-chat-contract'
 
 export type UserChatApi = {
@@ -13,4 +15,5 @@ export type UserChatApi = {
   history: (params: UserChatHistoryParams) => Promise<UserChatHistory>
   openDm: (params: UserChatOpenDmParams) => Promise<UserChatChannel>
   send: (params: UserChatSendParams) => Promise<UserChatEvent>
+  surface: (params: UserChatSurfaceParams) => Promise<UserChatSurface>
 }

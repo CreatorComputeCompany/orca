@@ -56,6 +56,14 @@ export const UserChatOpenDmParamsSchema = z.object({
     .max(8)
 })
 
+export const UserChatSurfaceParamsSchema = z.object({
+  channelId: UserChatChannelIdSchema
+})
+
+export const UserChatSurfaceSchema = z.object({
+  url: z.string().url()
+})
+
 export type UserChatChannel = z.infer<typeof UserChatChannelSchema>
 export type UserChatProfile = z.infer<typeof UserChatProfileSchema>
 export type UserChatMember = z.infer<typeof UserChatMemberSchema>
@@ -65,3 +73,5 @@ export type UserChatHistory = z.infer<typeof UserChatHistorySchema>
 export type UserChatHistoryParams = z.infer<typeof UserChatHistoryParamsSchema>
 export type UserChatSendParams = z.infer<typeof UserChatSendParamsSchema>
 export type UserChatOpenDmParams = z.infer<typeof UserChatOpenDmParamsSchema>
+export type UserChatSurfaceParams = z.infer<typeof UserChatSurfaceParamsSchema>
+export type UserChatSurface = z.infer<typeof UserChatSurfaceSchema>

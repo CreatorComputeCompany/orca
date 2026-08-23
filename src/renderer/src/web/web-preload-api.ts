@@ -1018,7 +1018,8 @@ function createUserChatApi(): UserChatApi {
     bootstrap: () => callRuntimeResult('userChat.bootstrap'),
     history: (params) => callRuntimeResult('userChat.history', params),
     openDm: (params) => callRuntimeResult('userChat.openDm', params),
-    send: (params) => callRuntimeResult('userChat.send', params)
+    send: (params) => callRuntimeResult('userChat.send', params),
+    surface: (params) => callRuntimeResult('userChat.surface', params)
   }
 }
 
