@@ -7,13 +7,18 @@ import SidebarWorkspaceOptionsMenu from './SidebarWorkspaceOptionsMenu'
 import { useShortcutLabel } from '@/hooks/useShortcutLabel'
 import { openWorkspaceCreationComposerWithTourHandoff } from '../contextual-tours/workspace-creation-tour-handoff'
 import { translate } from '@/i18n/i18n'
+import { SidebarSectionTrigger } from './SidebarSectionDisclosure'
 
 type SidebarHeaderProps = {
   onWorkspaceBoardMenuOpenChange: (open: boolean) => void
+  workspacesOpen: boolean
+  onWorkspacesOpenChange: (open: boolean) => void
 }
 
 const SidebarHeader = React.memo(function SidebarHeader({
-  onWorkspaceBoardMenuOpenChange
+  onWorkspaceBoardMenuOpenChange,
+  workspacesOpen,
+  onWorkspacesOpenChange
 }: SidebarHeaderProps) {
   const openModal = useAppStore((s) => s.openModal)
   const newWorktreeShortcutLabel = useShortcutLabel('workspace.create')
@@ -23,14 +28,14 @@ const SidebarHeader = React.memo(function SidebarHeader({
 
   return (
     <div className="mt-2 flex h-8 items-center justify-between px-2 gap-2">
-      <div className="flex min-w-0 items-center gap-1">
-        <span
-          className="pl-2 pr-0.5 text-xs font-semibold text-muted-foreground/80 select-none"
-          data-sidebar-section-title={groupBy === 'repo' ? 'projects' : 'workspaces'}
-        >
-          {sidebarTitle}
-        </span>
-      </div>
+      <SidebarSectionTrigger
+        label={sidebarTitle}
+        open={workspacesOpen}
+        onOpenChange={onWorkspacesOpenChange}
+        controls="sidebar-workspaces-section"
+        className="flex-1 px-2"
+        titleDataValue={groupBy === 'repo' ? 'projects' : 'workspaces'}
+      />
       <div className="flex items-center gap-1.5 shrink-0">
         <SidebarWorkspaceOptionsMenu
           preserveWorkspaceBoardOpen

@@ -8,16 +8,21 @@ import {
   useUserChatState,
   userChatChannelLabel
 } from './user-chat-store'
+import { SidebarCollapseReveal, SidebarSectionTrigger } from '../sidebar/SidebarSectionDisclosure'
 
-function SectionTitle({ children }: { children: React.ReactNode }): React.JSX.Element {
-  return (
-    <div className="px-4 pb-1 pt-2 text-xs font-semibold text-muted-foreground/80 select-none">
-      {children}
-    </div>
-  )
+type UserChatSidebarProps = {
+  channelsOpen: boolean
+  directMessagesOpen: boolean
+  onChannelsOpenChange: (open: boolean) => void
+  onDirectMessagesOpenChange: (open: boolean) => void
 }
 
-export function UserChatSidebar(): React.JSX.Element | null {
+export function UserChatSidebar({
+  channelsOpen,
+  directMessagesOpen,
+  onChannelsOpenChange,
+  onDirectMessagesOpenChange
+}: UserChatSidebarProps): React.JSX.Element | null {
   const supported = Boolean(window.api.userChat)
   const chat = useUserChatState()
   const activeView = useAppStore((current) => current.activeView)
@@ -55,51 +60,69 @@ export function UserChatSidebar(): React.JSX.Element | null {
 
   return (
     <div className="max-h-[36vh] shrink-0 overflow-y-auto worktree-sidebar-scrollbar">
-      <SectionTitle>Channels</SectionTitle>
-      {channels.map((channel) => {
-        const active = activeView === 'user-chat' && chat.selectedChannelId === channel.id
-        return (
-          <button
-            type="button"
-            key={channel.id}
-            data-current={active ? 'true' : undefined}
-            className={cn(
-              'mx-2 flex w-[calc(100%-1rem)] items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] transition-colors',
-              active
-                ? 'bg-worktree-sidebar-accent text-worktree-sidebar-accent-foreground'
-                : 'text-worktree-sidebar-foreground/65 hover:bg-worktree-sidebar-foreground/8'
-            )}
-            onClick={() => open(channel.id)}
-          >
-            <Hash className="size-3.5 shrink-0 text-worktree-sidebar-foreground/35" />
-            <span className="truncate">{userChatChannelLabel(channel, chat)}</span>
-          </button>
-        )
-      })}
-      <SectionTitle>Direct messages</SectionTitle>
-      {directMessages.map((channel) => {
-        const label = userChatChannelLabel(channel, chat)
-        const active = activeView === 'user-chat' && chat.selectedChannelId === channel.id
-        return (
-          <button
-            type="button"
-            key={channel.id}
-            data-current={active ? 'true' : undefined}
-            className={cn(
-              'mx-2 flex w-[calc(100%-1rem)] items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] transition-colors',
-              active
-                ? 'bg-worktree-sidebar-accent text-worktree-sidebar-accent-foreground'
-                : 'text-worktree-sidebar-foreground/65 hover:bg-worktree-sidebar-foreground/8'
-            )}
-            onClick={() => open(channel.id)}
-          >
-            <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-worktree-sidebar-foreground/10 text-[9px] font-semibold">
-              {label.slice(0, 1).toUpperCase()}
-            </span>
-            <span className="truncate">{label}</span>
-          </button>
-        )
-      })}
+      <SidebarSectionTrigger
+        label="Channels"
+        open={channelsOpen}
+        onOpenChange={onChannelsOpenChange}
+        controls="sidebar-channels-section"
+        className="mx-2 mt-1 w-[calc(100%-1rem)] px-2"
+        titleDataValue="channels"
+      />
+      <SidebarCollapseReveal id="sidebar-channels-section" open={channelsOpen}>
+        {channels.map((channel) => {
+          const active = activeView === 'user-chat' && chat.selectedChannelId === channel.id
+          return (
+            <button
+              type="button"
+              key={channel.id}
+              data-current={active ? 'true' : undefined}
+              className={cn(
+                'mx-2 flex w-[calc(100%-1rem)] items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] transition-colors',
+                active
+                  ? 'bg-worktree-sidebar-accent text-worktree-sidebar-accent-foreground'
+                  : 'text-worktree-sidebar-foreground/65 hover:bg-worktree-sidebar-foreground/8'
+              )}
+              onClick={() => open(channel.id)}
+            >
+              <Hash className="size-3.5 shrink-0 text-worktree-sidebar-foreground/35" />
+              <span className="truncate">{userChatChannelLabel(channel, chat)}</span>
+            </button>
+          )
+        })}
+      </SidebarCollapseReveal>
+      <SidebarSectionTrigger
+        label="Direct messages"
+        open={directMessagesOpen}
+        onOpenChange={onDirectMessagesOpenChange}
+        controls="sidebar-direct-messages-section"
+        className="mx-2 mt-1 w-[calc(100%-1rem)] px-2"
+        titleDataValue="direct-messages"
+      />
+      <SidebarCollapseReveal id="sidebar-direct-messages-section" open={directMessagesOpen}>
+        {directMessages.map((channel) => {
+          const label = userChatChannelLabel(channel, chat)
+          const active = activeView === 'user-chat' && chat.selectedChannelId === channel.id
+          return (
+            <button
+              type="button"
+              key={channel.id}
+              data-current={active ? 'true' : undefined}
+              className={cn(
+                'mx-2 flex w-[calc(100%-1rem)] items-center gap-2 rounded-md px-2 py-1 text-left text-[13px] transition-colors',
+                active
+                  ? 'bg-worktree-sidebar-accent text-worktree-sidebar-accent-foreground'
+                  : 'text-worktree-sidebar-foreground/65 hover:bg-worktree-sidebar-foreground/8'
+              )}
+              onClick={() => open(channel.id)}
+            >
+              <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-worktree-sidebar-foreground/10 text-[9px] font-semibold">
+                {label.slice(0, 1).toUpperCase()}
+              </span>
+              <span className="truncate">{label}</span>
+            </button>
+          )
+        })}
+      </SidebarCollapseReveal>
       {chat.status === 'loading' ? (
         <div className="px-4 py-2 text-xs text-muted-foreground">Loading conversations…</div>
       ) : null}

@@ -17,6 +17,8 @@ import { resolveLeftSidebarStyleVariables } from '@/lib/left-sidebar-appearance'
 import { useSystemPrefersDark } from '@/components/terminal-pane/use-system-prefers-dark'
 import { lazyWithRetry } from '@/lib/lazy-with-retry'
 import { UserChatSidebar } from '../user-chat/UserChatSidebar'
+import { SidebarCollapseReveal } from './SidebarSectionDisclosure'
+import { useSidebarSectionVisibility } from './sidebar-section-visibility'
 
 const WorktreeMetaDialog = lazyWithRetry(() => import('./WorktreeMetaDialog'))
 const RemoveFolderDialog = lazyWithRetry(() => import('./RemoveFolderDialog'))
@@ -71,6 +73,7 @@ function Sidebar({
     solidifyWorkspaceBoardFromDrag,
     cancelWorkspaceBoardDragPreview
   } = useWorkspaceBoardPanel()
+  const { visibility: sectionVisibility, setSectionOpen } = useSidebarSectionVisibility()
 
   const setLiveSidebarWidth = React.useCallback((width: number) => {
     document.documentElement.style.setProperty('--workspace-sidebar-live-width', `${width}px`)
@@ -116,17 +119,32 @@ function Sidebar({
           <>
             {/* Fixed controls */}
             <SidebarNav />
-            <UserChatSidebar />
-            <SidebarHeader onWorkspaceBoardMenuOpenChange={setWorkspaceBoardMenuOpen} />
-
-            <WorktreeList
-              scrollOffsetRef={worktreeScrollOffsetRef}
-              scrollAnchorRef={worktreeScrollAnchorRef}
-              workspaceBoardOpen={workspaceBoardOpen}
-              onWorkspaceBoardDragPreviewStart={previewWorkspaceBoardFromDrag}
-              onWorkspaceBoardDragPreviewCommit={solidifyWorkspaceBoardFromDrag}
-              onWorkspaceBoardDragPreviewCancel={cancelWorkspaceBoardDragPreview}
+            <UserChatSidebar
+              channelsOpen={sectionVisibility.channels}
+              directMessagesOpen={sectionVisibility.directMessages}
+              onChannelsOpenChange={(open) => setSectionOpen('channels', open)}
+              onDirectMessagesOpenChange={(open) => setSectionOpen('directMessages', open)}
             />
+            <SidebarHeader
+              onWorkspaceBoardMenuOpenChange={setWorkspaceBoardMenuOpen}
+              workspacesOpen={sectionVisibility.workspaces}
+              onWorkspacesOpenChange={(open) => setSectionOpen('workspaces', open)}
+            />
+
+            <SidebarCollapseReveal
+              id="sidebar-workspaces-section"
+              open={sectionVisibility.workspaces}
+              className={sectionVisibility.workspaces ? 'flex-1' : 'shrink-0'}
+            >
+              <WorktreeList
+                scrollOffsetRef={worktreeScrollOffsetRef}
+                scrollAnchorRef={worktreeScrollAnchorRef}
+                workspaceBoardOpen={workspaceBoardOpen}
+                onWorkspaceBoardDragPreviewStart={previewWorkspaceBoardFromDrag}
+                onWorkspaceBoardDragPreviewCommit={solidifyWorkspaceBoardFromDrag}
+                onWorkspaceBoardDragPreviewCancel={cancelWorkspaceBoardDragPreview}
+              />
+            </SidebarCollapseReveal>
 
             <div className="relative shrink-0">
               <SetupScriptPromptCard />
