@@ -134,7 +134,9 @@ function Sidebar({
             <SidebarCollapseReveal
               id="sidebar-workspaces-section"
               open={sectionVisibility.workspaces}
-              className={sectionVisibility.workspaces ? 'flex-1' : 'shrink-0'}
+              // Keep owning the sidebar's remaining height while collapsed so
+              // the fixed toolbar stays pinned to the bottom edge.
+              className="flex-1"
             >
               <WorktreeList
                 scrollOffsetRef={worktreeScrollOffsetRef}
