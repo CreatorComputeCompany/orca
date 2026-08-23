@@ -1,0 +1,101 @@
+name: Deploy Buzz Orca host bundle
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-buzz-orca-host
+  # A cancelled upload can strand a draft. Let the older commit finish; the
+  # host ignores it once main points somewhere newer.
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Build and publish commit-addressed bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - uses: ./.github/actions/install-node-dependencies
+        with:
+          native-runtime: electron
+
+      - name: Build desktop and web runtimes
+        run: pnpm run build:desktop
+
+      - name: Package matched runtime assets
+        env:
+          RELEASE_DIR: ${{ runner.temp }}/buzz-host-release
+        run: |
+          set -euo pipefail
+          mkdir -p "$RELEASE_DIR"
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+            -czf "$RELEASE_DIR/orca-main.tgz" -C out main
+          tar --sort=name --owner=0 --group=0 --numeric-owner \
+            -czf "$RELEASE_DIR/orca-web.tgz" -C out web
+
+          main_sha256=$(sha256sum "$RELEASE_DIR/orca-main.tgz" | cut -d ' ' -f 1)
+          web_sha256=$(sha256sum "$RELEASE_DIR/orca-web.tgz" | cut -d ' ' -f 1)
+          jq -n \
+            --arg commit "$GITHUB_SHA" \
+            --arg mainSha256 "$main_sha256" \
+            --arg webSha256 "$web_sha256" \
+            '{
+              schemaVersion: 1,
+              commit: $commit,
+              main: {asset: "orca-main.tgz", sha256: $mainSha256},
+              web: {asset: "orca-web.tgz", sha256: $webSha256}
+            }' > "$RELEASE_DIR/manifest.json"
+
+      - name: Publish commit-addressed release
+        id: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_DIR: ${{ runner.temp }}/buzz-host-release
+          RELEASE_TAG: buzz-host-${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; refusing to mutate it." >&2
+            exit 1
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            "$RELEASE_DIR/manifest.json" \
+            "$RELEASE_DIR/orca-main.tgz" \
+            "$RELEASE_DIR/orca-web.tgz" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Buzz host bundle ${GITHUB_SHA::12}" \
+            --notes "Matched Orca runtime bundle for commit $GITHUB_SHA." \
+            --draft \
+            --prerelease
+          gh release edit "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            --prerelease
+
+      - name: Remove an incomplete draft
+        if: failure() && steps.publish.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: buzz-host-${{ github.sha }}
+        run: |
+          if [[ $(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json isDraft --jq .isDraft 2>/dev/null) == true ]]; then
+            gh release delete "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --cleanup-tag \
+              --yes
+          fi
