@@ -78,6 +78,12 @@ import {
   linkMultiplayerMemberExternalIdentity,
   type MultiplayerMember
 } from './multiplayer-identity-store'
+import {
+  bootstrapUserChat,
+  getUserChatHistory,
+  sendUserChatMessage,
+  type UserChatActor
+} from './user-chat-bridge'
 
 const DEFAULT_WS_PORT = 6768
 const GSD_LAUNCH_REQUEST_TIMEOUT_MS = 15_000
@@ -861,6 +867,21 @@ export class OrcaRuntimeRpcServer {
       () => {}
     )
     return registration
+  }
+
+  private userChatActorForDevice(deviceId: string): UserChatActor {
+    const member = findMultiplayerMemberByDevice(this.userDataPath, deviceId)
+    if (!member) {
+      throw new Error('user_chat_identity_unavailable')
+    }
+    const accountEmail = this.multiplayerAccounts.findByMemberKey(member.key)?.email
+    const externalEmail = member.externalIdentities.find((identity) => identity.email)?.email
+    return {
+      controllerId: this.runtime.getRuntimeId(),
+      memberKey: member.key,
+      displayName: member.displayName,
+      ...(accountEmail || externalEmail ? { email: accountEmail ?? externalEmail } : {})
+    }
   }
 
   getRelayRevokeOutbox(): RelayRevokeOutbox {
@@ -1995,6 +2016,18 @@ export class OrcaRuntimeRpcServer {
     const pairingProvider = this.mobileRelayPairingProvider
     const pairingContext = authenticatedSocket
       ? {
+          bootstrapUserChat: () =>
+            bootstrapUserChat(this.userChatActorForDevice(authenticatedSocket.device.deviceId)),
+          getUserChatHistory: (params) =>
+            getUserChatHistory(
+              this.userChatActorForDevice(authenticatedSocket.device.deviceId),
+              params
+            ),
+          sendUserChatMessage: (params) =>
+            sendUserChatMessage(
+              this.userChatActorForDevice(authenticatedSocket.device.deviceId),
+              params
+            ),
           getEndpoints: (params: PairingGetEndpointsParams) =>
             requirePairingProvider(pairingProvider).getEndpoints(
               {

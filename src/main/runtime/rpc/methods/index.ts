@@ -43,6 +43,7 @@ import { AGENT_SESSION_METHODS } from './agent-session'
 import { ARTIFACT_METHODS } from './artifacts'
 import { EPHEMERAL_VM_METHODS } from './ephemeral-vm'
 import { MULTIPLAYER_IDENTITY_METHODS } from './multiplayer-identity'
+import { USER_CHAT_METHODS } from './user-chat'
 
 // Why: a flat manifest keeps registration order explicit and provides one
 // grep-point for "what methods does the RPC server expose?" — useful when
@@ -53,6 +54,7 @@ export const ALL_RPC_METHODS: readonly RpcAnyMethod[] = [
   ...ARTIFACT_METHODS,
   ...EPHEMERAL_VM_METHODS,
   ...MULTIPLAYER_IDENTITY_METHODS,
+  ...USER_CHAT_METHODS,
   ...AUTOMATION_METHODS,
   ...REPO_METHODS,
   ...WORKTREE_METHODS,

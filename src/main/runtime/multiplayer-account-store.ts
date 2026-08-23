@@ -60,6 +60,10 @@ export class MultiplayerAccountStore {
       : null
   }
 
+  findByMemberKey(memberKey: string): MultiplayerAccount | null {
+    return this.read().accounts.find((account) => account.memberKey === memberKey) ?? null
+  }
+
   async register(args: {
     email: string
     password: string

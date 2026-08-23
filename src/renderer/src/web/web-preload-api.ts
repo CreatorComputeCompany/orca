@@ -6,6 +6,7 @@ import type {
   NativeChatApi,
   NativeChatAppendedMessages
 } from '../../../preload/api-types'
+import type { UserChatApi } from '../../../preload/api/user-chat-api'
 import type { RuntimeRpcResponse } from '../../../shared/runtime-rpc-envelope'
 import type { PublicKnownRuntimeEnvironment } from '../../../shared/runtime-environments'
 import { parseHostAccessLink } from '../../../shared/remote-pairing-address'
@@ -890,6 +891,7 @@ function createWebPreloadApi(): Partial<PreloadApi> {
       }
     },
     runtime: createRuntimeApi(),
+    userChat: createUserChatApi(),
     ephemeralVm: createEphemeralVmApi(),
     nativeChat: createNativeChatApi(),
     runtimeEnvironments: createRuntimeEnvironmentsApi(),
@@ -1008,6 +1010,14 @@ function createWebPreloadApi(): Partial<PreloadApi> {
     telemetryGetConsentState: () =>
       Promise.resolve({ optedIn: false, source: 'default', blockedByEnv: false } as never),
     telemetryAcknowledgeBanner: () => Promise.resolve()
+  }
+}
+
+function createUserChatApi(): UserChatApi {
+  return {
+    bootstrap: () => callRuntimeResult('userChat.bootstrap'),
+    history: (params) => callRuntimeResult('userChat.history', params),
+    send: (params) => callRuntimeResult('userChat.send', params)
   }
 }
 

@@ -115,3 +115,4 @@ export type TopLevelView =
   | 'space'
   | 'artifacts'
   | 'mobile'
+  | 'user-chat'
