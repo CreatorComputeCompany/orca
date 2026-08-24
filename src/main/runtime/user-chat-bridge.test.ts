@@ -37,7 +37,9 @@ describe('user chat bridge', () => {
             name: 'general',
             type: 'channel',
             visibility: 'open',
-            participantPubkeys: []
+            participantPubkeys: [],
+            lastActivityAtMs: 0,
+            unreadCount: 0
           }
         ],
         profiles: [],
@@ -73,7 +75,9 @@ describe('user chat bridge', () => {
       name: '',
       type: 'dm',
       visibility: 'private',
-      participantPubkeys: ['a'.repeat(64), 'b'.repeat(64)]
+      participantPubkeys: ['a'.repeat(64), 'b'.repeat(64)],
+      lastActivityAtMs: 0,
+      unreadCount: 0
     }
     const fetchMock = vi.fn().mockResolvedValue(Response.json(channel))
     vi.stubGlobal('fetch', fetchMock)

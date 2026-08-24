@@ -7,7 +7,9 @@ export const UserChatChannelSchema = z.object({
   name: z.string(),
   type: z.enum(['channel', 'dm']),
   visibility: z.enum(['open', 'private']),
-  participantPubkeys: z.array(z.string().regex(/^[0-9a-f]{64}$/i))
+  participantPubkeys: z.array(z.string().regex(/^[0-9a-f]{64}$/i)),
+  lastActivityAtMs: z.number().int().nonnegative(),
+  unreadCount: z.number().int().nonnegative()
 })
 
 export const UserChatProfileSchema = z.object({

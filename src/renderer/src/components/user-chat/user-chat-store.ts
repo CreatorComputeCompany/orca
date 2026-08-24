@@ -36,6 +36,15 @@ const listeners = new Set<() => void>()
 let bootstrapPromise: Promise<void> | null = null
 const historyPromises = new Map<string, Promise<void>>()
 
+export function sortUserChatChannels(channels: UserChatChannel[]): UserChatChannel[] {
+  return [...channels].sort(
+    (left, right) =>
+      right.lastActivityAtMs - left.lastActivityAtMs ||
+      left.name.localeCompare(right.name) ||
+      left.id.localeCompare(right.id)
+  )
+}
+
 function update(patch: Partial<UserChatState>): void {
   state = { ...state, ...patch }
   listeners.forEach((listener) => listener())
@@ -62,22 +71,27 @@ export function useUserChatState(): UserChatState {
   return useSyncExternalStore(subscribeUserChat, getUserChatState, getUserChatState)
 }
 
-export async function ensureUserChatBootstrap(force = false): Promise<void> {
+export async function ensureUserChatBootstrap(force = false, background = false): Promise<void> {
   if (!window.api.userChat) {
     update({ status: 'error', error: 'User chat requires the Orca Cloud controller.' })
     return
   }
-  if (!force && (state.status === 'ready' || bootstrapPromise)) {
+  if (bootstrapPromise) {
+    return bootstrapPromise
+  }
+  if (!force && state.status === 'ready') {
     return bootstrapPromise ?? undefined
   }
-  update({ status: 'loading', error: null })
+  if (!background || state.status !== 'ready') {
+    update({ status: 'loading', error: null })
+  }
   const request = window.api.userChat
     .bootstrap()
     .then((result) => {
       update({
         status: 'ready',
         pubkey: result.pubkey,
-        channels: result.channels,
+        channels: sortUserChatChannels(result.channels),
         members: result.members,
         profiles: mergeProfiles(result.profiles),
         selectedChannelId:
@@ -124,7 +138,12 @@ export async function openUserChatDm(participantPubkey: string): Promise<UserCha
 }
 
 export function selectUserChatChannel(channelId: string): void {
-  update({ selectedChannelId: channelId })
+  update({
+    selectedChannelId: channelId,
+    channels: state.channels.map((channel) =>
+      channel.id === channelId ? { ...channel, unreadCount: 0 } : channel
+    )
+  })
   void loadUserChatHistory(channelId)
 }
 

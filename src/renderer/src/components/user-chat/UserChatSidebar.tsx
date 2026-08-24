@@ -19,6 +19,8 @@ type UserChatSidebarProps = {
   onDirectMessagesOpenChange: (open: boolean) => void
 }
 
+const USER_CHAT_REFRESH_INTERVAL_MS = 5_000
+
 export function UserChatSidebar({
   channelsOpen,
   directMessagesOpen,
@@ -32,6 +34,30 @@ export function UserChatSidebar({
   useEffect(() => {
     if (supported) {
       void ensureUserChatBootstrap()
+    }
+  }, [supported])
+
+  useEffect(() => {
+    if (!supported) {
+      return
+    }
+    const refresh = (): void => {
+      if (document.visibilityState === 'visible') {
+        void ensureUserChatBootstrap(true, true)
+      }
+    }
+    const onVisibilityChange = (): void => {
+      if (document.visibilityState === 'visible') {
+        refresh()
+      }
+    }
+    const interval = window.setInterval(refresh, USER_CHAT_REFRESH_INTERVAL_MS)
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      window.clearInterval(interval)
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }, [supported])
 
@@ -102,6 +128,11 @@ export function UserChatSidebar({
               >
                 <Hash className="size-3.5 shrink-0 text-worktree-sidebar-foreground/35" />
                 <span className="truncate">{userChatChannelLabel(channel, chat)}</span>
+                {channel.unreadCount > 0 ? (
+                  <span className="ml-auto min-w-4 rounded-full bg-primary px-1 text-center text-[10px] font-semibold leading-4 text-primary-foreground">
+                    {channel.unreadCount > 99 ? '99+' : channel.unreadCount}
+                  </span>
+                ) : null}
               </button>
             )
           })}
@@ -149,6 +180,11 @@ export function UserChatSidebar({
                   {label.slice(0, 1).toUpperCase()}
                 </span>
                 <span className="truncate">{label}</span>
+                {channel.unreadCount > 0 ? (
+                  <span className="ml-auto min-w-4 rounded-full bg-primary px-1 text-center text-[10px] font-semibold leading-4 text-primary-foreground">
+                    {channel.unreadCount > 99 ? '99+' : channel.unreadCount}
+                  </span>
+                ) : null}
               </button>
             )
           })}
